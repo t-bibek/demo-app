@@ -1,0 +1,64 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Debug MeetSpeakerDetector",
+            "target": "MeetSpeakerDetector",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MeetSpeakerDetector"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Release MeetSpeakerDetector",
+            "target": "MeetSpeakerDetector",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MeetSpeakerDetector"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Debug SpeakerCoreSelfTest",
+            "target": "SpeakerCoreSelfTest",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SpeakerCoreSelfTest"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Release SpeakerCoreSelfTest",
+            "target": "SpeakerCoreSelfTest",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SpeakerCoreSelfTest"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Debug AXDump",
+            "target": "AXDump",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXDump"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Release AXDump",
+            "target": "AXDump",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXDump"
+        }
+    ]
+}
