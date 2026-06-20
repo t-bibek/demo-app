@@ -13,6 +13,7 @@ import ApplicationServices
 
 let args = Array(CommandLine.arguments.dropFirst())
 let dumpAll = args.contains("--all")
+let showAttrs = args.contains("--attrs")   // dump every attribute name/value per node
 let filter = args.first(where: { !$0.hasPrefix("--") })?.lowercased()
 
 let maxDepth = 70
@@ -41,6 +42,23 @@ func axChildren(_ el: AXUIElement) -> [AXUIElement] {
     return (v as? [AXUIElement]) ?? []
 }
 
+func axAttributeNames(_ el: AXUIElement) -> [String] {
+    var names: CFArray?
+    guard AXUIElementCopyAttributeNames(el, &names) == .success else { return [] }
+    return (names as? [String]) ?? []
+}
+
+func axRawValue(_ el: AXUIElement, _ attr: String) -> String? {
+    var v: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success, let v else { return nil }
+    if let s = v as? String { return s }
+    if let arr = v as? [String] { return "[" + arr.joined(separator: ",") + "]" }
+    if let n = v as? NSNumber { return n.stringValue }
+    if CFGetTypeID(v) == AXUIElementGetTypeID() { return "<AXUIElement>" }
+    if let arr = v as? [Any] { return "<\(arr.count) items>" }
+    return String(describing: v)
+}
+
 func dump(_ el: AXUIElement, depth: Int, budget: inout Int) {
     if depth > maxDepth || budget <= 0 { return }
     budget -= 1
@@ -56,6 +74,23 @@ func dump(_ el: AXUIElement, depth: Int, budget: inout Int) {
         }
     }
     print(String(repeating: "  ", count: depth) + parts.joined(separator: " "))
+
+    if showAttrs {
+        let names = axAttributeNames(el)
+        // Highlight web/DOM/state attributes that could carry a speaking marker.
+        let interesting = names.filter {
+            $0.contains("DOM") || $0.contains("Class") || $0.contains("ARIA")
+            || $0.lowercased().contains("selected") || $0.contains("Identifier")
+        }
+        let kv = interesting.map { n -> String in
+            if let v = axRawValue(el, n) { return "\(n)=\(v.prefix(120))" }
+            return n
+        }
+        let indent = String(repeating: "  ", count: depth) + "    "
+        if !kv.isEmpty { print(indent + "· " + kv.joined(separator: "  ")) }
+        // Also list ALL attribute names once, so we can see what's available.
+        print(indent + "all-attrs: " + names.joined(separator: ", "))
+    }
 
     for child in axChildren(el) {
         dump(child, depth: depth + 1, budget: &budget)

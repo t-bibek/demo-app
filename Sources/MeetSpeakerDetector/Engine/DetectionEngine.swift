@@ -108,12 +108,14 @@ final class DetectionEngine {
             // active speaker. The meeting UI is the authority on who.
             var who = Set(w.speakers)
 
-            // "Someone" is strictly an audio-only fallback: only when remote
-            // audio is playing AND the accessibility tree is unreadable (e.g. a
-            // backgrounded browser tab). When names ARE readable we trust the
-            // active-speaker labels and never fabricate "Someone" — otherwise a
-            // single real speaker double-logs as both their name and "Someone".
-            if remoteActive && who.isEmpty && (w.treeOk == false) {
+            // "Someone" is an audio-only fallback, used only when we genuinely
+            // can't read who is speaking: either the tree is unreadable (e.g. a
+            // backgrounded tab) OR the platform doesn't expose speaker state in
+            // its accessibility tree at all (Google Meet, Teams). For Zoom — the
+            // tree DOES expose the active speaker — we trust the labels and
+            // never fabricate "Someone", so one speaker can't double-log.
+            let canReadSpeakers = w.treeOk && platformExposesSpeakerNames(w.platform)
+            if remoteActive && who.isEmpty && !canReadSpeakers {
                 who.insert("Someone")
             }
 
@@ -121,7 +123,11 @@ final class DetectionEngine {
             // POSITIVELY confirms you are unmuted. Zoom's app-level mute does
             // not silence the macOS microphone, so without this a muted user is
             // logged whenever the mic picks up speaker echo or room noise.
-            if micActive && w.localUserUnmuted == true {
+            //
+            // Skip on platforms where we read speaker names per-tile (Zoom marker,
+            // Meet kssMZb): your own tile is already named there, so adding "You"
+            // would double-log you.
+            if micActive && w.localUserUnmuted == true && !platformExposesSpeakerNames(w.platform) {
                 who.insert(config.localUserName)
             }
 

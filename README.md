@@ -166,6 +166,15 @@ scripts/build-app.sh      Assembles + signs the .app
 
 Inherited from the original's approach, plus macOS specifics:
 
+- **Per-platform name attribution differs by what each app exposes to the
+  macOS Accessibility API** (verified with `swift run AXDump`):
+  - **Zoom (web)** tags the active-speaker tile (`"<Name>, Computer audio
+    unmuted, active speaker"`), so speakers are logged **by name**.
+  - **Google Meet / Teams** do **not** expose speaking state in the AX tree
+    (the indicator is visual/CSS only — the Windows original read it from the
+    page DOM, which the AX API can't see). The meeting window and your mute
+    state are detected, but remote speech falls back to audio-only **`Someone`**.
+    Logging Meet/Teams speakers by name would require a browser extension or DOM bridge.
 - System-audio metering is **combined**, not per-app/per-tab; the "is anyone
   speaking" signal is attributed to whichever meeting window is visible.
 - Name extraction from accessibility trees is **best-effort and heuristic** —

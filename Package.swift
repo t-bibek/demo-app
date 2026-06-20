@@ -31,6 +31,15 @@ let package = Package(
             name: "AXDump",
             path: "Sources/AXDump"
         ),
+        // Per-tile structural probe for Google Meet (the decisive experiment from
+        // docs/recall-and-demo-extraction.md §4). Models each participant tile and
+        // tracks geometry + AXDOMClassList + subtree shape over time so we can see
+        // whether ANY per-tile AX feature moves with speech. Run: `swift run MeetProbe`.
+        .executableTarget(
+            name: "MeetProbe",
+            dependencies: ["SpeakerCore"],
+            path: "Sources/MeetProbe"
+        ),
         .testTarget(
             name: "SpeakerCoreTests",
             dependencies: ["SpeakerCore"],

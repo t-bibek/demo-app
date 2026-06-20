@@ -70,12 +70,24 @@ public func isLikelyPersonName(_ s: String) -> Bool {
     ]
     if rejectExact.contains(lower) { return false }
 
-    // Window chrome / browser / URL fragments that are never a person's name.
+    // Window chrome / browser / URL fragments + meeting CONTROL labels that are
+    // never a person's name (Meet/Zoom toolbar buttons leak in as 2-word labels).
     let rejectSubstrings = [
         "meeting", "zoom", "teams", "google", "chrome", "safari", "edge",
         "http", "://", "search bar", "address", "microphone", "webcam",
+        "joined", "left the",
+        "share screen", "screen share", "sharing", "present", "everyone",
+        "view all", "add people", "host control", "call control", "more option",
+        "activities", "settings", "captions", "reaction",
     ]
     if rejectSubstrings.contains(where: { lower.contains($0) }) { return false }
+
+    // Notifications/toasts (sentences), clock times, and Meet meeting codes
+    // (e.g. "ryv-ppcs-qpb") are not participant names.
+    if t.hasSuffix(".") { return false }
+    if lower == "pm" || lower == "am" { return false }
+    if t.range(of: #"^[a-z]{3}-[a-z]{3,4}-[a-z]{3}$"#, options: .regularExpression) != nil { return false }
+    if t.range(of: #"^\d{1,2}:\d{2}"#, options: .regularExpression) != nil { return false }
 
     return t.rangeOfCharacter(from: .letters) != nil
 }

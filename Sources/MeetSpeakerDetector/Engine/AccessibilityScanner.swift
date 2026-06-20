@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ApplicationServices
+import CoreGraphics
 import SpeakerCore
 
 /// One meeting window observed during a scan.
@@ -69,23 +70,38 @@ final class AccessibilityScanner {
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             for window in axArray(axApp, "AXWindows") {
                 let title = axString(window, "AXTitle") ?? ""
-                guard let platform = Self.platform(forNative: bundleID, windowTitle: title) else { continue }
+                guard var platform = Self.platform(forNative: bundleID, windowTitle: title) else { continue }
 
                 var collector = TreeCollector()
                 walk(window, depth: 0, into: &collector)
+
+                // The page URL (from the address bar) is the most reliable
+                // signal; let it override the title-based guess.
+                if let urlPlatform = platformForURL(collector.url) { platform = urlPlatform }
 
                 // A browser/WebView tree that came back empty means names are
                 // unavailable (audio detection still works); native Zoom's tiny
                 // tree is normal and reports OK.
                 let treeOk = isNative ? true : collector.nodeCount > 8
 
+                // Google Meet exposes the active speaker as a per-tile CSS class
+                // (kssMZb) via AXDOMClassList — not as a text marker the generic
+                // walk catches — so run a dedicated per-tile pass for Meet.
+                var speakers = dedup(collector.speakers)
+                var participants = dedup(collector.participants)
+                if platform == .meet {
+                    let m = meetSpeakingNames(in: window)
+                    speakers = m.speakers
+                    participants = dedup(participants + m.participants)
+                }
+
                 results.append(ScannedWindow(
                     platform: platform,
                     title: title.isEmpty ? platform.label : title,
                     nodeCount: collector.nodeCount,
                     treeOk: treeOk,
-                    speakers: dedup(collector.speakers),
-                    participants: dedup(collector.participants),
+                    speakers: speakers,
+                    participants: participants,
                     localUserUnmuted: collector.localUserUnmuted
                 ))
             }
@@ -97,12 +113,8 @@ final class AccessibilityScanner {
 
     private static func platform(forNative bundleID: String, windowTitle: String) -> Platform? {
         if let native = nativeApps[bundleID] { return native }
-        // Browser: infer from the tab/window title.
-        let t = windowTitle.lowercased()
-        if t.contains("google meet") || t.contains("meet.google") || t.contains("- meet") { return .meet }
-        if t.contains("zoom") { return .zoom }
-        if t.contains("microsoft teams") || t.contains("| teams") || t.contains("- teams") { return .teams }
-        return nil
+        // Browser: infer from the tab/window title (URL confirms it later).
+        return platformForBrowserTitle(windowTitle)
     }
 
     // MARK: Tree walk
@@ -112,6 +124,7 @@ final class AccessibilityScanner {
         var speakers: [String] = []
         var participants: [String] = []
         var localUserUnmuted: Bool?
+        var url: String?
     }
 
     private func walk(_ element: AXUIElement, depth: Int, into c: inout TreeCollector) {
@@ -123,6 +136,16 @@ final class AccessibilityScanner {
         let value = axString(element, "AXValue")
         let combined = [title, desc, value].compactMap { $0 }.joined(separator: " ")
         if !combined.isEmpty {
+            // Capture the page URL (browser address bar) for reliable platform ID.
+            if c.url == nil {
+                for s in [value, desc, title].compactMap({ $0 }) {
+                    if s.contains("meet.google.com") || s.contains("zoom.us")
+                        || s.contains("teams.microsoft.com") || s.contains("teams.live.com") {
+                        c.url = s
+                        break
+                    }
+                }
+            }
             classify(title: title, desc: desc, value: value, combined: combined, into: &c)
         }
 
@@ -141,10 +164,13 @@ final class AccessibilityScanner {
         let lower = combined.lowercased()
 
         // Local mute state. Zoom web's control reads "unmute my microphone"
-        // while you are muted, "mute my microphone" while unmuted.
-        if lower.contains("unmute my") || lower.contains("unmute (") || lower == "unmute" {
+        // while you are muted, "mute my microphone" while unmuted. Google Meet
+        // uses "Turn on microphone" (muted) / "Turn off microphone" (unmuted).
+        if lower.contains("unmute my") || lower.contains("unmute (") || lower == "unmute"
+            || lower.contains("turn on microphone") {
             c.localUserUnmuted = false
-        } else if lower.contains("mute my") || lower.contains("mute (") || lower == "mute" {
+        } else if lower.contains("mute my") || lower.contains("mute (") || lower == "mute"
+            || lower.contains("turn off microphone") {
             c.localUserUnmuted = true
         }
 
@@ -191,5 +217,100 @@ final class AccessibilityScanner {
         var v: CFTypeRef?
         guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success else { return [] }
         return (v as? [AXUIElement]) ?? []
+    }
+
+    private func axClassList(_ el: AXUIElement) -> [String] {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, "AXDOMClassList" as CFString, &v) == .success else { return [] }
+        return (v as? [String]) ?? []
+    }
+
+    private func axParent(_ el: AXUIElement) -> AXUIElement? {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, "AXParent" as CFString, &v) == .success, let v,
+              CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }
+        return (v as! AXUIElement)
+    }
+
+    private func axFrame(_ el: AXUIElement) -> CGRect? {
+        var v: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, "AXFrame" as CFString, &v) == .success,
+           let v, CFGetTypeID(v) == AXValueGetTypeID() {
+            var r = CGRect.zero
+            if AXValueGetValue(v as! AXValue, .cgRect, &r) { return r }
+        }
+        var sv: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, "AXSize" as CFString, &sv) == .success,
+           let sv, CFGetTypeID(sv) == AXValueGetTypeID() {
+            var s = CGSize.zero
+            if AXValueGetValue(sv as! AXValue, .cgSize, &s) { return CGRect(origin: .zero, size: s) }
+        }
+        return nil
+    }
+
+    // MARK: Google Meet per-tile active-speaker scan
+
+    /// Finds participant tiles in a Meet window and returns the names whose tile
+    /// carries the active-speaker class (see SpeakerCore.meetTileIsSpeaking).
+    /// Verified mechanism: Meet adds `kssMZb` to the speaking tile's DOM classes,
+    /// surfaced via AXDOMClassList. Names are obfuscated-class-driven, so the rule
+    /// is remote-config'd in MeetSpeakerRules.
+    private func meetSpeakingNames(in window: AXUIElement) -> (speakers: [String], participants: [String]) {
+        var nameNodes: [(AXUIElement, String)] = []
+        var scanned = 0
+        func collect(_ el: AXUIElement, _ depth: Int) {
+            if scanned >= maxNodesPerWindow || depth > maxDepth { return }
+            scanned += 1
+            if axString(el, "AXRole") == "AXStaticText",
+               let raw = axString(el, "AXValue") ?? axString(el, "AXTitle"),
+               let name = cleanParticipantName(raw) {
+                nameNodes.append((el, name))
+            }
+            for c in axArray(el, "AXChildren") { collect(c, depth + 1) }
+        }
+        collect(window, 0)
+
+        var speakers = Set<String>()
+        var participants = Set<String>()
+        for (node, name) in nameNodes {
+            guard let tile = meetTileAncestor(of: node) else { continue }
+            participants.insert(name)
+            if meetTileIsSpeaking(classTokens: tileClassTokens(tile)) { speakers.insert(name) }
+        }
+        return (Array(speakers), Array(participants))
+    }
+
+    /// Climb from a name node to the nearest participant-tile-sized ancestor.
+    private func meetTileAncestor(of node: AXUIElement) -> AXUIElement? {
+        var cur: AXUIElement? = node
+        var steps = 0
+        var fallback: AXUIElement?
+        while let el = cur, steps < 14 {
+            if let f = axFrame(el) {
+                let area = f.width * f.height
+                let aspect = f.height > 0 ? f.width / f.height : 99
+                if area >= 8_000 && area <= 1_800_000 {
+                    if fallback == nil { fallback = el }
+                    if aspect <= 4.0 { return el }
+                }
+            }
+            cur = axParent(el)
+            steps += 1
+        }
+        return fallback
+    }
+
+    /// Union of AXDOMClassList tokens across a tile's subtree (bounded).
+    private func tileClassTokens(_ tile: AXUIElement) -> Set<String> {
+        var tokens = Set<String>()
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 800 || depth > 40 { return }
+            n += 1
+            for t in axClassList(el) { tokens.insert(t) }
+            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
+        }
+        rec(tile, 0)
+        return tokens
     }
 }
