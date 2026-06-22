@@ -34,6 +34,12 @@ struct TileFeatures {
     /// True if a hover-control class (Bz112c/LgbsSe/…) is in the subtree — the
     /// cursor is over this tile, so any structural change is hover, not speech.
     var hovered: Bool = false
+    /// The FULL non-class AX surface of the tile subtree (separator: US \u{1f}):
+    /// every attribute NAME present (`n:<AXName>`, minus ubiquitous tree/geometry
+    /// attrs) + bucketed VALUES of state-carrying attributes (`v:<AXName>=…`).
+    /// Mined against the kssMZb oracle to find a rotation-proof structural handle
+    /// — Recall's "container → indicator" route — that ISN'T the obfuscated class.
+    var stateFacts: String = ""
 
     /// Everything except geometry — the "did the structure change" key.
     var structuralKey: String {
@@ -244,6 +250,67 @@ enum MeetTiles {
         return tokens.sorted().joined(separator: ",")
     }
 
+    /// Attribute names too ubiquitous / structural to ever discriminate speech —
+    /// excluded from the fact set so a co-varying signal isn't buried. The class
+    /// (AXDOMClassList) is excluded too: we already have it; the hunt is for a
+    /// NON-class handle.
+    private static let factNameDenylist: Set<String> = [
+        "AXRole", "AXSubrole", "AXParent", "AXChildren", "AXPosition", "AXSize",
+        "AXFrame", "AXTopLevelUIElement", "AXWindow", "AXEnabled", "AXDOMClassList",
+        "AXVisibleChildren", "AXSelectedChildren", "AXSelectedTextRanges",
+        "AXLinkedUIElements", "AXFrameInWindow",
+    ]
+
+    /// State-carrying attributes whose VALUE may flip with speech (an audio-level
+    /// AXValue, a role description like "is speaking", an ARIA invalid/busy flag).
+    private static let factValueAttrs: [String] = [
+        "AXValue", "AXRoleDescription", "AXHelp", "AXInvalid", "AXBusy",
+        "AXSelected", "AXDescription", "AXTitle",
+    ]
+
+    /// Collect the FULL non-class AX surface of one element into `facts`: the
+    /// presence of every attribute NAME (a rare attr may be the indicator's tell),
+    /// plus bucketed VALUES of state-carrying attrs (numbers → +/0 to catch an
+    /// audio-level meter; short strings digit-folded, optionally name-stripped).
+    /// Shared by the per-tile hunt and the page-level "container/indicator" hunt.
+    static func collectFacts(_ el: AXUIElement, into facts: inout Set<String>, stripName: String) {
+        for a in AX.attributeNames(el) where !factNameDenylist.contains(a) {
+            facts.insert("n:\(a)")
+        }
+        for a in factValueAttrs {
+            guard let raw = AX.valueString(el, a), !raw.isEmpty else { continue }
+            var norm = raw.lowercased()
+            if !stripName.isEmpty { norm = norm.replacingOccurrences(of: stripName, with: "") }
+            norm = norm.trimmingCharacters(in: .whitespaces)
+            if let num = Double(norm) {
+                norm = num != 0 ? "num+" : "num0"
+            } else {
+                norm = norm.replacingOccurrences(of: #"\d+"#, with: "#", options: .regularExpression)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: " ,.:;|-_"))
+                norm = String(norm.prefix(32))
+            }
+            if !norm.isEmpty { facts.insert("v:\(a)=\(norm)") }
+        }
+    }
+
+    /// Page-level structural surface: the full non-class fact set across the WHOLE
+    /// web area (bounded). This is the "active-speaker container → indicator" hunt
+    /// for an element living OUTSIDE the video tiles — the surface the per-tile
+    /// hunt can't reach. Names are NOT stripped (a page-level indicator may name
+    /// the active speaker, which is itself the signal).
+    static func pageFacts(in webArea: AXUIElement) -> Set<String> {
+        var facts = Set<String>()
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 3500 || depth > 70 { return }
+            n += 1
+            collectFacts(el, into: &facts, stripName: "")
+            for c in AX.children(el) { rec(c, depth + 1) }
+        }
+        rec(webArea, 0)
+        return facts
+    }
+
     /// Hover-control classes Meet adds to the tile under the cursor (and the
     /// auto-shown controls). Their presence means "this tile is hovered."
     static func isHoverChromeToken(_ t: String) -> Bool {
@@ -255,6 +322,7 @@ enum MeetTiles {
         var roleCount: [String: Int] = [:]
         var classes = Set<String>()
         var structure = Set<String>()
+        var facts = Set<String>()
         var count = 0
         var focusedOrSelected = false
         var micOff = false
@@ -281,6 +349,9 @@ enum MeetTiles {
                 if norm.count >= 2 { structure.insert("d:\(String(norm.prefix(40)))") }
             }
 
+            // FULL non-class AX surface for the kssMZb oracle-diff (see collectFacts).
+            collectFacts(el, into: &facts, stripName: lowName)
+
             let combined = [AX.string(el, "AXDescription"), AX.string(el, "AXValue"), AX.string(el, "AXTitle")]
                 .compactMap { $0 }.joined(separator: " ")
             let text = combined.lowercased()
@@ -296,13 +367,15 @@ enum MeetTiles {
         let roleCounts = roleCount.keys.sorted().map { "\($0):\(roleCount[$0]!)" }.joined(separator: "|")
         let classTokens = classes.sorted().joined(separator: ",")
         let structureTokens = structure.sorted().joined(separator: "\u{1f}")
+        let stateFacts = facts.sorted().joined(separator: "\u{1f}")
         let hovered = classes.contains(where: isHoverChromeToken)
         let frame = AX.frame(tile) ?? .zero
         return TileFeatures(name: name, frame: frame, orderIndex: 0,
                             roleCounts: roleCounts, classTokens: classTokens,
                             descendantCount: count, focusedOrSelected: focusedOrSelected,
                             micOff: micOff, markerSpeaking: markerSpeaking,
-                            structureTokens: structureTokens, hovered: hovered)
+                            structureTokens: structureTokens, hovered: hovered,
+                            stateFacts: stateFacts)
     }
 
     /// All AXDOMClassList tokens across the whole web area (bounded). Used to hunt

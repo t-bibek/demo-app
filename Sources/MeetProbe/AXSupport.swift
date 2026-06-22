@@ -34,6 +34,25 @@ enum AX {
         (copy(el, "AXDOMClassList") as? [String]) ?? []
     }
 
+    /// Full list of attribute NAMES this element exposes. The prior structure
+    /// hunt only read a fixed handful (subrole/id/description); this is how we
+    /// catch an indicator keyed on an attribute we never thought to query
+    /// (AXRoleDescription, AXHelp, an audio-level AXValue, an ARIA-derived attr).
+    static func attributeNames(_ el: AXUIElement) -> [String] {
+        var arr: CFArray?
+        return AXUIElementCopyAttributeNames(el, &arr) == .success ? (arr as? [String] ?? []) : []
+    }
+
+    /// Generic attribute value → compact string (String / NSNumber / Bool) for
+    /// the structural fact set. Returns nil for element/array/AXValue types.
+    static func valueString(_ el: AXUIElement, _ attr: String) -> String? {
+        guard let v = copy(el, attr) else { return nil }
+        if let s = v as? String { return s }
+        if let b = v as? Bool { return b ? "true" : "false" }
+        if let n = v as? NSNumber { return n.stringValue }
+        return nil
+    }
+
     static func children(_ el: AXUIElement) -> [AXUIElement] {
         (copy(el, "AXChildren") as? [AXUIElement]) ?? []
     }

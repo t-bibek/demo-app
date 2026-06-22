@@ -41,10 +41,13 @@ FileManager.default.createFile(atPath: jsonlURL.path, contents: nil)
 let jsonl = try? FileHandle(forWritingTo: jsonlURL)
 
 // Per-tile session history (gallery view keeps tiles persistent).
-struct Sample { var t: Double; var pill: Set<String>; var full: Set<String>; var roles: Set<String>; var structure: Set<String>; var hovered: Bool; var width: CGFloat; var order: Int; var micOff: Bool; var speaking: Bool }
+struct Sample { var t: Double; var pill: Set<String>; var full: Set<String>; var roles: Set<String>; var structure: Set<String>; var facts: Set<String>; var hovered: Bool; var width: CGFloat; var order: Int; var micOff: Bool; var speaking: Bool }
 var history: [String: [Sample]] = [:]
 var firstPill: [String: Set<String>] = [:]
-var globalHistory: [(t: Double, tokens: Set<String>)] = []   // whole web-area tokens per sample
+// Whole web-area sample: class tokens + the page-level structural fact set +
+// who occupied the largest "active-speaker container" tile + was anyone speaking.
+struct GlobalSample { var t: Double; var tokens: Set<String>; var facts: Set<String>; var spotName: String; var spotArea: CGFloat; var speakingAny: Bool }
+var globalHistory: [GlobalSample] = []
 var sampleCount = 0
 var sawAnyTile = false
 
@@ -64,9 +67,16 @@ func tick() {
     }
     detectedPlatform = hit.platform
     let rows = MeetTiles.tiles(in: hit.web)
-    globalHistory.append((elapsed, MeetTiles.allClassTokens(in: hit.web)))
     sampleCount += 1
     if !rows.isEmpty { sawAnyTile = true }
+
+    // Active-speaker CONTAINER tracking: the largest tile this tick. In Speaker
+    // view Meet promotes the talker into one big tile — if its occupant switches
+    // in sync with the speaker, reading that name is rotation-proof structural
+    // attribution (Recall's "container → indicator"). In gallery view tiles are
+    // ~equal so this is a no-op (reported as such).
+    var spotName = "", spotArea: CGFloat = 0
+    var speakingAny = false
 
     var tilesJson: [[String: Any]] = []
     var line = String(format: "t=%5.1fs ", elapsed)
@@ -80,6 +90,9 @@ func tick() {
         let roles = Set(f.roleCounts.split(separator: "|").map(String.init))
         // Recall-style structural selector surface (subrole / DOM id / description).
         let structure = Set(f.structureTokens.split(separator: "\u{1f}").map(String.init))
+        // Full non-class AX surface (attr names + bucketed state values) for the
+        // kssMZb oracle-diff in the post-run analysis.
+        let facts = Set(f.stateFacts.split(separator: "\u{1f}").map(String.init))
         // The `eT1oJ` self-cluster is the self tile's HOVER/focus highlight, NOT
         // speech — verified live: it lights up on hover-anywhere and stays on a
         // muted, silent self tile. Only `kssMZb` is the real cross-tile
@@ -91,7 +104,10 @@ func tick() {
         let markerSpk = f.markerSpeaking                          // Zoom "…, active speaker"
         let speaking = kssSpk || markerSpk
         let highlightOnly = !speaking && !full.isDisjoint(with: selfHighlightCluster)
-        history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, roles: roles, structure: structure, hovered: f.hovered, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
+        if speaking { speakingAny = true }
+        let area = f.frame.width * f.frame.height
+        if area > spotArea { spotArea = area; spotName = f.name }
+        history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, roles: roles, structure: structure, facts: facts, hovered: f.hovered, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
         tilesJson.append([
             "name": f.name, "order": f.orderIndex,
             "w": Int(f.frame.width), "h": Int(f.frame.height),
@@ -106,6 +122,10 @@ func tick() {
         else { tag = "·" }
         line += "| \(f.name) \(tag) "
     }
+    globalHistory.append(GlobalSample(
+        t: elapsed, tokens: MeetTiles.allClassTokens(in: hit.web),
+        facts: MeetTiles.pageFacts(in: hit.web),
+        spotName: spotName, spotArea: spotArea, speakingAny: speakingAny))
     if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "platform": detectedPlatform, "tiles": tilesJson]), let jsonl {
         jsonl.write(data); jsonl.write(Data([0x0a]))
     }
@@ -232,6 +252,38 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
             print("   indicator? \(tok)  [\(c)/\(cleanN)]  \(fmtWindows(windows(samples) { !$0.hovered && $0.structure.contains(tok) }))")
         }
     }
+
+    // ORACLE-DIFF — the decisive route-A test. Trusting kssMZb as ground truth
+    // (it tracks real speech), split this tile's NON-hovered samples into speaking
+    // vs silent and find any NON-class fact (attr name or bucketed value) that
+    // co-varies ≥60%. A fact ~100% when speaking / ~0% when silent = a
+    // rotation-proof structural handle — Recall's "container → indicator" — that
+    // ISN'T the obfuscated class. Nothing co-varying = the class is the ONLY AX
+    // speaking signal Chrome exposes here (so route B / audio is correct).
+    let clean = samples.filter { !$0.hovered }
+    let onS = clean.filter { $0.speaking }
+    let offS = clean.filter { !$0.speaking }
+    if onS.count >= 3 && offS.count >= 3 {
+        var onC: [String: Int] = [:], offC: [String: Int] = [:]
+        for s in onS { for f in s.facts { onC[f, default: 0] += 1 } }
+        for s in offS { for f in s.facts { offC[f, default: 0] += 1 } }
+        var hits: [(f: String, onR: Double, offR: Double)] = []
+        for f in Set(onC.keys).union(offC.keys) {
+            let onR = Double(onC[f] ?? 0) / Double(onS.count)
+            let offR = Double(offC[f] ?? 0) / Double(offS.count)
+            if abs(onR - offR) >= 0.6 { hits.append((f, onR, offR)) }
+        }
+        if hits.isEmpty {
+            print("   oracle-diff: NO non-class fact co-varies with kssMZb (spk=\(onS.count)/sil=\(offS.count)) → the class is the ONLY AX speaking signal here")
+        } else {
+            print("   oracle-diff: non-class facts co-varying with kssMZb (spk=\(onS.count)/sil=\(offS.count)) — candidate structural handles:")
+            for h in hits.sorted(by: { abs($0.onR - $0.offR) > abs($1.onR - $1.offR) }).prefix(12) {
+                print(String(format: "     %@  spk=%.0f%% sil=%.0f%%", h.f, h.onR * 100, h.offR * 100))
+            }
+        }
+    } else {
+        print("   oracle-diff: need ≥3 speaking AND ≥3 silent (mouse-off) samples on this tile (have spk=\(onS.count)/sil=\(offS.count))")
+    }
 }
 
 // WHOLE-WEB-AREA token timeline — catches a speaking signal that lives OUTSIDE the
@@ -240,7 +292,7 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
 if !globalHistory.isEmpty {
     let N = globalHistory.count
     var cnt: [String: Int] = [:]
-    for (_, toks) in globalHistory { for t in toks where !isChrome(t) { cnt[t, default: 0] += 1 } }
+    for g in globalHistory { for t in g.tokens where !isChrome(t) { cnt[t, default: 0] += 1 } }
     let inter = cnt.filter { $0.value >= max(1, N / 10) && $0.value <= N * 9 / 10 }
     print("\nWHOLE-PAGE intermittent tokens (anywhere in the web area — the Zoom signal likely hides here):")
     if inter.isEmpty {
@@ -249,13 +301,66 @@ if !globalHistory.isEmpty {
         for (tok, c) in inter.sorted(by: { $0.value > $1.value }).prefix(30) {
             var out: [(Double, Double)] = []
             var st: Double? = nil, last: Double? = nil, miss = 0
-            for (t, toks) in globalHistory {
-                if toks.contains(tok) { if st == nil { st = t }; last = t; miss = 0 }
+            for g in globalHistory {
+                if g.tokens.contains(tok) { if st == nil { st = g.t }; last = g.t; miss = 0 }
                 else if st != nil { miss += 1; if miss > 1 { out.append((st!, last!)); st = nil } }
             }
             if let s = st, let l = last { out.append((s, l)) }
             print("   \(tok)  on \(c)/\(N)  \(fmtWindows(out))")
         }
+    }
+
+    // ── ACTIVE-SPEAKER CONTAINER (Speaker-view structural test) ──────────────
+    // Timeline of who occupied the largest tile. If the occupant SWITCHES in sync
+    // with who's speaking, the container follows the speaker → read the name =
+    // rotation-proof structural attribution. If it never switches (one fixed big
+    // tile, or all tiles equal in gallery), this route doesn't apply on this view.
+    let spotSamples = globalHistory.filter { !$0.spotName.isEmpty }
+    print("\nACTIVE-SPEAKER CONTAINER — occupant of the largest tile over time:")
+    if spotSamples.isEmpty {
+        print("   (no tiles sized — N/A)")
+    } else {
+        var segs: [(name: String, start: Double, end: Double)] = []
+        for g in spotSamples {
+            if var last = segs.last, last.name == g.spotName { last.end = g.t; segs[segs.count - 1] = last }
+            else { segs.append((g.spotName, g.t, g.t)) }
+        }
+        let occupants = Set(segs.map { $0.name })
+        for s in segs { print(String(format: "   %5.1f–%5.1fs  %@", s.start, s.end, s.name)) }
+        if occupants.count <= 1 {
+            print("   → ONE fixed occupant (pinned / gallery) — container does NOT follow the speaker on this view. Try Speaker view.")
+        } else {
+            print("   → container occupant SWITCHES (\(occupants.count) distinct) — compare the windows above to who spoke; if they match, this is the structural handle.")
+        }
+    }
+
+    // ── PAGE-LEVEL STRUCTURAL HUNT (container/indicator outside the tiles) ────
+    // Same full-attribute oracle-diff, but over the WHOLE web area, split by
+    // "was anyone speaking this tick". A page-level fact ~100% speaking / ~0%
+    // silent = an active-speaker indicator element living outside the tiles.
+    let gOn = globalHistory.filter { $0.speakingAny }
+    let gOff = globalHistory.filter { !$0.speakingAny }
+    print("\nPAGE-LEVEL structural hunt (indicator/container outside the tiles):")
+    if gOn.count >= 3 && gOff.count >= 3 {
+        var onC: [String: Int] = [:], offC: [String: Int] = [:]
+        for g in gOn { for f in g.facts { onC[f, default: 0] += 1 } }
+        for g in gOff { for f in g.facts { offC[f, default: 0] += 1 } }
+        var hits: [(f: String, onR: Double, offR: Double)] = []
+        for f in Set(onC.keys).union(offC.keys) {
+            let onR = Double(onC[f] ?? 0) / Double(gOn.count)
+            let offR = Double(offC[f] ?? 0) / Double(gOff.count)
+            if abs(onR - offR) >= 0.6 { hits.append((f, onR, offR)) }
+        }
+        if hits.isEmpty {
+            print("   NO page-level non-class fact toggles with speech (spk=\(gOn.count)/sil=\(gOff.count)) → no container/indicator element outside the tiles either")
+        } else {
+            print("   page-level facts toggling with speech (spk=\(gOn.count)/sil=\(gOff.count)) — candidate container/indicator:")
+            for h in hits.sorted(by: { abs($0.onR - $0.offR) > abs($1.onR - $1.offR) }).prefix(15) {
+                print(String(format: "     %@  spk=%.0f%% sil=%.0f%%", h.f, h.onR * 100, h.offR * 100))
+            }
+        }
+    } else {
+        print("   need ≥3 speaking AND ≥3 fully-silent ticks (have spk=\(gOn.count)/sil=\(gOff.count)) — pause between turns so there are silent samples")
     }
 }
 
