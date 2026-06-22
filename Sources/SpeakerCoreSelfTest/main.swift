@@ -108,7 +108,19 @@ check(cleanParticipantName("Bidheyak Thapa's Zoom Meeting - Camera and microphon
 check(cleanParticipantName("Address and search bar") == nil, "browser chrome rejected")
 check(cleanParticipantName("Share screen") == nil, "control label 'Share screen' rejected")
 check(cleanParticipantName("Present now") == nil, "control label 'Present now' rejected")
+check(cleanParticipantName("AI Companion") == nil, "zoom 'AI Companion' rejected")
+check(cleanParticipantName("React") == nil, "zoom 'React' rejected")
+check(cleanParticipantName("stop my video") == nil, "zoom 'stop my video' rejected")
+check(cleanParticipantName("You are muted") == nil, "zoom 'You are muted' rejected")
+check(cleanParticipantName("Audio options") == nil, "zoom native 'Audio options' rejected")
+check(cleanParticipantName("Participants options") == nil, "zoom native 'Participants options' rejected")
+check(cleanParticipantName("Mute my audio") == nil, "zoom native 'Mute my audio' rejected")
+check(cleanParticipantName("Stop video") == nil, "zoom native 'Stop video' rejected")
+check(cleanParticipantName("My notes off") == nil, "zoom native 'My notes off' rejected")
+check(cleanParticipantName("Upgrade to Pro") == nil, "zoom native 'Upgrade to Pro' banner rejected")
+check(cleanParticipantName("David's Iphone") == "David's Iphone", "zoom native phone participant still a name")
 check(cleanParticipantName("Bidheyak Thapa") == "Bidheyak Thapa", "real name still passes after control filters")
+check(cleanParticipantName("Wedding thapas") == "Wedding thapas", "real name 'Wedding thapas' still passes")
 check(isSpeakingMarker("Bidheyak Thapa, Computer audio unmuted, active speaker"), "active-speaker marker detected")
 check(!isSpeakingMarker("Neymar Thapa, Computer audio muted"), "muted tile is not speaking")
 
@@ -133,6 +145,37 @@ check(meetTileIsSpeaking(classTokens: ["eT1oJ", "hk9qKe"]), "self spotlight clus
 check(!meetTileIsSpeaking(classTokens: ["FTMc0c", "OFfHfd", "urlhDe"]), "silent state -> not speaking")
 check(!meetTileIsSpeaking(classTokens: []), "empty -> not speaking")
 check(meetTileIsSpeaking(classTokens: ["xyz"], rules: MeetSpeakerRules(speakingClasses: ["xyz"], version: "test")), "custom remote-config ruleset works")
+
+// MARK: Zoom native mute-gate attribution (B1)
+print("Zoom mute-gate:")
+// 1:1, both unmuted, remote talking (system audio up, mic quiet) -> name the remote.
+equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "You",
+        remoteActive: true, remoteUnmutedNames: ["Neymar junior"]),
+      ["Neymar junior"], "remote talks (1:1 both unmuted) -> remote named")
+// You talking (mic up, you unmuted), no remote audio -> name you by roster name.
+equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: true, localName: "Bibek Thapa",
+        remoteActive: false, remoteUnmutedNames: ["Neymar junior"]),
+      ["Bibek Thapa"], "you talk -> local named")
+// Muted local + mic picks up echo -> not logged.
+equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: false, localName: "Bibek Thapa",
+        remoteActive: false, remoteUnmutedNames: []),
+      [], "muted local not logged on echo")
+// 2+ remotes unmuted, remote audio -> ambiguous -> Someone.
+equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "You",
+        remoteActive: true, remoteUnmutedNames: ["A", "B"]),
+      ["Someone"], "2+ unmuted remotes -> Someone")
+// Remote audio but nobody read as unmuted -> Someone (mute read lagged / panel partial).
+equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "You",
+        remoteActive: true, remoteUnmutedNames: []),
+      ["Someone"], "remote audio, none unmuted -> Someone")
+// Silence -> nothing.
+equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "You",
+        remoteActive: false, remoteUnmutedNames: ["A"]),
+      [], "silence -> nothing")
+// You + a single remote both audibly active -> both logged.
+equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: true, localName: "Bibek Thapa",
+        remoteActive: true, remoteUnmutedNames: ["Neymar junior"]),
+      ["Bibek Thapa", "Neymar junior"], "overlap -> both named")
 
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

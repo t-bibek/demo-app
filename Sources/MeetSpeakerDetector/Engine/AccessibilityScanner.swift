@@ -16,6 +16,14 @@ struct ScannedWindow {
     var participants: [String]
     /// Best-effort local mute read: true = unmuted, false = muted, nil = unknown.
     var localUserUnmuted: Bool?
+    /// True when the window exposes a DIRECT active-speaker read (Meet's kssMZb
+    /// class / Zoom-web's "active speaker" marker). False for native Zoom & Teams,
+    /// which have no AX speaking signal — the engine then mute-gates or falls back
+    /// to the anonymous "Someone". (Per-window so native Zoom ≠ Zoom web.)
+    var directSpeakerRead: Bool
+    /// Native Zoom roster (name + mute + isMe) for mute-gated attribution; empty
+    /// for every other platform.
+    var zoomRoster: [ZoomRosterEntry]
 }
 
 /// The macOS equivalent of the original's Windows UI Automation engine.
@@ -89,10 +97,31 @@ final class AccessibilityScanner {
                 // walk catches — so run a dedicated per-tile pass for Meet.
                 var speakers = dedup(collector.speakers)
                 var participants = dedup(collector.participants)
+                var zoomRoster: [ZoomRosterEntry] = []
+
                 if platform == .meet {
                     let m = meetSpeakingNames(in: window)
                     speakers = m.speakers
                     participants = dedup(participants + m.participants)
+                } else if platform == .zoom && isNative {
+                    // Native Zoom has no AX speaking signal — read the roster +
+                    // per-participant mute instead (see zoomNativeRoster), and
+                    // skip the Zoom Workplace home/shell window so its nav chrome
+                    // can't masquerade as a meeting.
+                    zoomRoster = zoomNativeRoster(in: window)
+                    let isMeeting = !zoomRoster.isEmpty
+                        || collector.localUserUnmuted != nil
+                        || title.lowercased().contains("meeting")
+                    if !isMeeting { continue }
+                    speakers = []   // no direct speaking read on native Zoom
+                    participants = dedup(participants + zoomRoster.map { $0.name })
+                }
+
+                let directSpeakerRead: Bool
+                switch platform {
+                case .meet:  directSpeakerRead = true
+                case .zoom:  directSpeakerRead = !isNative   // web marker yes; native no
+                case .teams: directSpeakerRead = false
                 }
 
                 results.append(ScannedWindow(
@@ -102,7 +131,9 @@ final class AccessibilityScanner {
                     treeOk: treeOk,
                     speakers: speakers,
                     participants: participants,
-                    localUserUnmuted: collector.localUserUnmuted
+                    localUserUnmuted: collector.localUserUnmuted,
+                    directSpeakerRead: directSpeakerRead,
+                    zoomRoster: zoomRoster
                 ))
             }
         }
@@ -246,6 +277,40 @@ final class AccessibilityScanner {
             if AXValueGetValue(sv as! AXValue, .cgSize, &s) { return CGRect(origin: .zero, size: s) }
         }
         return nil
+    }
+
+    // MARK: Native Zoom roster (no AX speaking signal — read roster + mute)
+
+    /// Reads native Zoom's Participants-panel rows: each carries text like
+    /// "<Name>, Computer audio muted/unmuted" (verified; docs/zoom-native-detection.md).
+    /// Returns one entry per participant with mute state + a local-user ("(me)")
+    /// flag. Empty when this isn't a meeting window (e.g. the Zoom Workplace home
+    /// shell, whose rows never carry mic-state text).
+    private func zoomNativeRoster(in window: AXUIElement) -> [ZoomRosterEntry] {
+        var byName: [String: ZoomRosterEntry] = [:]
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= maxNodesPerWindow || depth > maxDepth { return }
+            n += 1
+            for attr in ["AXDescription", "AXValue", "AXTitle"] {
+                guard let raw = axString(el, attr) else { continue }
+                let low = raw.lowercased()
+                guard low.contains("computer audio") else { continue }
+                let isMe = low.contains("(me)") || low.contains(", me)")
+                let unmuted = low.contains("audio unmuted")
+                // Strip a trailing "(Host, me)" role tag, then let cleanParticipantName
+                // cut the ", Computer audio …" clause and reject control labels.
+                let noParen = raw.replacingOccurrences(
+                    of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
+                if let name = cleanParticipantName(noParen), byName[name] == nil {
+                    byName[name] = ZoomRosterEntry(name: name, unmuted: unmuted, isMe: isMe)
+                }
+                break
+            }
+            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
+        }
+        rec(window, 0)
+        return Array(byName.values)
     }
 
     // MARK: Google Meet per-tile active-speaker scan

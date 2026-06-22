@@ -1,0 +1,203 @@
+# Meet Active-Speaker Without Hardcoded CSS — Recall's mechanism + our migration plan
+
+**Goal:** stop depending on Google Meet's obfuscated, ~6-week-rotating CSS class
+(`kssMZb` …) for active-speaker detection, by adopting the strategy Recall's shipping
+binary actually uses. This doc records **everything we reverse-engineered about Recall's
+Meet logic** (so you can build on it) and gives a **phased plan** to get the demo-app off
+the hardcoded class.
+
+_Verified 2026-06-21 against `@recallai/desktop-sdk@2.0.19` (commit `41a8616`, macOS arm64).
+Tags: **[verified]** = read from the unstripped binary / our source; **[inferred]** =
+compiled logic we reason about but can't read directly._
+
+---
+
+## 0. TL;DR
+
+- **Recall does NOT use a CSS class for Meet active-speaker — hardcoded or remote.** [verified]
+  - 0 hits for our classes (`kssMZb,eT1oJ,hk9qKe,nn1vQb,s4hFTd,tWDL4c,yHy1rc,FTMc0c`) in all 3 binaries.
+  - No Meet `scrapeJS`/class-list strings. The remote scraping rules (S3 manifest) are **Zoom-version-keyed → Zoom-only**.
+- **Recall infers Meet active-speaker** from **tile geometry + an AX speaker-set + audio VAD**, keyed by participant **ID** (`Set<Int>`), then syncs it with the video rects. [verified symbols; exact inputs inferred]
+- **Our app today depends on the rotating obfuscated class** (`MeetSpeakerRules.builtin`) — the brittle part.
+- **Plan:** make **audio VAD** ("is anyone speaking, when") + **geometry** ("which tile is promoted") the durable backbone; demote the class to a **remote-config'd, telemetered fallback** for the gallery-view multi-party case. You can't 100% delete a per-tile signal for 3+ people in gallery view (neither did Recall) — but you can stop *shipping a build* every rotation.
+
+---
+
+## 1. What Recall's binary actually does for Meet [verified — symbols]
+
+### 1.1 The active-speaker code path (demangled `nm`)
+```
+GoogleMeetMeetingRecorder.inferActiveSpeaker(...)                 ← "infer", not "read"
+GoogleMeetSafariMeetingRecorder.inferActiveSpeaker(windowId: UInt32) -> ()
+GoogleMeetMeetingRecorder.syncClientFramesAndActiveSpeaker() -> ()  ← sorts MixedVideoRect (tile GEOMETRY) + maps MeetingParticipant
+GoogleMeetMeetingRecorder.lastActiveSpeakerId : Int?               ← result keyed by participant ID
+GoogleMeetMeetingRecorder.lastAxActiveSpeakerSet : Set<Int>        ← AX-derived speaker set (IDs, not class strings)
+inferActiveSpeakerCallCount                                        ← called repeatedly (polled/observed)
+"active speaker container" / "active speaker indicator"           ← it locates a container + indicator node
+```
+Read this as: Recall **derives a set of speaking participant IDs** (`lastAxActiveSpeakerSet`)
+via a compiled `inferActiveSpeaker` routine, then **correlates it with the video-tile
+rectangles** (`syncClientFramesAndActiveSpeaker` over `MixedVideoRect`) — i.e. **geometry is
+in the loop**, and the output is an **ID**, not a class match.
+
+### 1.2 What it is NOT [verified — absence]
+- **No hardcoded obfuscated classes** — `grep` for our 8 classes across exe+libbot+ui_recorder = **0**.
+- **No Meet remote rules** — the only remote ruleset (`recallai-desktop-sdk-scraping.s3…/manifest.json`)
+  is keyed by **Zoom client versions** (`5.16.x … 6.5.9.61929`) and drives `ZoomScraperScripts.scrapeJS`. Meet isn't in it.
+- **No Meet `scrapeJS`** — JS-over-AX scraping exists only for Zoom.
+
+### 1.3 The AX attributes it reads per node (`libui_recorder`) [verified]
+`AXRole, AXSubrole, AXTitle, AXDescription, AXValue,` **`AXDOMClassList, AXDOMIdentifier,
+AXWindowNumber, AXFrame, AXPosition, AXSize, AXChildren, AXDocument`**.
+→ It *can* see the class list (`AXDOMClassList`) **and** geometry (`AXFrame/Position/Size`) +
+subtree (`AXChildren`). It chose to key on **geometry + structure + an ID set**, not the class string.
+
+### 1.4 Event model + fusion [verified]
+- **Event-driven:** `AXObserver` + `kAXTitleChangedNotification` (not brute-force polling).
+- **Audio fusion:** `AxVad`, `voice_activity_detector`, `webrtc-vad`, `AudioLevelMessage{rms}`,
+  `DSDK_VAD_IMPROVEMENT`, `exclude_null_active_speaker`.
+- **Modes:** `ActiveSpeakerDetectionMode`, `ToggleManualActiveSpeakerDetection`,
+  `SetActiveSpeakerDetectionMode` — an auto/manual switch over the fusion.
+
+### 1.5 Honest boundary [inferred]
+The **exact inputs** to `inferActiveSpeaker` (geometry-only? geometry + a non-class indicator
+child? geometry + VAD weighting?) are **compiled and not string-inspectable**. What's certain:
+(a) it does **not** depend on the obfuscated class name, and (b) geometry (`MixedVideoRect`) and
+audio VAD are part of the decision, output as a participant **ID set**.
+
+---
+
+## 2. What our app does today [verified — source]
+
+- `Sources/SpeakerCore/MeetSpeakerRules.swift` — `builtin.speakingClasses = ["kssMZb",…7]`,
+  `meetTileIsSpeaking(classTokens:)` = "any of these classes present ⇒ speaking".
+- `Sources/MeetSpeakerDetector/Engine/AccessibilityScanner.swift`
+  - `meetSpeakingNames(in:)` — collect `AXStaticText` names → climb to tile via `meetTileAncestor`
+    (already **geometry-based**: `AXFrame` area 8k–1.8M, aspect ≤ 4) → read `axClassList(tile)` →
+    `meetTileIsSpeaking`.
+  - We **already read `AXFrame` and `AXDOMClassList`** — the primitives for the durable approach exist.
+- `platformExposesSpeakerNames(.meet) == true` (we closed the earlier gap).
+- `Sources/MeetProbe/*` — the per-tile structural probe used to discover the classes (ground-truthed).
+
+**The single dependency to remove:** `meetTileIsSpeaking` keys *only* on the obfuscated class set.
+That string rotates ~6 weeks (and is layout-dependent, and the remote-spotlight case is unverified).
+
+---
+
+## 3. Target architecture — three signals, fused (build upon Recall)
+
+Mirror Recall: **derive a per-participant "speaking" decision from durable signals, with the class
+demoted to a remote-config fallback.** None of these alone is sufficient across all Meet layouts —
+the point is the *fusion* degrades gracefully.
+
+| Signal | What it gives | Durable? | Best for |
+|---|---|---|---|
+| **A. Audio VAD** (on captured system audio) | *someone* is speaking + precise on/off timing | ✅ rotation-proof, view-independent | gating; "Someone" floor; timing |
+| **B. Tile geometry** (`AXFrame/Position/Size`, DOM order) | *which* tile is promoted/enlarged/spotlighted | ✅ in speaker/spotlight view | attribution when layout reacts |
+| **C. Per-tile structure** (`AXChildren` shape: a speaking-indicator child node) | *which* tile gained an indicator subtree | ⚠️ needs MeetProbe verification | gallery view, class-independent |
+| **D. CSS class** (`AXDOMClassList` vs `MeetSpeakerRules`) | *which* tile is speaking (today's signal) | ❌ rotates ~6 wks | gallery view fallback **only**, remote-config'd |
+
+**Fusion rule (per scan/observer tick):**
+1. **VAD** decides *if* anyone is speaking. If silent → no speaker. (Kills false positives from a stale class.)
+2. If speaking, attribute to a tile using the **highest-confidence available** of B → C → D:
+   - speaker/spotlight view → **geometry** (largest/most-recently-promoted tile).
+   - gallery view → **indicator-child (C)** if verified, else **class (D)**.
+3. If no tile attributable but VAD says speech → emit **`"Someone"`** (named-floor, like Recall's `exclude_null_active_speaker` handling).
+4. Map tile → name via the existing `AXStaticText` roster; key the timeline on a **stable per-tile ID** (DOM order + name), not the class.
+
+This is exactly Recall's shape: VAD + geometry + AX → a participant **ID** set, class-independent at the core.
+
+---
+
+## 4. Migration plan (phased, each shippable)
+
+**Phase 0 — instrument (done / `MeetProbe`).** Keep `MeetProbe` as the ground-truth harness; add a
+per-tile feature dump (frame, order, class set, child-role signature, mic node) sampled on a scripted
+call. This is how you verify B/C and re-derive D when it rotates.
+
+**Phase 1 — Audio VAD backbone.** Run a VAD (Silero/WebRTC) on the system audio you already capture
+(`SystemAudioMeter`). Produce `speechActive: Bool` + on/off timestamps. Gate all attribution on it.
+*Immediately* removes false speakers and gives a rotation-proof "Someone" floor. **No class needed for this.**
+
+**Phase 2 — Geometry attribution.** From the per-tile model, detect the **promoted/spotlit tile**
+(largest `AXFrame` area, or the tile whose area grew across ticks, or moved to spotlight position).
+Attribute the VAD speech to that tile. Covers speaker/spotlight view with **zero class dependency**.
+
+**Phase 3 — Demote the class to remote-config fallback.** Keep `MeetSpeakerRules` but:
+- only consult it in **gallery view** when geometry can't decide;
+- load it from **remote config** (it's already `Codable` with a `version` field — fetch URL, ETag-cache,
+  fall back to `builtin`);
+- add **telemetry**: count `VAD speech AND a tile is attributable by geometry/child BUT class-set matched 0`
+  → that's your "Meet rotated the class" signal → refresh remote config / alert. No app release.
+
+**Phase 4 — Per-tile indicator-child (C) to cut the last class dependency.** Use MeetProbe to test
+whether the speaking tile gains a **non-class** child node (an indicator/equalizer element) detectable via
+`AXChildren` role-shape. If yes → use it for gallery-view attribution and the class becomes pure backup.
+
+**Phase 5 — `AXObserver` + event-drive.** Replace the polling `walk()` with `AXObserver` notifications
+(Recall uses `kAXTitleChangedNotification`) on the Meet web area; lower CPU, precise transitions.
+
+> Realistic end-state: **VAD + geometry handle speaker-view and the "is anyone talking" question with no
+> class at all; gallery-view multi-party attribution still needs a per-tile signal (indicator-child or
+> class), but the class is now remote-config'd + telemetered, so a rotation is a config push, not a release.**
+> Recall hit the same wall — that's why its remote ruleset exists (for Zoom) and its Meet path leans on
+> geometry + VAD.
+
+---
+
+## 5. Concrete shapes (Swift sketch)
+
+```swift
+struct MeetTile {                       // built from AXChildren of the Meet AXWebArea
+    let name: String?                   // AXStaticText descendant, cleanParticipantName
+    let frame: CGRect                   // AXFrame  (geometry — durable)
+    let orderIndex: Int                 // DOM order among tiles (stable-ish per layout)
+    let classTokens: Set<String>        // AXDOMClassList (fallback signal only)
+    let childRoleSig: String            // hash of child roles/subroles (indicator-child probe)
+    let micMuted: Bool?                 // per-tile mic aria (narrow candidates; mute ≠ speaking)
+}
+
+enum SpeakingSignal { case geometry, indicatorChild, cssClass, none }
+
+func activeSpeaker(tiles: [MeetTile], prev: [MeetTile], vadSpeechActive: Bool,
+                   rules: MeetSpeakerRules) -> (name: String?, via: SpeakingSignal) {
+    guard vadSpeechActive else { return (nil, .none) }              // 1) VAD gate
+    if let t = promotedTile(tiles, prev) { return (t.name, .geometry) }      // 2) speaker view
+    if let t = tiles.first(where: { gainedIndicatorChild($0, prev) }) {       // 3) gallery, class-free
+        return (t.name, .indicatorChild)
+    }
+    if let t = tiles.first(where: { meetTileIsSpeaking(classTokens: $0.classTokens, rules: rules) }) {
+        return (t.name, .cssClass)                                  // 4) class fallback (remote-config)
+    }
+    return ("Someone", .none)                                       // 5) VAD floor
+}
+```
+`promotedTile` = the tile whose `frame.area` is largest *or* grew most vs `prev`; `gainedIndicatorChild`
+= `childRoleSig` changed in the way MeetProbe verified corresponds to speaking. Emit telemetry whenever the
+chosen `via` is `.cssClass` (you're on the brittle path) or `.none` while VAD is active (attribution gap).
+
+---
+
+## 6. Verification / re-derivation
+
+```bash
+# --- Recall: prove NO Meet class, geometry+VAD inference instead ---
+SDK=/Users/bibekthapa/projects/work/recall-demos/dsdk-tutorial/node_modules/@recallai/desktop-sdk
+for c in kssMZb eT1oJ hk9qKe nn1vQb s4hFTd tWDL4c yHy1rc FTMc0c; do        # expect 0 each
+  echo "$c $(strings -a "$SDK"/desktop_sdk_macos_exe "$SDK"/Frameworks/*.dylib | grep -c "$c")"; done
+nm "$SDK/desktop_sdk_macos_exe" | swift demangle | grep -iE 'GoogleMeet.*(inferActiveSpeaker|syncClientFramesAndActiveSpeaker|lastAxActiveSpeakerSet)'
+curl -s https://recallai-desktop-sdk-scraping.s3.us-east-1.amazonaws.com/manifest.json | head   # Zoom versions → Zoom-only
+
+# --- our app: the dependency to remove + the primitives we already have ---
+cd /Users/bibekthapa/projects/work/demo-app
+sed -n '42,52p' Sources/SpeakerCore/MeetSpeakerRules.swift                 # the hardcoded class union
+sed -n '222,300p' Sources/MeetSpeakerDetector/Engine/AccessibilityScanner.swift  # axClassList + axFrame + meetTileAncestor
+swift run MeetProbe 45 250                                                  # ground-truth per-tile watch
+```
+
+## 7. Provenance
+- **[verified]**: §1.1–1.4, §2 — read from the unstripped binary / our source on 2026-06-21.
+- **[inferred]**: §1.5 — the exact `inferActiveSpeaker` inputs are compiled. The *certain* facts are the
+  absence of class dependence and the presence of geometry (`MixedVideoRect`) + VAD in the path.
+- Re-run §6 before trusting any specific claim — binaries and Meet's DOM rotate.
+- Companion: `recall-and-demo-extraction.md` (full SDK extraction surface + Zoom-native recording).

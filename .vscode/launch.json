@@ -59,6 +59,46 @@
             "target": "AXDump",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release AXDump"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Debug ZoomProbe",
+            "target": "ZoomProbe",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ZoomProbe"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Release ZoomProbe",
+            "target": "ZoomProbe",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ZoomProbe"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Debug MeetProbe",
+            "target": "MeetProbe",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MeetProbe"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Release MeetProbe",
+            "target": "MeetProbe",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MeetProbe"
         }
     ]
 }

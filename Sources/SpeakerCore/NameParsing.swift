@@ -67,6 +67,8 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "join", "settings", "more", "reactions", "raise", "stop", "start",
         "video", "audio", "view", "present", "record", "menu", "close",
         "minimize", "search", "send", "someone", "you", "host", "co-host",
+        // Zoom web toolbar labels that leak in as fake tiles:
+        "react", "switch", "avatar", "end", "home", "apps", "notes", "whiteboard",
     ]
     if rejectExact.contains(lower) { return false }
 
@@ -79,6 +81,10 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "share screen", "screen share", "sharing", "present", "everyone",
         "view all", "add people", "host control", "call control", "more option",
         "activities", "settings", "captions", "reaction",
+        // Zoom web control phrases:
+        "companion", "my video", "you are", "permission", "ellipsis", "panel",
+        // Zoom NATIVE toolbar / banner labels (leak in as fake participant rows):
+        "options", "upgrade to", "my notes", "my audio", "stop video", "start video",
     ]
     if rejectSubstrings.contains(where: { lower.contains($0) }) { return false }
 

@@ -3,23 +3,28 @@ import ApplicationServices
 import CoreGraphics
 import SpeakerCore
 
-// MeetProbe v2 — confirming instrument for docs/recall-and-demo-extraction.md §4.
+// MeetProbe — per-tile speaker probe for Meet / Zoom / Teams (web).
 //
-// v1 proved per-tile AX features are NOT flat and surfaced a toggling name-pill
-// class (`vLRPrf`). v2 isolates the NAME-PILL class set per tile and, at the end,
-// auto-finds INTERMITTENT pill tokens + the time windows they were on — so a
-// narrated run ("A talking now… now B…") directly reveals which token == speech.
+// Detects "who is speaking" per tile via BOTH signals and reports which fired:
+//   • marker  — Zoom-style text in AXDescription ("…, active speaker")
+//   • class   — Meet-style AXDOMClassList token (MeetSpeakerRules: kssMZb, …)
+// Plus the §4 structural analysis (intermittent class tokens + on-windows) so a
+// narrated run reveals/​verifies the signal on any platform.
 //
-//   swift run MeetProbe [durationSeconds] [intervalMs]
-//   swift run MeetProbe 45 250
+//   swift run MeetProbe [meet|zoom|teams] [durationSeconds] [intervalMs]
+//   swift run MeetProbe zoom 45 250
+//   swift run MeetProbe 45 250          # auto-detect platform
 //
-// Best signal: GALLERY view, 2-3 cameras on, DON'T hover tiles or open settings.
+// Best signal: GALLERY view, 2-3 cameras on, narrate turns, DON'T hover tiles.
 
 setbuf(stdout, nil)
 
 let args = Array(CommandLine.arguments.dropFirst())
-let duration = Double(args.first ?? "") ?? 45.0
-let intervalMs = Int(args.dropFirst().first ?? "") ?? 250
+let knownPlatforms = ["meet", "zoom", "teams"]
+let platformArg = args.first(where: { knownPlatforms.contains($0.lowercased()) })?.lowercased()
+let nums = args.filter { Double($0) != nil }
+let duration = Double(nums.first ?? "") ?? 45.0
+let intervalMs = Int(nums.dropFirst().first ?? "") ?? 250
 
 guard AX.isTrusted else {
     print("Accessibility permission is NOT granted. Grant it in System Settings >")
@@ -39,22 +44,27 @@ let jsonl = try? FileHandle(forWritingTo: jsonlURL)
 struct Sample { var t: Double; var pill: Set<String>; var full: Set<String>; var width: CGFloat; var order: Int; var micOff: Bool; var speaking: Bool }
 var history: [String: [Sample]] = [:]
 var firstPill: [String: Set<String>] = [:]
+var globalHistory: [(t: Double, tokens: Set<String>)] = []   // whole web-area tokens per sample
 var sampleCount = 0
 var sawAnyTile = false
 
 let t0 = Date()
 
+var detectedPlatform = "?"
+
 func tick() {
     let elapsed = Date().timeIntervalSince(t0)
-    guard let web = MeetTiles.findMeetWebAreas().first else {
+    guard let hit = MeetTiles.findMeetingWebAreas(platform: platformArg).first else {
         if sampleCount == 0 {
-            print(String(format: "t=%5.1fs  (no Meet web area found) — diagnostic:", elapsed))
+            print(String(format: "t=%5.1fs  (no %@ web area found) — diagnostic:", elapsed, platformArg ?? "meeting"))
             print(MeetTiles.debugSummary()); print("")
         }
         sampleCount += 1
         return
     }
-    let rows = MeetTiles.tiles(in: web)
+    detectedPlatform = hit.platform
+    let rows = MeetTiles.tiles(in: hit.web)
+    globalHistory.append((elapsed, MeetTiles.allClassTokens(in: hit.web)))
     sampleCount += 1
     if !rows.isEmpty { sawAnyTile = true }
 
@@ -64,25 +74,29 @@ func tick() {
         let f = r.features
         let pill = Set(f.pillTokens.split(separator: ",").map(String.init))
         let full = Set(f.classTokens.split(separator: ",").map(String.init))
-        let speaking = meetTileIsSpeaking(classTokens: full)   // kssMZb rule
+        let classSpk = meetTileIsSpeaking(classTokens: full)     // Meet kssMZb rule
+        let markerSpk = f.markerSpeaking                          // Zoom "…, active speaker"
+        let speaking = classSpk || markerSpk
         history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
         tilesJson.append([
             "name": f.name, "order": f.orderIndex,
             "w": Int(f.frame.width), "h": Int(f.frame.height),
             "pillTokens": f.pillTokens, "classTokens": f.classTokens,
             "micOff": f.micOff, "speaking": speaking,
+            "markerSpeaking": markerSpk, "classSpeaking": classSpk,
         ])
-        line += "| \(f.name) \(speaking ? "🔊SPEAKING" : "·") mic=\(f.micOff ? "OFF" : "on") "
+        let tag = speaking ? "🔊SPEAKING(\(markerSpk ? "mark" : "")\(markerSpk && classSpk ? "+" : "")\(classSpk ? "cls" : ""))" : "·"
+        line += "| \(f.name) \(tag) "
     }
-    if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "tiles": tilesJson]), let jsonl {
+    if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "platform": detectedPlatform, "tiles": tilesJson]), let jsonl {
         jsonl.write(data); jsonl.write(Data([0x0a]))
     }
     print(line)
 }
 
-print("MeetProbe v2 — name-pill active-modifier watch")
+print("MeetProbe — per-tile speaker probe (\(platformArg ?? "auto-detect"))")
 print("duration=\(Int(duration))s interval=\(intervalMs)ms  output=\(outDir.path)")
-print("Per tile: #order Ww pill=<pillTokenCount> +{tokens beyond first-seen baseline}")
+print("Per tile: 🔊SPEAKING(mark=Zoom text marker / cls=Meet class rule)")
 print("GALLERY view, 2-3 cameras on. Narrate turns out loud; DON'T hover tiles/open settings.\n")
 
 var ticksRemaining = Int(duration * 1000.0 / Double(intervalMs))
@@ -117,9 +131,9 @@ func fmtWindows(_ ws: [(Double, Double)]) -> String {
     ws.map { String(format: "%.1f-%.1f", $0.0, $0.1) }.joined(separator: ", ")
 }
 
-print("\n================ SESSION ANALYSIS ================")
+print("\n================ SESSION ANALYSIS  (platform: \(detectedPlatform)) ================")
 if !sawAnyTile {
-    print("No Meet tiles detected. Use GALLERY view, Meet tab FOREGROUND, cameras on.")
+    print("No tiles detected. Use GALLERY view, the meeting tab FOREGROUND, cameras on.")
     print("samples: \(sampleCount)")
     exit(0)
 }
@@ -158,11 +172,9 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
     let n = samples.count
     let medianW = samples.map { $0.width }.sorted()[n / 2]
     print("\n● \(name)  (present \(n)/\(sampleCount), medianWidth=\(Int(medianW)))")
-    // Verified speaking rule (kssMZb) + mic state — compare these to your narration.
+    // SPEAKING = Zoom text marker OR Meet class rule — compare to your narration.
     let spkWin = windows(samples) { $0.speaking }
-    let micOffWin = windows(samples) { $0.micOff }
-    print("   🔊 SPEAKING (kssMZb rule) windows: \(spkWin.isEmpty ? "(never)" : fmtWindows(spkWin))")
-    print("   🎙️ mic-OFF windows:              \(micOffWin.isEmpty ? "(never)" : fmtWindows(micOffWin))")
+    print("   🔊 SPEAKING (marker OR class) windows: \(spkWin.isEmpty ? "(never)" : fmtWindows(spkWin))")
     // All other per-tile intermittent tokens (to catch a separate MUTE class etc.)
     let cand = (tileTokenWindows[name] ?? [:]).filter { perTileTokens[$0.key] != nil }
     for (tok, ws) in cand.sorted(by: { $0.value.count > $1.value.count }) {
@@ -170,8 +182,33 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
     }
 }
 
+// WHOLE-WEB-AREA token timeline — catches a speaking signal that lives OUTSIDE the
+// video tiles (e.g. Zoom's audio-* classes in the footer / participants panel).
+// Compare the windows below to who you narrated speaking.
+if !globalHistory.isEmpty {
+    let N = globalHistory.count
+    var cnt: [String: Int] = [:]
+    for (_, toks) in globalHistory { for t in toks where !isChrome(t) { cnt[t, default: 0] += 1 } }
+    let inter = cnt.filter { $0.value >= max(1, N / 10) && $0.value <= N * 9 / 10 }
+    print("\nWHOLE-PAGE intermittent tokens (anywhere in the web area — the Zoom signal likely hides here):")
+    if inter.isEmpty {
+        print("   (none toggled — no readable speaking signal anywhere in AX on this build)")
+    } else {
+        for (tok, c) in inter.sorted(by: { $0.value > $1.value }).prefix(30) {
+            var out: [(Double, Double)] = []
+            var st: Double? = nil, last: Double? = nil, miss = 0
+            for (t, toks) in globalHistory {
+                if toks.contains(tok) { if st == nil { st = t }; last = t; miss = 0 }
+                else if st != nil { miss += 1; if miss > 1 { out.append((st!, last!)); st = nil } }
+            }
+            if let s = st, let l = last { out.append((s, l)) }
+            print("   \(tok)  on \(c)/\(N)  \(fmtWindows(out))")
+        }
+    }
+}
+
 if !sharedTokens.isEmpty {
-    print("\nGLOBAL tokens (toggle on >1 tile — likely UI state, NOT a speaker signal): \(sharedTokens.keys.sorted().joined(separator: ", "))")
+    print("\nper-tile tokens shared across >1 tile (likely UI state): \(sharedTokens.keys.sorted().joined(separator: ", "))")
 }
 if sawChrome {
     print("⚠️  Hover-control chrome detected (Bz112c/LgbsSe/MSqqjf). KEEP THE MOUSE STILL and off the tiles next run — those classes are cursor-driven noise.")

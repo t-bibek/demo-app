@@ -40,6 +40,15 @@ let package = Package(
             dependencies: ["SpeakerCore"],
             path: "Sources/MeetProbe"
         ),
+        // Native-Zoom (us.zoom.xos) analog of MeetProbe. Zoom's grid is Metal /
+        // AX-opaque (recall-and-demo-extraction.md §1.11), so this fingerprints
+        // the Participants-panel rows (roles + text + state, no AXDOMClassList)
+        // and reports which tokens toggle with speech. Run: `swift run ZoomProbe`.
+        .executableTarget(
+            name: "ZoomProbe",
+            dependencies: ["SpeakerCore"],
+            path: "Sources/ZoomProbe"
+        ),
         .testTarget(
             name: "SpeakerCoreTests",
             dependencies: ["SpeakerCore"],

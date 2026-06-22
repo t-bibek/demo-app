@@ -6,7 +6,8 @@ marks **[verified]** vs **[inferred]**, and — crucially — tells you **how to
 re-prove every claim yourself** (commands + file refs), because the underlying
 artifacts (Recall's shipping binary, Google Meet's DOM/AX tree) change over time.
 
-_Last verified: 2026-06-20. Recall `@recallai/desktop-sdk@2.0.19` (commit `41a8616`), macOS arm64._
+_Last verified: 2026-06-21. Recall `@recallai/desktop-sdk@2.0.19` (commit `41a8616`), macOS arm64._
+_(§1.11 platform detection + Zoom-native recording added 2026-06-21.)_
 
 Two systems are compared:
 - **Recall Desktop SDK** — a 3rd-party native SDK. Local copy to inspect:
@@ -32,6 +33,11 @@ Two systems are compared:
   *structural* active-speaker signal in AX (tile geometry/order/class/indicator-child)
   is **unresolved** — our prior test used a flat token metric that is structurally
   blind, and the live scanner flattens too. See §4.
+- **Detection differs per platform and gates everything:** Zoom & Teams are detected
+  **only via their native desktop apps**, Meet **only via the browser**. The **Zoom Web
+  Client (`app.zoom.us`) is NOT detected** — a library-level gap (no browser-Zoom scan
+  in the binary; docs are silent). Recall records native Zoom with the **same OS engine
+  as Meet (ScreenCaptureKit + CoreAudio + AX scrape) — it does NOT use Zoom's SDK.** See §1.11.
 
 ---
 
@@ -228,6 +234,77 @@ dedicated strings → likely not first-class).
 > class + subtree) is what their Meet inference keys on — so build the demo-app
 > experiment (§4) to read exactly those attributes via `AXObserver`, not a labeled string.
 
+### 1.11 Per-platform DETECTION & RECORDING — Zoom native vs Meet vs Teams
+The part integrators get wrong: **how a meeting is *detected* differs per platform, and
+detection gates everything.** The SDK only fires `meeting-detected` (→ gives you a
+`windowId` → lets you `startRecording`) for surfaces it knows how to find. Recording, once
+detected, uses one shared OS engine for every platform.
+
+#### Detection surface matrix [verified — docs.recall.ai/docs/support + binary]
+| Provider | Detected surface | How it's found (binary) |
+|---|---|---|
+| **Zoom** | **native desktop app ONLY** (`us.zoom.xos` / `/Applications/zoom.us.app`) | `getZoomMeetingWindows` enumerates the Zoom app's windows |
+| **Google Meet** | **browser tab** (Chrome ✅ mac/win, Safari ✅ mac, Chromium/Edge) | `AXURL`/`AXDocument search for meet.google.com` over browser web-areas |
+| **Microsoft Teams** | **native desktop app ONLY** | Teams app windows + IndexedDB URL |
+| **Zoom Web Client** (`app.zoom.us`, `zoom.us/wc`) | **NOT detected** ❌ | **no browser `zoom.us` scan exists** |
+
+#### The Zoom-Web gap — provenance matters [important]
+- **[docs]** Recall **never states** Zoom-web is unsupported. The support matrix just lists
+  **"Zoom (Desktop)"** and omits a web row. Inference-from-omission, not an explicit claim.
+- **[binary, verified]** Meet has a browser URL scanner (`search for meet.google.com`);
+  `strings … | grep -ciE 'search for zoom|AX(URL|Document).*zoom'` = **`0`**. The only
+  `zoom.us` strings are the native bundle path, `/Library/Logs/zoom.us`, and the
+  `https://zoom.us/j/` join-URL *format* (parsing, not a browser detector).
+- **[observed]** a `app.zoom.us` Chrome tab fires **no** `meeting-detected` → `windowId`
+  stays null → the dsdk-tutorial's **Start Recording button stays disabled**.
+- **This is a LIBRARY-level limitation, not fixable from integrator code.** The tutorial's
+  `meeting-detected` handler accepts *any* platform (`updateState({ windowId: evt.window.id })`,
+  no Zoom filter) — it simply never receives the event. Your only options: native Zoom app,
+  use Meet, or detect Zoom-web yourself (the demo-app does, via `platformForURL("zoom.us")`).
+
+#### Zoom NATIVE recording — does it use Zoom's SDK? **NO.** [verified — binary]
+- `otool -L` on `desktop_sdk_macos_exe` + `liblibbot_desktop_rs.dylib`: **no Zoom framework
+  linked**; **0** `MobileRTC`/`ZoomSDK`/`ZoomVideoSDK`/`ZoomMeetingSDK` symbols. Recall never
+  touches Zoom's official Meeting/Video SDK.
+- It records native Zoom the **same OS-level way as Meet**, just pointed at the Zoom *app
+  window* instead of a browser tab. From `nm … | swift demangle`:
+  - `ZoomMeetingRecorder.app : AXUIWrapper?` → reads the Zoom app's **Accessibility tree**.
+  - `ZoomMeetingRecorder.zoomScraper : ZoomScraper` + `ZoomScraperScripts.scrapeJS / isNotMuted /
+    scrapeMeetingTitle / scrapeLocalUserName / findScreenShareEl` → **versioned JS scraping
+    rules run over the AX tree** (`"Loading scraping JS logic for Zoom Version …"` — keyed per
+    Zoom release because the native UI changes).
+  - `ZoomMeetingRecorder.mediaCapturers : [MediaCapturer]` → **ScreenCaptureKit** (Zoom window
+    video) + **CoreAudio process tap** (audio).
+  - `ZoomMeetingRecorder.lastAxActiveSpeakerSet : Set<Int>` → **AX-based active speaker** + the
+    same VAD fusion as Meet (`AxVad`, `AudioLevelMessage{rms}`).
+
+#### Zoom native vs Meet — only TWO things differ; the engine is shared
+| Step | Zoom native | Google Meet |
+|---|---|---|
+| **Detect** | `getZoomMeetingWindows` (native app bundle) | browser web-area `search for meet.google.com` |
+| **Meeting URL** | parsed from **Zoom local logs** `~/Library/Logs/zoom.us` (`zoom.us/j/<id>`) | **Meet IndexedDB** (`https_meet.google.com…leveldb`) |
+| Video | ScreenCaptureKit (app window) | ScreenCaptureKit (browser window) |
+| Audio | CoreAudio process tap | CoreAudio process tap |
+| Roster/mute/share/title | AX scrape (`ZoomScraper` + versioned JS) | AX scrape (`GoogleMeetScraper` + versioned JS) |
+| Active speaker | `lastAxActiveSpeakerSet` + VAD | `lastAxActiveSpeakerSet` + VAD |
+| Stable ID (`extra_data`) | `conf_user_id` ✅ | none ❌ |
+
+Everything is one Recall DSDK and one integration API (`meeting-detected` →
+`startRecording({windowId, uploadToken})`); `ZoomMeetingRecorder` vs `GoogleMeetMeetingRecorder`
+are just sibling internal recorders.
+
+#### The "restart Zoom" requirement [verified — docs + binary]
+Recall recovers the Zoom meeting URL from Zoom's **local log files** (`/Library/Logs/zoom.us`),
+so Zoom must be **(re)launched after your app installs the SDK** to write fresh logs it can read
+— hence the docs' note *"the user will need to restart Zoom before the DSDK is able to start
+pulling the meeting URL."* (Teams & Meet use IndexedDB; Zoom uses logs.)
+
+#### Caveat — native Zoom AX is harder than Meet
+Zoom's video grid is Metal-rendered (opaque to AX), so participant/active-speaker reading leans
+on the **Participants panel** + version-specific JS rules + audio VAD, *not* the tiles
+(consistent with `in-browser-meeting-ax.md`: "you can scrape the Zoom roster, never reliably the
+active speaker" from the grid). This is also why per-Zoom-version scraping rules exist.
+
 ---
 
 ## 2. demo-app — what OUR detector extracts
@@ -322,6 +399,13 @@ strings -a "$SDK/Frameworks/liblibbot_desktop_rs.dylib" | grep -iE 'transcriptsp
 strings -a "$SDK/Frameworks/libui_recorder.dylib" | grep -iE 'AXDOMClassList|AXFrame|AXPosition|AXSize|AXChildren|ui_recorder_dump'
 strings -a "$SDK/desktop_sdk_macos_exe" | grep -iE 'GoogleMeetData|static_participant_id|scraping logic manifest|google_meet_ax_tree'
 strings -a "$SDK/Frameworks/liblibbot_desktop_rs.dylib" | grep -iE 'conf_user_id|user_id|auto-diarization-(enabled|learning)|virtual_model'
+# §1.11 — Zoom NATIVE (no Zoom SDK; AX + capture) vs Zoom WEB (not detected):
+otool -L "$SDK/desktop_sdk_macos_exe" | grep -iE 'zoom|mobilertc|rtc' || echo "no Zoom framework linked"
+strings -a "$SDK/desktop_sdk_macos_exe" | grep -ciE 'mobilertc|zoomsdk|zoomvideosdk'          # expect 0
+nm "$SDK/desktop_sdk_macos_exe" | swift demangle | grep -iE 'ZoomMeetingRecorder\.(app|zoomScraper|mediaCapturers)' | sort -u
+strings -a "$SDK/desktop_sdk_macos_exe" | grep -iE 'getZoomMeetingWindows|/Applications/zoom.us.app|/Library/Logs/zoom.us'  # native detection + URL-from-logs
+strings -a "$SDK/desktop_sdk_macos_exe" | grep -iE 'search for (meet\.google|zoom)'           # Meet has browser scan; Zoom row is absent
+strings -a "$SDK/desktop_sdk_macos_exe" | grep -ciE 'search for zoom|AX(URL|Document).*zoom'  # expect 0 → no Zoom-web detector
 # expect MATCHES above; expect NOTHING below (no CDP / no injected extension):
 strings -a "$SDK/desktop_sdk_macos_exe" | grep -iE 'remote-debugging|:9222|chrome.debugger|--load-extension|content_script' || echo "none → not CDP/extension"
 # Public API surface:

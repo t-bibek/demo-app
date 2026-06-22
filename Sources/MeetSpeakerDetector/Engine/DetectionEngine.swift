@@ -104,31 +104,47 @@ final class DetectionEngine {
 
         var windowInfos: [EngineWindowInfo] = []
         for w in scanned {
-            // WHO: the named participant(s) the scanner saw flagged as the
-            // active speaker. The meeting UI is the authority on who.
+            // WHO is speaking — resolved per platform from the right signal.
             var who = Set(w.speakers)
 
-            // "Someone" is an audio-only fallback, used only when we genuinely
-            // can't read who is speaking: either the tree is unreadable (e.g. a
-            // backgrounded tab) OR the platform doesn't expose speaker state in
-            // its accessibility tree at all (Google Meet, Teams). For Zoom — the
-            // tree DOES expose the active speaker — we trust the labels and
-            // never fabricate "Someone", so one speaker can't double-log.
-            let canReadSpeakers = w.treeOk && platformExposesSpeakerNames(w.platform)
-            if remoteActive && who.isEmpty && !canReadSpeakers {
-                who.insert("Someone")
-            }
-
-            // YOU: log yourself only when the mic is active AND the meeting UI
-            // POSITIVELY confirms you are unmuted. Zoom's app-level mute does
-            // not silence the macOS microphone, so without this a muted user is
-            // logged whenever the mic picks up speaker echo or room noise.
-            //
-            // Skip on platforms where we read speaker names per-tile (Zoom marker,
-            // Meet kssMZb): your own tile is already named there, so adding "You"
-            // would double-log you.
-            if micActive && w.localUserUnmuted == true && !platformExposesSpeakerNames(w.platform) {
-                who.insert(config.localUserName)
+            if w.directSpeakerRead {
+                // Meet (kssMZb class) / Zoom web ("active speaker" marker): the UI
+                // names the speaker, including your own tile. Trust it; only fall
+                // back to the anonymous "Someone" when the tree itself is
+                // unreadable (e.g. a backgrounded tab). No "You" — your tile is
+                // already named, so adding it would double-log.
+                if remoteActive && who.isEmpty && !w.treeOk {
+                    who.insert("Someone")
+                }
+            } else if !w.zoomRoster.isEmpty {
+                // B1 — native Zoom has NO AX speaking signal, so mute-gate: fuse
+                // audio direction with the roster's per-participant mute. The
+                // local mic = your voice; the system tap = remote voices, so a
+                // 1:1 where both stay unmuted still resolves. (See SpeakerCore
+                // zoomMuteGateSpeakers + docs/zoom-native-detection.md.)
+                let me = w.zoomRoster.first(where: { $0.isMe })
+                let localUnmuted = me?.unmuted ?? (w.localUserUnmuted ?? false)
+                let localName = me?.name ?? config.localUserName
+                let remoteUnmuted = w.zoomRoster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+                for name in zoomMuteGateSpeakers(
+                    micActive: micActive, localUnmuted: localUnmuted, localName: localName,
+                    remoteActive: remoteActive, remoteUnmutedNames: remoteUnmuted
+                ) {
+                    who.insert(name)
+                }
+            } else {
+                // B2 — Teams, or native Zoom with the panel closed / unreadable:
+                // audio-only. Without this branch native Zoom logged NOTHING
+                // (it was wrongly treated as a direct-read platform).
+                if remoteActive && who.isEmpty {
+                    who.insert("Someone")
+                }
+                // YOU: only when the mic is active AND the UI positively confirms
+                // you're unmuted (Zoom's app-mute doesn't silence the macOS mic,
+                // so echo/room noise must not log a muted user).
+                if micActive && w.localUserUnmuted == true {
+                    who.insert(config.localUserName)
+                }
             }
 
             for name in who {

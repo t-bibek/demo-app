@@ -3,3 +3,7 @@ build/
 *.xcodeproj
 .swiftpm/
 .DS_Store
+
+# Probe run captures (scratch — e.g. `swift run ZoomProbe … | tee logzoom.md`)
+/log*.md
+/zoom-native*.md

@@ -23,6 +23,9 @@ struct TileFeatures {
     var descendantCount: Int
     var focusedOrSelected: Bool
     var micOff: Bool
+    /// True if the tile subtree text carries a Zoom-style speaking marker
+    /// ("…, active speaker" etc.). Complements the Meet class rule.
+    var markerSpeaking: Bool = false
 
     /// Everything except geometry — the "did the structure change" key.
     var structuralKey: String {
@@ -66,20 +69,27 @@ enum MeetTiles {
         return true
     }
 
-    /// Find the Meet web-area root(s) across running browsers (foreground tab only —
+    /// Platform detected from a page URL.
+    static let platformNeedles: [(token: String, needle: String)] = [
+        ("meet", "meet.google.com"), ("zoom", "zoom.us"),
+        ("teams", "teams.microsoft.com"), ("teams", "teams.live.com"),
+    ]
+
+    /// Find meeting web-area root(s) across running browsers (foreground tab only —
     /// background tabs have frozen/absent trees, the documented Chromium limitation).
-    static func findMeetWebAreas() -> [AXUIElement] {
+    /// `wanted` filters to one platform ("meet"/"zoom"/"teams") or nil for any.
+    static func findMeetingWebAreas(platform wanted: String?) -> [(web: AXUIElement, platform: String)] {
         guard AX.isTrusted else { return [] }
-        var roots: [AXUIElement] = []
+        var roots: [(AXUIElement, String)] = []
         for app in NSWorkspace.shared.runningApplications {
             guard let bid = app.bundleIdentifier, browserBundleIDs.contains(bid), !app.isTerminated else { continue }
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             for window in AX.windows(axApp) {
                 let title = (AX.string(window, "AXTitle") ?? "").lowercased()
-                let titleLooksMeet = title.contains("meet")
-                guard titleLooksMeet || title.isEmpty else { continue }
-                if let web = findMeetWebArea(in: window, titleLooksMeet: titleLooksMeet) {
-                    roots.append(web)
+                let pre = title.contains("meet") || title.contains("zoom") || title.contains("teams") || title.isEmpty
+                guard pre else { continue }
+                if let (web, plat) = findMeetingWebArea(in: window) {
+                    if wanted == nil || wanted == plat { roots.append((web, plat)) }
                 }
             }
         }
@@ -87,12 +97,11 @@ enum MeetTiles {
     }
 
     /// One traversal of the window: collect every AXWebArea (with area) and detect
-    /// whether anything in the tree references meet.google.com (AXURL is an NSURL,
-    /// not a String; the address-bar value is a plain String). Pick the largest
-    /// web area (the main page, not small iframes).
-    private static func findMeetWebArea(in window: AXUIElement, titleLooksMeet: Bool) -> AXUIElement? {
+    /// the platform from any URL/text (AXURL is an NSURL, not a String). Returns the
+    /// largest web area (the main page, not small iframes) + the detected platform.
+    private static func findMeetingWebArea(in window: AXUIElement) -> (AXUIElement, String)? {
         var webAreas: [(el: AXUIElement, area: CGFloat)] = []
-        var mentionsMeet = false
+        var detected: String?
         var n = 0
         func rec(_ el: AXUIElement, _ depth: Int) {
             if n >= maxScanNodes || depth > 70 { return }
@@ -101,17 +110,17 @@ enum MeetTiles {
                 let f = AX.frame(el)
                 webAreas.append((el, (f?.width ?? 0) * (f?.height ?? 0)))
             }
-            if !mentionsMeet {
-                for s in [AX.urlString(el, "AXURL"), AX.urlString(el, "AXDocument"), AX.string(el, "AXValue")] {
-                    if let s, s.lowercased().contains("meet.google.com") { mentionsMeet = true; break }
+            if detected == nil {
+                for s in [AX.urlString(el, "AXURL"), AX.urlString(el, "AXDocument"), AX.string(el, "AXValue")].compactMap({ $0?.lowercased() }) {
+                    for (tok, needle) in platformNeedles where s.contains(needle) { detected = tok; break }
+                    if detected != nil { break }
                 }
             }
             for c in AX.children(el) { rec(c, depth + 1) }
         }
         rec(window, 0)
-
-        guard (titleLooksMeet || mentionsMeet), !webAreas.isEmpty else { return nil }
-        return webAreas.max(by: { $0.area < $1.area })?.el
+        guard let plat = detected, let web = webAreas.max(by: { $0.area < $1.area })?.el else { return nil }
+        return (web, plat)
     }
 
     /// One-shot diagnostic for when no Meet web area is found.
@@ -125,15 +134,20 @@ enum MeetTiles {
             lines.append("\(app.localizedName ?? bid): \(wins.count) window(s)")
             for w in wins {
                 let title = AX.string(w, "AXTitle") ?? "<no title>"
-                var webCount = 0, n = 0, mentions = false
+                var webCount = 0, n = 0, plat = "-"
                 func rec(_ el: AXUIElement, _ d: Int) {
                     if n >= 4000 || d > 70 { return }; n += 1
                     if AX.string(el, "AXRole") == "AXWebArea" { webCount += 1 }
-                    if !mentions, let u = AX.urlString(el, "AXURL"), u.lowercased().contains("meet.google.com") { mentions = true }
+                    if plat == "-" {
+                        for s in [AX.urlString(el, "AXURL"), AX.urlString(el, "AXDocument"), AX.string(el, "AXValue")].compactMap({ $0?.lowercased() }) {
+                            for (tok, needle) in platformNeedles where s.contains(needle) { plat = tok; break }
+                            if plat != "-" { break }
+                        }
+                    }
                     for c in AX.children(el) { rec(c, d + 1) }
                 }
                 rec(w, 0)
-                lines.append("   • \"\(title.prefix(70))\"  webAreas=\(webCount) meetURL=\(mentions) scanned=\(n)")
+                lines.append("   • \"\(title.prefix(70))\"  webAreas=\(webCount) platform=\(plat) scanned=\(n)")
             }
         }
         return lines.isEmpty ? "No supported browser apps running." : lines.joined(separator: "\n")
@@ -142,16 +156,19 @@ enum MeetTiles {
     /// Build the current tile set under a Meet web area (features + the live
     /// element, so callers can dump a tile's raw subtree at a transition).
     static func tiles(in webArea: AXUIElement) -> [(features: TileFeatures, element: AXUIElement)] {
-        // 1) Collect candidate name nodes (AXStaticText with a person-like value).
+        // 1) Collect candidate name nodes. Meet puts the name in an AXStaticText
+        //    value; Zoom puts it in an element's AXDescription ("Name, Computer
+        //    audio unmuted, active speaker"). So check value/desc/title of any node.
         var nameNodes: [(node: AXUIElement, name: String)] = []
         var scanned = 0
         func collect(_ el: AXUIElement, _ depth: Int) {
             if scanned >= maxScanNodes || depth > 60 { return }
             scanned += 1
-            if AX.string(el, "AXRole") == "AXStaticText",
-               let raw = AX.string(el, "AXValue") ?? AX.string(el, "AXTitle"),
-               let name = cleanParticipantName(raw), looksLikeName(name) {
-                nameNodes.append((el, name))
+            for raw in [AX.string(el, "AXValue"), AX.string(el, "AXDescription"), AX.string(el, "AXTitle")].compactMap({ $0 }) {
+                if let name = cleanParticipantName(raw), looksLikeName(name) {
+                    nameNodes.append((el, name))
+                    break
+                }
             }
             for c in AX.children(el) { collect(c, depth + 1) }
         }
@@ -225,6 +242,7 @@ enum MeetTiles {
         var count = 0
         var focusedOrSelected = false
         var micOff = false
+        var markerSpeaking = false
         var n = 0
 
         func walk(_ el: AXUIElement, _ depth: Int) {
@@ -235,12 +253,14 @@ enum MeetTiles {
             roleCount[sub != nil ? "\(role)/\(sub!)" : role, default: 0] += 1
             for t in AX.classList(el) { classes.insert(t) }
             if AX.bool(el, "AXFocused") || AX.bool(el, "AXSelected") { focusedOrSelected = true }
-            let text = [AX.string(el, "AXDescription"), AX.string(el, "AXValue"), AX.string(el, "AXTitle")]
-                .compactMap { $0 }.joined(separator: " ").lowercased()
+            let combined = [AX.string(el, "AXDescription"), AX.string(el, "AXValue"), AX.string(el, "AXTitle")]
+                .compactMap { $0 }.joined(separator: " ")
+            let text = combined.lowercased()
             if text.contains("microphone is off") || text.contains("mic is off")
                 || text.contains("is muted") || (text.contains("muted") && !text.contains("unmuted")) {
                 micOff = true
             }
+            if isSpeakingMarker(combined) { markerSpeaking = true }
             for c in AX.children(el) { walk(c, depth + 1) }
         }
         walk(tile, 0)
@@ -250,7 +270,24 @@ enum MeetTiles {
         let frame = AX.frame(tile) ?? .zero
         return TileFeatures(name: name, frame: frame, orderIndex: 0,
                             roleCounts: roleCounts, classTokens: classTokens,
-                            descendantCount: count, focusedOrSelected: focusedOrSelected, micOff: micOff)
+                            descendantCount: count, focusedOrSelected: focusedOrSelected,
+                            micOff: micOff, markerSpeaking: markerSpeaking)
+    }
+
+    /// All AXDOMClassList tokens across the whole web area (bounded). Used to hunt
+    /// a speaking signal that lives OUTSIDE the video-tile subtrees (e.g. Zoom's
+    /// audio-* classes in the footer / participants panel).
+    static func allClassTokens(in webArea: AXUIElement) -> Set<String> {
+        var toks = Set<String>()
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 6000 || depth > 70 { return }
+            n += 1
+            for t in AX.classList(el) { toks.insert(t) }
+            for c in AX.children(el) { rec(c, depth + 1) }
+        }
+        rec(webArea, 0)
+        return toks
     }
 
     /// Raw subtree dump (role + subrole + classlist + text) for eyeballing transitions.
