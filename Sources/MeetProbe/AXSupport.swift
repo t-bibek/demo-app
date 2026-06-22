@@ -17,6 +17,16 @@ enum AX {
         copy(el, attr) as? String
     }
 
+    /// WRITE a boolean attribute. Used to set AXEnhancedUserInterface /
+    /// AXManualAccessibility, which force Chromium/WebView2 apps (Teams, Meet,
+    /// Electron) to build their FULL a11y tree — without it they serve a degraded,
+    /// mostly-static tree to passive readers and dynamic state may never appear.
+    /// Recall does this (it imports AXUIElementSetAttributeValue).
+    @discardableResult
+    static func setBool(_ el: AXUIElement, _ attr: String, _ value: Bool) -> Bool {
+        AXUIElementSetAttributeValue(el, attr as CFString, (value ? kCFBooleanTrue : kCFBooleanFalse)) == .success
+    }
+
     /// AXURL / AXDocument come back as NSURL/CFURL, not String — handle both.
     static func urlString(_ el: AXUIElement, _ attr: String) -> String? {
         guard let v = copy(el, attr) else { return nil }

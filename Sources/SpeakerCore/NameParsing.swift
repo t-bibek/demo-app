@@ -14,6 +14,7 @@ private let nameCutSeparators = [
     ", muted", ", unmuted",
     ", video on", ", video off",
     ", more options", ", pinned",
+    ", context menu",        // Teams: "<Name> (Guest), Context menu is available"
 ]
 
 /// Extracts a clean participant name from a raw accessibility string, or nil if
@@ -32,6 +33,12 @@ public func cleanParticipantName(_ raw: String) -> String? {
         }
     }
 
+    // Teams self tile: "Myself video, <Name>, unmuted, …" -> drop the prefix so
+    // the name resolves (self is detected separately via the "myself video" token).
+    for prefix in ["myself video, ", "my video, "] {
+        if s.lowercased().hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)); break }
+    }
+
     // Cut at the earliest decoration clause.
     var cut = s.endIndex
     for sep in nameCutSeparators {
@@ -40,6 +47,10 @@ public func cleanParticipantName(_ raw: String) -> String? {
         }
     }
     s = String(s[..<cut])
+
+    // Strip a trailing role/status parenthetical: "David Thapa (Guest)" ->
+    // "David Thapa", "(You)" -> "" (then rejected). Mirrors the Zoom roster strip.
+    s = s.replacingOccurrences(of: #"\s*\([^)]*\)\s*$"#, with: "", options: .regularExpression)
     s = s.trimmingCharacters(in: CharacterSet(charactersIn: " ,\u{2019}'"))
 
     return isLikelyPersonName(s) ? s : nil
@@ -71,6 +82,8 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "react", "switch", "avatar", "end", "home", "apps", "notes", "whiteboard",
         // Google Meet panel / chrome labels that leak in as fake tiles:
         "people", "contributors", "in call",
+        // Teams meeting-stage chrome that leaks in as fake tiles:
+        "cancel",
     ]
     if rejectExact.contains(lower) { return false }
 
@@ -87,6 +100,9 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "companion", "my video", "you are", "permission", "ellipsis", "panel",
         // Zoom NATIVE toolbar / banner labels (leak in as fake participant rows):
         "options", "upgrade to", "my notes", "my audio", "stop video", "start video",
+        // Teams meeting-stage chrome (leak in as fake tiles — see docs/teams-probe.md):
+        "share content", "shared content", "content view", "mute mic", "unmute mic",
+        "encryption status", "calling indicator", "turn audio on", "elapsed time",
     ]
     if rejectSubstrings.contains(where: { lower.contains($0) }) { return false }
 

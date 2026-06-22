@@ -136,6 +136,22 @@ check(cleanParticipantName("Bidheyak Thapa") == "Bidheyak Thapa", "real name sti
 check(cleanParticipantName("Wedding thapas") == "Wedding thapas", "real name 'Wedding thapas' still passes")
 check(isSpeakingMarker("Bidheyak Thapa, Computer audio unmuted, active speaker"), "active-speaker marker detected")
 check(!isSpeakingMarker("Neymar Thapa, Computer audio muted"), "muted tile is not speaking")
+// Microsoft Teams name formats (real AX strings from docs/teams-probe.md):
+check(cleanParticipantName("Myself video, Bibek Thapa") == "Bibek Thapa", "teams self tile -> name (drop 'Myself video,')")
+check(cleanParticipantName("Myself video, Bibek Thapa, unmuted, has context menu") == "Bibek Thapa", "teams self tile w/ mute clause -> name")
+check(cleanParticipantName("David Thapa (Guest)") == "David Thapa", "teams '(Guest)' suffix stripped")
+check(cleanParticipantName("David Thapa (Guest), muted, context menu is available") == "David Thapa", "teams remote tile w/ mute + context -> name")
+check(cleanParticipantName("David Thapa (Guest), Context menu is available") == "David Thapa", "teams remote tile w/ context-menu only -> name")
+check(cleanParticipantName("Share content") == nil, "teams 'Share content' chrome rejected")
+check(cleanParticipantName("Shared content view") == nil, "teams 'Shared content view' chrome rejected")
+check(cleanParticipantName("Mute mic") == nil, "teams 'Mute mic' chrome rejected")
+check(cleanParticipantName("Mute mic (⇧ ⌘ M)") == nil, "teams 'Mute mic (shortcut)' chrome rejected")
+check(cleanParticipantName("Encryption status") == nil, "teams 'Encryption status' chrome rejected")
+check(cleanParticipantName("Calling indicators") == nil, "teams 'Calling indicators' chrome rejected")
+check(cleanParticipantName("Elapsed time 05:13") == nil, "teams 'Elapsed time' chrome rejected")
+check(cleanParticipantName("Turn audio on?") == nil, "teams 'Turn audio on?' dialog rejected")
+check(cleanParticipantName("Cancel") == nil, "teams 'Cancel' button rejected")
+check(cleanParticipantName("David's Iphone") == "David's Iphone", "trailing-paren strip leaves a no-paren name intact")
 
 // MARK: Platform detection (real titles/URLs from `swift run AXDump`)
 print("PlatformDetection:")
@@ -222,6 +238,68 @@ equal(meetActiveSpeaker(tiles: mtGallery, prevAreas: [:], vadSpeechActive: true)
       "gallery, no class -> Someone floor")
 equal(meetActiveSpeaker(tiles: mtGallery, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
       "gallery, no class -> via someoneFloor")
+
+// MARK: Teams rules (stable aria_*/calling_* tokens; speaking markers seeded)
+print("TeamsSpeakerRules:")
+let tr = TeamsSpeakerRules.builtin
+check(tr.tileIsSpeaking(textBlob: "wedding thapas is active speaker", classTokens: []),
+      "is-active-speaker text marker -> speaking")
+check(!tr.tileIsSpeaking(textBlob: "wedding thapas", classTokens: []),
+      "plain name -> not speaking")
+check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-frame-occlusion", "fui-Flex"]),
+      "vdi-frame-occlusion NOT shipped as speaking (unconfirmed video-placement token, pending R4)")
+check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-occlusion", "fui-Flex"]),
+      "no built-in speaking class (conservative until R1/R3/R4 probe)")
+check(tr.tileIsSelf(textBlob: "bibek thapa (you)", classTokens: []),
+      "(you) suffix -> self")
+check(tr.tileIsSelf(textBlob: "", classTokens: ["calling_is_me_video"]),
+      "calling_is_me_video token -> self")
+check(tr.muteState(textBlob: "ana, muted", classTokens: []) == false, "', muted' -> muted")
+check(tr.muteState(textBlob: "ana, unmuted", classTokens: []) == true, "', unmuted' -> unmuted")
+check(tr.muteState(textBlob: "", classTokens: ["aria_calling_roster_unmuted"]) == true,
+      "aria_calling_roster_unmuted token -> unmuted")
+check(tr.muteState(textBlob: "ana", classTokens: []) == nil, "no mute token -> unknown")
+// config override round-trips through Codable (remote-config drop)
+do {
+    let custom = TeamsSpeakerRules(speakingTextMarkers: [], speakingClasses: ["xyz"],
+        selfTokens: ["me"], mutedTokens: ["m"], unmutedTokens: ["u"], version: "test")
+    let data = try! JSONEncoder().encode(custom)
+    let back = try! JSONDecoder().decode(TeamsSpeakerRules.self, from: data)
+    equal(back, custom, "TeamsSpeakerRules Codable round-trip")
+    check(back.tileIsSpeaking(textBlob: "", classTokens: ["xyz"]), "custom speakingClasses token works")
+}
+
+// MARK: Teams fused active-speaker resolver
+print("Teams fused resolver:")
+let ttGallery = [
+    TeamsTileObservation(name: "Alice", area: 10_000, orderIndex: 0, isSpeaking: false),
+    TeamsTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, isSpeaking: false),
+]
+let ttSpeaking = [
+    TeamsTileObservation(name: "Alice", area: 10_000, orderIndex: 0, isSpeaking: true),
+    TeamsTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, isSpeaking: false),
+]
+let ttSpotlight = [
+    TeamsTileObservation(name: "Alice", area: 200_000, orderIndex: 0, isSpeaking: false),
+    TeamsTileObservation(name: "Bob",   area: 10_000,  orderIndex: 1, isSpeaking: false),
+]
+// 1) VAD gate closed -> nobody.
+equal(teamsActiveSpeaker(tiles: ttSpeaking, prevAreas: [:], vadSpeechActive: false).names, [],
+      "vad silent -> no speaker even with is-speaking token")
+// 2) structural token wins when speaking.
+equal(teamsActiveSpeaker(tiles: ttSpeaking, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "is-speaking token -> name")
+equal(teamsActiveSpeaker(tiles: ttSpeaking, prevAreas: [:], vadSpeechActive: true).via, .structural,
+      "is-speaking token -> via structural")
+// 3) geometry is OFF by default (unverified build must not guess a name).
+equal(teamsActiveSpeaker(tiles: ttSpotlight, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "spotlight, no token, geometry off -> Someone floor")
+// 3b) geometry ON (post-verification) -> dominant tile named.
+equal(teamsActiveSpeaker(tiles: ttSpotlight, prevAreas: [:], vadSpeechActive: true, useGeometry: true).names, ["Alice"],
+      "spotlight, geometry on -> dominant tile")
+// 4) gallery, no token -> Someone floor.
+equal(teamsActiveSpeaker(tiles: ttGallery, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
+      "gallery, no token -> via someoneFloor")
 
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

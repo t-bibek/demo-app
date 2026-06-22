@@ -27,6 +27,9 @@ struct ScannedWindow {
     /// Meet per-tile observations (geometry + class) for the fused, VAD-gated
     /// active-speaker resolver in the engine; empty for every other platform.
     var meetTiles: [MeetTileObservation]
+    /// Teams per-tile observations (geometry + structural is-speaking + mute) for
+    /// the fused, VAD-gated resolver in the engine; empty for every other platform.
+    var teamsTiles: [TeamsTileObservation]
 }
 
 /// The macOS equivalent of the original's Windows UI Automation engine.
@@ -102,6 +105,7 @@ final class AccessibilityScanner {
                 var participants = dedup(collector.participants)
                 var zoomRoster: [ZoomRosterEntry] = []
                 var meetTiles: [MeetTileObservation] = []
+                var teamsTiles: [TeamsTileObservation] = []
 
                 if platform == .meet {
                     // Meet's active speaker is fused (geometry + class + VAD) in the
@@ -110,6 +114,16 @@ final class AccessibilityScanner {
                     meetTiles = m.tiles
                     speakers = []   // engine resolves Meet speakers from meetTiles
                     participants = dedup(participants + m.participants)
+                } else if platform == .teams {
+                    // Teams (new client) is a Chromium WebView, so its tiles surface
+                    // in AX like Meet's — supply per-tile observations (structural
+                    // is-speaking via stable aria_*/calling_* tokens + geometry +
+                    // mute) for the engine's VAD-gated resolver. See
+                    // docs/teams-active-speaker-detection.md.
+                    let t = teamsTileObservations(in: window)
+                    teamsTiles = t.tiles
+                    speakers = []   // engine resolves Teams speakers from teamsTiles + audio
+                    participants = dedup(participants + t.participants)
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +
                     // per-participant mute instead (see zoomNativeRoster), and
@@ -128,7 +142,7 @@ final class AccessibilityScanner {
                 switch platform {
                 case .meet:  directSpeakerRead = true
                 case .zoom:  directSpeakerRead = !isNative   // web marker yes; native no
-                case .teams: directSpeakerRead = false
+                case .teams: directSpeakerRead = !teamsTiles.isEmpty  // structural read when tiles found
                 }
 
                 results.append(ScannedWindow(
@@ -141,7 +155,8 @@ final class AccessibilityScanner {
                     localUserUnmuted: collector.localUserUnmuted,
                     directSpeakerRead: directSpeakerRead,
                     zoomRoster: zoomRoster,
-                    meetTiles: meetTiles
+                    meetTiles: meetTiles,
+                    teamsTiles: teamsTiles
                 ))
             }
         }
@@ -418,5 +433,73 @@ final class AccessibilityScanner {
         }
         rec(tile, 0)
         return tokens
+    }
+
+    // MARK: Microsoft Teams per-tile active-speaker scan
+
+    /// Config-loaded Teams rules (stable `aria_*`/`calling_*` tokens + speaking
+    /// markers); a token change is a config drop, not a rebuild. Loaded once.
+    private let teamsRules = TeamsSpeakerRules.resolved()
+
+    /// Builds Teams per-tile observations for the engine's VAD-gated resolver —
+    /// the analog of `meetTileObservations`. New Teams is a Chromium WebView so
+    /// its tiles surface in AX like Meet's: name → tile-sized ancestor, with the
+    /// is-speaking / self / mute flags derived from `TeamsSpeakerRules` (verified
+    /// via a Teams probe run). See docs/teams-active-speaker-detection.md.
+    private func teamsTileObservations(in window: AXUIElement) -> (tiles: [TeamsTileObservation], participants: [String]) {
+        var nameNodes: [(AXUIElement, String)] = []
+        var scanned = 0
+        func collect(_ el: AXUIElement, _ depth: Int) {
+            if scanned >= maxNodesPerWindow || depth > maxDepth { return }
+            scanned += 1
+            for attr in ["AXValue", "AXTitle", "AXDescription"] {
+                if let raw = axString(el, attr), let name = cleanParticipantName(raw) {
+                    nameNodes.append((el, name))
+                    break
+                }
+            }
+            for c in axArray(el, "AXChildren") { collect(c, depth + 1) }
+        }
+        collect(window, 0)
+
+        struct Acc { var area: Double; var speaking: Bool; var isMe: Bool; var unmuted: Bool?; var minY: CGFloat; var minX: CGFloat }
+        var byName: [String: Acc] = [:]
+        for (node, name) in nameNodes {
+            guard let tile = meetTileAncestor(of: node) else { continue }
+            let frame = axFrame(tile) ?? .zero
+            let area = Double(frame.width * frame.height)
+            let (blob, classes) = tileTextAndClasses(tile)
+            let speaking = teamsRules.tileIsSpeaking(textBlob: blob, classTokens: classes)
+            let isMe = teamsRules.tileIsSelf(textBlob: blob, classTokens: classes)
+            let unmuted = teamsRules.muteState(textBlob: blob, classTokens: classes)
+            if let ex = byName[name], ex.area >= area { continue }
+            byName[name] = Acc(area: area, speaking: speaking, isMe: isMe, unmuted: unmuted, minY: frame.minY, minX: frame.minX)
+        }
+
+        let ordered = byName.sorted { ($0.value.minY, $0.value.minX) < ($1.value.minY, $1.value.minX) }
+        let tiles = ordered.enumerated().map { i, kv in
+            TeamsTileObservation(name: kv.key, area: kv.value.area, orderIndex: i,
+                                 isSpeaking: kv.value.speaking, isMe: kv.value.isMe, unmuted: kv.value.unmuted)
+        }
+        return (tiles, ordered.map { $0.key })
+    }
+
+    /// Lowercased concatenation of a tile subtree's AX text + the union of its
+    /// AXDOMClassList tokens (bounded) — the surface the Teams rules match.
+    private func tileTextAndClasses(_ tile: AXUIElement) -> (text: String, classes: Set<String>) {
+        var parts: [String] = []
+        var classes = Set<String>()
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 800 || depth > 40 { return }
+            n += 1
+            for attr in ["AXDescription", "AXValue", "AXTitle"] {
+                if let s = axString(el, attr), !s.isEmpty { parts.append(s) }
+            }
+            for t in axClassList(el) { classes.insert(t) }
+            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
+        }
+        rec(tile, 0)
+        return (parts.joined(separator: " ").lowercased(), classes)
     }
 }

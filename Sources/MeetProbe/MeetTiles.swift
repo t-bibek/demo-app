@@ -54,6 +54,14 @@ enum MeetTiles {
         "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "org.mozilla.firefox",
     ]
 
+    /// Native WebView apps that expose a Chromium AX tree but NO address-bar URL,
+    /// so the platform is forced by bundle id. New Microsoft Teams is one (the
+    /// whole client is a WebView2/Chromium app — see docs/teams-active-speaker-detection.md).
+    static let nativeWebviewApps: [String: String] = [
+        "com.microsoft.teams2": "teams",
+        "com.microsoft.teams": "teams",
+    ]
+
     private static let maxScanNodes = 9000
     private static let maxTileSubtreeNodes = 800
     private static let maxClimb = 14
@@ -92,13 +100,46 @@ enum MeetTiles {
     /// Find meeting web-area root(s) across running browsers (foreground tab only —
     /// background tabs have frozen/absent trees, the documented Chromium limitation).
     /// `wanted` filters to one platform ("meet"/"zoom"/"teams") or nil for any.
+    /// Force every meeting app (browsers + native WebView clients) to build its
+    /// FULL accessibility tree by writing AXEnhancedUserInterface +
+    /// AXManualAccessibility. Chromium/WebView2/Electron apps serve a DEGRADED,
+    /// mostly-static tree to passive readers until a client sets these — so a
+    /// dynamic state like active-speaker may never appear without it. Recall does
+    /// this (it imports AXUIElementSetAttributeValue). Idempotent; call at startup
+    /// and let the tree repopulate (~1s) before trusting the diff.
+    static func enableEnhancedAccessibility() {
+        guard AX.isTrusted else { return }
+        for app in NSWorkspace.shared.runningApplications {
+            guard let bid = app.bundleIdentifier, !app.isTerminated,
+                  browserBundleIDs.contains(bid) || nativeWebviewApps[bid] != nil else { continue }
+            let axApp = AXUIElementCreateApplication(app.processIdentifier)
+            AX.setBool(axApp, "AXManualAccessibility", true)     // Electron / WebView2
+            AX.setBool(axApp, "AXEnhancedUserInterface", true)   // Chromium / Cocoa AT flag
+        }
+    }
+
     static func findMeetingWebAreas(platform wanted: String?) -> [(web: AXUIElement, platform: String)] {
         guard AX.isTrusted else { return [] }
         var roots: [(AXUIElement, String)] = []
         for app in NSWorkspace.shared.runningApplications {
-            guard let bid = app.bundleIdentifier, browserBundleIDs.contains(bid), !app.isTerminated else { continue }
+            guard let bid = app.bundleIdentifier, !app.isTerminated else { continue }
+            let nativePlat = nativeWebviewApps[bid]
+            guard browserBundleIDs.contains(bid) || nativePlat != nil else { continue }
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
+            // Keep the enhanced tree on (some apps reset it) — idempotent.
+            AX.setBool(axApp, "AXManualAccessibility", true)
+            AX.setBool(axApp, "AXEnhancedUserInterface", true)
             for window in AX.windows(axApp) {
+                if let nativePlat {
+                    // Native WebView (new Teams): no URL to detect — force the
+                    // platform by bundle id and take the window's largest AXWebArea.
+                    // Returns every window so the compact/PIP overlay is captured too.
+                    if let web = largestWebArea(in: window),
+                       wanted == nil || wanted == nativePlat {
+                        roots.append((web, nativePlat))
+                    }
+                    continue
+                }
                 let title = (AX.string(window, "AXTitle") ?? "").lowercased()
                 let pre = title.contains("meet") || title.contains("zoom") || title.contains("teams") || title.isEmpty
                 guard pre else { continue }
@@ -108,6 +149,25 @@ enum MeetTiles {
             }
         }
         return roots
+    }
+
+    /// The largest AXWebArea anywhere in a window subtree (the main page, not a
+    /// tiny iframe). Used for native WebView apps where platform is known a priori.
+    static func largestWebArea(in window: AXUIElement) -> AXUIElement? {
+        var best: (el: AXUIElement, area: CGFloat)?
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= maxScanNodes || depth > 70 { return }
+            n += 1
+            if AX.string(el, "AXRole") == "AXWebArea" {
+                let f = AX.frame(el)
+                let area = (f?.width ?? 0) * (f?.height ?? 0)
+                if best == nil || area > best!.area { best = (el, area) }
+            }
+            for c in AX.children(el) { rec(c, depth + 1) }
+        }
+        rec(window, 0)
+        return best?.el
     }
 
     /// One traversal of the window: collect every AXWebArea (with area) and detect
@@ -302,7 +362,7 @@ enum MeetTiles {
         var facts = Set<String>()
         var n = 0
         func rec(_ el: AXUIElement, _ depth: Int) {
-            if n >= 3500 || depth > 70 { return }
+            if n >= 6000 || depth > 70 { return }   // reach the People/roster panel rows too (R1)
             n += 1
             collectFacts(el, into: &facts, stripName: "")
             for c in AX.children(el) { rec(c, depth + 1) }
@@ -316,6 +376,8 @@ enum MeetTiles {
     static func isHoverChromeToken(_ t: String) -> Bool {
         t.contains("Bz112c") || t.contains("LgbsSe") || t.contains("OWXEXe")
             || t.contains("Jh9lGc") || t == "MSqqjf" || t == "S5GDme"
+            // Teams: controls revealed on tile hover (so any change is hover, not speech).
+            || t == "show-only-on-stream-hover"
     }
 
     private static func extractFeatures(name: String, tile: AXUIElement) -> TileFeatures {
@@ -392,6 +454,33 @@ enum MeetTiles {
         }
         rec(webArea, 0)
         return toks
+    }
+
+    /// Targeted NEEDLE hunt across the FULL (enhanced) web-area tree: every element
+    /// whose any text attribute contains one of `needles` (case-insensitive),
+    /// reported as "role.attr=value". This hunts the EXACT string Recall's
+    /// TeamsScraper matches for the speaking flag — `" is active speaker"` — which a
+    /// blind class/attr diff can miss (it survived name-stripping/bucketing, or it's
+    /// on an element outside the per-tile walk). Reads the full attribute-name list
+    /// per node so an aria-label on any attribute is caught, not just desc/value/title.
+    static func needleScan(in webArea: AXUIElement, needles: [String]) -> Set<String> {
+        var hits = Set<String>()
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 7000 || depth > 80 { return }
+            n += 1
+            let role = AX.string(el, "AXRole") ?? "?"
+            for attr in AX.attributeNames(el) {
+                guard let v = AX.valueString(el, attr), !v.isEmpty else { continue }
+                let lv = v.lowercased()
+                for needle in needles where lv.contains(needle) {
+                    hits.insert("\(role).\(attr)=\(String(v.prefix(90)))")
+                }
+            }
+            for c in AX.children(el) { rec(c, depth + 1) }
+        }
+        rec(webArea, 0)
+        return hits
     }
 
     /// Raw subtree dump (role + subrole + classlist + text) for eyeballing transitions.

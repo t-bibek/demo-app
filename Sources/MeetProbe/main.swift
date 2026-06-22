@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import SpeakerCore
@@ -26,12 +27,115 @@ let nums = args.filter { Double($0) != nil }
 let duration = Double(nums.first ?? "") ?? 45.0
 let intervalMs = Int(nums.dropFirst().first ?? "") ?? 250
 
+// Optional MANUAL speaking-truth windows, for platforms with no auto-marker
+// (Teams). Pass `oracle=0-10,30-40` → those seconds count as "speaking", the
+// rest as "silent", so the per-tile oracle-diff can run against YOUR narration
+// and test EVERY captured surface (classes + all AX attributes + role-shape) —
+// including the camera-off case where no class toggles.
+let oracleWindows: [(Double, Double)] = (args.first(where: { $0.hasPrefix("oracle=") }) ?? "")
+    .replacingOccurrences(of: "oracle=", with: "")
+    .split(separator: ",").compactMap { seg -> (Double, Double)? in
+        let p = seg.split(separator: "-")
+        guard p.count == 2, let a = Double(p[0]), let b = Double(p[1]) else { return nil }
+        return (a, b)
+    }
+func oracleSpeaking(_ t: Double) -> Bool { oracleWindows.contains { t >= $0.0 && t <= $0.1 } }
+
 guard AX.isTrusted else {
     print("Accessibility permission is NOT granted. Grant it in System Settings >")
     print("Privacy & Security > Accessibility for Terminal/your IDE, then re-run.")
     AX.requestTrust()
     exit(2)
 }
+
+// ============================================================================
+// ANNOUNCEMENT-LISTENER MODE  (swift run MeetProbe teams listen 60)
+// Registers an AXObserver for AXAnnouncementRequested (+ live-region) on the
+// meeting app and logs every screen-reader / aria-live event. This is the ONE
+// capture method the snapshot probe can't do: announcements are transient EVENTS,
+// not tree state. If Teams fires "<name> is active speaker" here in sync with who
+// talks, that's a real-time, camera-independent AX speaking signal that maps to a
+// name (the string Recall's TeamsScraper matches). See docs/teams-probe.md.
+// ============================================================================
+var axAnnouncements: [(t: Double, notif: String, text: String)] = []
+var axListenT0 = Date()
+var axObservers: [AXObserver] = []   // strong refs — keep observers alive during the run loop
+
+func axAnnouncementCallback(_ observer: AXObserver, _ element: AXUIElement,
+                            _ notification: CFString, _ info: CFDictionary,
+                            _ refcon: UnsafeMutableRawPointer?) {
+    let t = Date().timeIntervalSince(axListenT0)
+    let notif = notification as String
+    let dict = info as NSDictionary
+    let text = (dict["AXAnnouncementKey"] as? String)
+        ?? (dict["AXValueChangeValue"] as? String)
+        ?? (dict["AXUIElementsKey"] as? String)
+        ?? ((dict["AXUIElementKey"]).flatMap { ($0 as! AXUIElement) as AXUIElement }
+                .flatMap { AX.string($0, "AXValue") ?? AX.string($0, "AXDescription") })
+        ?? ""
+    axAnnouncements.append((t, notif, text))
+    print(String(format: "t=%6.1fs  📢 %@  \"%@\"", t, notif, text))
+}
+
+if args.contains("listen") {
+    MeetTiles.enableEnhancedAccessibility()
+    print("ANNOUNCEMENT-LISTENER mode — enabled enhanced AX; registering AXAnnouncementRequested + live-region notifications.")
+    print("Narrate clear turns out loud. Any active-speaker announcement prints live below. Listening \(Int(duration))s…\n")
+    Thread.sleep(forTimeInterval: 1.0)
+    axListenT0 = Date()
+
+    let notifs = ["AXAnnouncementRequested", "AXLiveRegionChanged", "AXLiveRegionCreated"]
+    var registered = 0
+    for app in NSWorkspace.shared.runningApplications {
+        guard let bid = app.bundleIdentifier, !app.isTerminated,
+              MeetTiles.browserBundleIDs.contains(bid) || MeetTiles.nativeWebviewApps[bid] != nil else { continue }
+        if let plat = platformArg, !(MeetTiles.nativeWebviewApps[bid] == plat || MeetTiles.browserBundleIDs.contains(bid)) { continue }
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var observer: AXObserver?
+        guard AXObserverCreateWithInfoCallback(app.processIdentifier, axAnnouncementCallback, &observer) == .success,
+              let observer else { continue }
+        var targets: [AXUIElement] = [axApp]                          // announcements post on the app element
+        for w in AX.windows(axApp) { targets.append(w) }              // live-region changes may post on windows
+        if let web = MeetTiles.largestWebArea(in: axApp) { targets.append(web) }
+        for el in targets { for n in notifs { AXObserverAddNotification(observer, el, n as CFString, nil) } }
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        axObservers.append(observer)
+        registered += 1
+        print("  • observing \(app.localizedName ?? bid) (pid \(app.processIdentifier))")
+    }
+    if registered == 0 {
+        print("  No meeting app found to observe. Join the call first, then re-run.")
+        exit(1)
+    }
+    print("")
+    CFRunLoopRunInMode(.defaultMode, duration, false)
+
+    print("\n================ ANNOUNCEMENT SUMMARY ================")
+    if axAnnouncements.isEmpty {
+        print("NONE — no AXAnnouncementRequested / live-region events during the call.")
+        print("→ Teams emits NO active-speaker announcement to the AX channel on this build.")
+        print("  Combined with the empty needle/oracle hunts, the speaking signal is genuinely")
+        print("  not in AX (state OR events) → who-is-speaking must come from VAD + mute-gate,")
+        print("  with names bound by participant-state correlation (Recall's WeightedMapper).")
+    } else {
+        var byText: [String: Int] = [:]
+        for a in axAnnouncements { byText[a.text, default: 0] += 1 }
+        print("\(axAnnouncements.count) event(s); distinct texts:")
+        for (text, c) in byText.sorted(by: { $0.value > $1.value }).prefix(40) {
+            print("  [\(c)×] \"\(text)\"")
+        }
+        print("→ If a \"<name> is active speaker\" text tracks who actually spoke, that's the live")
+        print("  AX speaking signal — we map it straight to a name (Recall's mechanism).")
+    }
+    exit(0)
+}
+
+// Force Chromium/WebView2 meeting apps (Teams, Meet, Electron) to build their
+// FULL a11y tree before sampling — without this they serve a degraded, static
+// tree to passive readers and dynamic state (active-speaker) may never appear.
+MeetTiles.enableEnhancedAccessibility()
+print("Enabled AXEnhancedUserInterface + AXManualAccessibility on meeting apps; waiting 1.2s for the tree to populate…")
+Thread.sleep(forTimeInterval: 1.2)
 
 let stamp = Int(Date().timeIntervalSince1970)
 let outDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("meet-probe-\(stamp)")
@@ -48,6 +152,10 @@ var firstPill: [String: Set<String>] = [:]
 // who occupied the largest "active-speaker container" tile + was anyone speaking.
 struct GlobalSample { var t: Double; var tokens: Set<String>; var facts: Set<String>; var spotName: String; var spotArea: CGFloat; var speakingAny: Bool }
 var globalHistory: [GlobalSample] = []
+// Targeted hunt for the EXACT string Recall's TeamsScraper matches (" is active
+// speaker") + related speaking phrases, anywhere in the full enhanced AX tree.
+var needleTimeline: [(t: Double, hits: Set<String>)] = []
+let speakingNeedles = ["active speaker", "is speaking", "is talking", "voice level", "speaking"]
 var sampleCount = 0
 var sawAnyTile = false
 
@@ -126,6 +234,7 @@ func tick() {
         t: elapsed, tokens: MeetTiles.allClassTokens(in: hit.web),
         facts: MeetTiles.pageFacts(in: hit.web),
         spotName: spotName, spotArea: spotArea, speakingAny: speakingAny))
+    needleTimeline.append((elapsed, MeetTiles.needleScan(in: hit.web, needles: speakingNeedles)))
     if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "platform": detectedPlatform, "tiles": tilesJson]), let jsonl {
         jsonl.write(data); jsonl.write(Data([0x0a]))
     }
@@ -253,20 +362,36 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
         }
     }
 
-    // ORACLE-DIFF — the decisive route-A test. Trusting kssMZb as ground truth
-    // (it tracks real speech), split this tile's NON-hovered samples into speaking
-    // vs silent and find any NON-class fact (attr name or bucketed value) that
-    // co-varies ≥60%. A fact ~100% when speaking / ~0% when silent = a
-    // rotation-proof structural handle — Recall's "container → indicator" — that
-    // ISN'T the obfuscated class. Nothing co-varying = the class is the ONLY AX
-    // speaking signal Chrome exposes here (so route B / audio is correct).
+    // ORACLE-DIFF — split this tile's NON-hovered samples into speaking vs silent
+    // and find ANY captured surface that co-varies ≥60%. Ground truth is either
+    // the auto `speaking` flag (Meet's kssMZb) OR manual `oracle=` windows (Teams,
+    // which has no auto-marker). The diff spans EVERY surface — class tokens
+    // (`cls:`), every AX attribute name+value (`n:`/`v:`), and role-shape
+    // (`role:`) — so an active-tile BORDER shows up if it's reflected as ANY
+    // AX-readable state (AXSelected, aria-selected, a value, a child node).
+    // Nothing co-varying ⇒ the border is pure CSS / a pruned decorative node,
+    // which the AX tree cannot expose (→ audio VAD + mute is the only path).
     let clean = samples.filter { !$0.hovered }
-    let onS = clean.filter { $0.speaking }
-    let offS = clean.filter { !$0.speaking }
+    let useOracle = !oracleWindows.isEmpty
+    let onS = clean.filter { useOracle ? oracleSpeaking($0.t) : $0.speaking }
+    let offS = clean.filter { useOracle ? !oracleSpeaking($0.t) : !$0.speaking }
+    func signals(_ s: Sample) -> Set<String> {
+        var sig = s.facts
+        for c in s.full { sig.insert("cls:\(c)") }
+        for r in s.roles { sig.insert("role:\(r)") }
+        // GEOMETRY — active-speaker may be tile PROMOTION (the speaker's tile
+        // enlarges / moves to the main stage), an AXFrame change the class/attr
+        // diff would miss. Bucket width (40px) + reading-order slot so a size or
+        // position change co-varies with speech if that's the mechanism.
+        sig.insert("geo:w\(Int((s.width / 40).rounded()) * 40)")
+        sig.insert("geo:ord\(s.order)")
+        return sig
+    }
+    let src = useOracle ? "oracle=\(oracleWindows.map { "\(Int($0.0))-\(Int($0.1))" }.joined(separator: ","))" : "kssMZb"
     if onS.count >= 3 && offS.count >= 3 {
         var onC: [String: Int] = [:], offC: [String: Int] = [:]
-        for s in onS { for f in s.facts { onC[f, default: 0] += 1 } }
-        for s in offS { for f in s.facts { offC[f, default: 0] += 1 } }
+        for s in onS { for f in signals(s) { onC[f, default: 0] += 1 } }
+        for s in offS { for f in signals(s) { offC[f, default: 0] += 1 } }
         var hits: [(f: String, onR: Double, offR: Double)] = []
         for f in Set(onC.keys).union(offC.keys) {
             let onR = Double(onC[f] ?? 0) / Double(onS.count)
@@ -274,15 +399,15 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
             if abs(onR - offR) >= 0.6 { hits.append((f, onR, offR)) }
         }
         if hits.isEmpty {
-            print("   oracle-diff: NO non-class fact co-varies with kssMZb (spk=\(onS.count)/sil=\(offS.count)) → the class is the ONLY AX speaking signal here")
+            print("   oracle-diff [\(src)]: NOTHING (class/attr/role) co-varies with speech (spk=\(onS.count)/sil=\(offS.count)) → the active-tile state is NOT in the AX tree (pure-CSS border / pruned node) → audio VAD + mute only")
         } else {
-            print("   oracle-diff: non-class facts co-varying with kssMZb (spk=\(onS.count)/sil=\(offS.count)) — candidate structural handles:")
-            for h in hits.sorted(by: { abs($0.onR - $0.offR) > abs($1.onR - $1.offR) }).prefix(12) {
+            print("   oracle-diff [\(src)]: surfaces co-varying with speech (spk=\(onS.count)/sil=\(offS.count)) — candidate active-speaker handles:")
+            for h in hits.sorted(by: { abs($0.onR - $0.offR) > abs($1.onR - $1.offR) }).prefix(15) {
                 print(String(format: "     %@  spk=%.0f%% sil=%.0f%%", h.f, h.onR * 100, h.offR * 100))
             }
         }
     } else {
-        print("   oracle-diff: need ≥3 speaking AND ≥3 silent (mouse-off) samples on this tile (have spk=\(onS.count)/sil=\(offS.count))")
+        print("   oracle-diff [\(src)]: need ≥3 speaking AND ≥3 silent samples on this tile (have spk=\(onS.count)/sil=\(offS.count))")
     }
 }
 
@@ -335,16 +460,19 @@ if !globalHistory.isEmpty {
     }
 
     // ── PAGE-LEVEL STRUCTURAL HUNT (container/indicator outside the tiles) ────
-    // Same full-attribute oracle-diff, but over the WHOLE web area, split by
-    // "was anyone speaking this tick". A page-level fact ~100% speaking / ~0%
-    // silent = an active-speaker indicator element living outside the tiles.
-    let gOn = globalHistory.filter { $0.speakingAny }
-    let gOff = globalHistory.filter { !$0.speakingAny }
-    print("\nPAGE-LEVEL structural hunt (indicator/container outside the tiles):")
+    // Full-surface diff over the WHOLE web area (page facts + class tokens),
+    // split by speech — manual `oracle=` windows when given, else "was anyone
+    // speaking". Catches an active-speaker indicator/border element living
+    // OUTSIDE the tiles (a page-level overlay).
+    let usePageOracle = !oracleWindows.isEmpty
+    let gOn = globalHistory.filter { usePageOracle ? oracleSpeaking($0.t) : $0.speakingAny }
+    let gOff = globalHistory.filter { usePageOracle ? !oracleSpeaking($0.t) : !$0.speakingAny }
+    let pageSrc = usePageOracle ? "oracle" : "auto"
+    print("\nPAGE-LEVEL structural hunt (indicator/container outside the tiles) [\(pageSrc)]:")
     if gOn.count >= 3 && gOff.count >= 3 {
         var onC: [String: Int] = [:], offC: [String: Int] = [:]
-        for g in gOn { for f in g.facts { onC[f, default: 0] += 1 } }
-        for g in gOff { for f in g.facts { offC[f, default: 0] += 1 } }
+        for g in gOn { for f in g.facts { onC[f, default: 0] += 1 }; for c in g.tokens { onC["cls:\(c)", default: 0] += 1 } }
+        for g in gOff { for f in g.facts { offC[f, default: 0] += 1 }; for c in g.tokens { offC["cls:\(c)", default: 0] += 1 } }
         var hits: [(f: String, onR: Double, offR: Double)] = []
         for f in Set(onC.keys).union(offC.keys) {
             let onR = Double(onC[f] ?? 0) / Double(gOn.count)
@@ -352,15 +480,43 @@ if !globalHistory.isEmpty {
             if abs(onR - offR) >= 0.6 { hits.append((f, onR, offR)) }
         }
         if hits.isEmpty {
-            print("   NO page-level non-class fact toggles with speech (spk=\(gOn.count)/sil=\(gOff.count)) → no container/indicator element outside the tiles either")
+            print("   NOTHING page-level (class/attr) toggles with speech (spk=\(gOn.count)/sil=\(gOff.count)) → no indicator/border element outside the tiles either")
         } else {
-            print("   page-level facts toggling with speech (spk=\(gOn.count)/sil=\(gOff.count)) — candidate container/indicator:")
+            print("   page-level surfaces toggling with speech (spk=\(gOn.count)/sil=\(gOff.count)) — candidate container/indicator:")
             for h in hits.sorted(by: { abs($0.onR - $0.offR) > abs($1.onR - $1.offR) }).prefix(15) {
                 print(String(format: "     %@  spk=%.0f%% sil=%.0f%%", h.f, h.onR * 100, h.offR * 100))
             }
         }
     } else {
-        print("   need ≥3 speaking AND ≥3 fully-silent ticks (have spk=\(gOn.count)/sil=\(gOff.count)) — pause between turns so there are silent samples")
+        print("   need ≥3 speaking AND ≥3 silent ticks (have spk=\(gOn.count)/sil=\(gOff.count)) — give the oracle= windows, or pause between turns")
+    }
+}
+
+// ── SPEAKING-STRING NEEDLE HUNT ───────────────────────────────────────────────
+// The exact string Recall's TeamsScraper matches (" is active speaker") + related
+// phrases, anywhere in the full enhanced AX tree, with the windows they appear in.
+// If a "<name> is active speaker" label shows up in sync with who's talking →
+// that's the readable AX speaking signal (map straight to a name). If it NEVER
+// appears, Recall's check is inert on this build → speaking comes from VAD.
+if !needleTimeline.isEmpty {
+    let N = needleTimeline.count
+    var cnt: [String: Int] = [:]
+    for s in needleTimeline { for h in s.hits { cnt[h, default: 0] += 1 } }
+    print("\nSPEAKING-STRING NEEDLE HUNT (\"is active speaker\"/\"speaking\"/… across the whole AX tree):")
+    if cnt.isEmpty {
+        print("   NONE — no speaking phrase appears in ANY AX attribute on this build (Recall's \" is active speaker\" check is inert here → speaking is VAD-derived)")
+    } else {
+        for (hit, c) in cnt.sorted(by: { $0.value > $1.value }).prefix(30) {
+            var out: [(Double, Double)] = []
+            var st: Double? = nil, last: Double? = nil, miss = 0
+            for s in needleTimeline {
+                if s.hits.contains(hit) { if st == nil { st = s.t }; last = s.t; miss = 0 }
+                else if st != nil { miss += 1; if miss > 1 { out.append((st!, last!)); st = nil } }
+            }
+            if let s0 = st, let l = last { out.append((s0, l)) }
+            print("   [\(c)/\(N)] \(hit)  \(fmtWindows(out))")
+        }
+        print("   → compare these windows to who actually spoke. A match = the readable AX speaking label.")
     }
 }
 
