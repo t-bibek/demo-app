@@ -1,9 +1,22 @@
 # How we detect "who is speaking, when" in Google Meet (macOS, AX-only)
 
-**Status:** working & verified — 2026-06-20. Meet now logs the active speaker **by
-name** (previously it could only log `Someone`). This doc explains the mechanism,
-how we proved it, how it's wired into the app, and how to maintain it when Google
-changes Meet (the signal rotates ~6 weeks).
+> ⚠️ **SUPERSEDED for the live app (2026-06-22).** Live testing showed the per-tile
+> CSS class below is the tile's **hover / self-view highlight, not a reliable
+> speaking signal**: it *over-fires* (your own tile lights up on hover anywhere,
+> and stays lit while you're muted+silent) and *under-fires* (**Google Meet itself
+> sometimes doesn't render the remote speaker's indicator at all** — a signal you
+> can't scrape if the app never draws it). So the app no longer attributes Meet
+> from this class. It now uses **audio direction** — mic = you, system audio =
+> a remote — the same hover/rotation-proof approach as native Zoom, with the class
+> kept **telemetry-only**. See
+> [meet-active-speaker-no-hardcoded-css.md](meet-active-speaker-no-hardcoded-css.md)
+> §"Implementation status". The mechanism below is retained as the historical
+> derivation + the no-audio fallback path.
+
+**Status (historical):** class-based detection — verified 2026-06-20, superseded
+2026-06-22 (see banner). Meet logged the active speaker **by name** via the
+per-tile class; this doc explains that mechanism, how we proved it, and how it's
+wired — now the no-audio fallback rather than the primary path.
 
 > Companion docs: [recall-and-demo-extraction.md](recall-and-demo-extraction.md)
 > (Recall SDK comparison + the §4 experiment that kicked this off) and

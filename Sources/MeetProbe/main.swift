@@ -41,7 +41,7 @@ FileManager.default.createFile(atPath: jsonlURL.path, contents: nil)
 let jsonl = try? FileHandle(forWritingTo: jsonlURL)
 
 // Per-tile session history (gallery view keeps tiles persistent).
-struct Sample { var t: Double; var pill: Set<String>; var full: Set<String>; var width: CGFloat; var order: Int; var micOff: Bool; var speaking: Bool }
+struct Sample { var t: Double; var pill: Set<String>; var full: Set<String>; var roles: Set<String>; var width: CGFloat; var order: Int; var micOff: Bool; var speaking: Bool }
 var history: [String: [Sample]] = [:]
 var firstPill: [String: Set<String>] = [:]
 var globalHistory: [(t: Double, tokens: Set<String>)] = []   // whole web-area tokens per sample
@@ -74,18 +74,34 @@ func tick() {
         let f = r.features
         let pill = Set(f.pillTokens.split(separator: ",").map(String.init))
         let full = Set(f.classTokens.split(separator: ",").map(String.init))
-        let classSpk = meetTileIsSpeaking(classTokens: full)     // Meet kssMZb rule
+        // Phase-4 probe: the tile's child-role signature ("AXImage:2|AXGroup:5"),
+        // tokenized so a role:count that toggles with speech = an indicator-child
+        // node (a speaking signal independent of the CSS class).
+        let roles = Set(f.roleCounts.split(separator: "|").map(String.init))
+        // The `eT1oJ` self-cluster is the self tile's HOVER/focus highlight, NOT
+        // speech — verified live: it lights up on hover-anywhere and stays on a
+        // muted, silent self tile. Only `kssMZb` is the real cross-tile
+        // active-speaker class. So treat ONLY kssMZb (+ the Zoom marker) as
+        // speaking, and surface the self-cluster as a separate highlight tag so
+        // a hover no longer reads as SPEAKING.
+        let selfHighlightCluster: Set<String> = ["eT1oJ", "hk9qKe", "nn1vQb", "s4hFTd", "tWDL4c", "yHy1rc"]
+        let kssSpk = full.contains("kssMZb")
         let markerSpk = f.markerSpeaking                          // Zoom "…, active speaker"
-        let speaking = classSpk || markerSpk
-        history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
+        let speaking = kssSpk || markerSpk
+        let highlightOnly = !speaking && !full.isDisjoint(with: selfHighlightCluster)
+        history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, roles: roles, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
         tilesJson.append([
             "name": f.name, "order": f.orderIndex,
             "w": Int(f.frame.width), "h": Int(f.frame.height),
             "pillTokens": f.pillTokens, "classTokens": f.classTokens,
             "micOff": f.micOff, "speaking": speaking,
-            "markerSpeaking": markerSpk, "classSpeaking": classSpk,
+            "markerSpeaking": markerSpk, "classSpeaking": kssSpk,
+            "selfHighlight": highlightOnly,
         ])
-        let tag = speaking ? "🔊SPEAKING(\(markerSpk ? "mark" : "")\(markerSpk && classSpk ? "+" : "")\(classSpk ? "cls" : ""))" : "·"
+        let tag: String
+        if speaking { tag = "🔊SPEAKING(\(markerSpk ? "mark" : "")\(markerSpk && kssSpk ? "+" : "")\(kssSpk ? "cls" : ""))" }
+        else if highlightOnly { tag = "✋hl(self/hover, not speech)" }
+        else { tag = "·" }
         line += "| \(f.name) \(tag) "
     }
     if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "platform": detectedPlatform, "tiles": tilesJson]), let jsonl {
@@ -172,13 +188,27 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
     let n = samples.count
     let medianW = samples.map { $0.width }.sorted()[n / 2]
     print("\n● \(name)  (present \(n)/\(sampleCount), medianWidth=\(Int(medianW)))")
-    // SPEAKING = Zoom text marker OR Meet class rule — compare to your narration.
+    // SPEAKING = Zoom marker OR Meet `kssMZb` (the self-hover cluster is EXCLUDED,
+    // so a hover no longer counts) — compare to your narration.
     let spkWin = windows(samples) { $0.speaking }
-    print("   🔊 SPEAKING (marker OR class) windows: \(spkWin.isEmpty ? "(never)" : fmtWindows(spkWin))")
+    print("   🔊 SPEAKING (marker OR kssMZb; self/hover cluster excluded) windows: \(spkWin.isEmpty ? "(never)" : fmtWindows(spkWin))")
     // All other per-tile intermittent tokens (to catch a separate MUTE class etc.)
     let cand = (tileTokenWindows[name] ?? [:]).filter { perTileTokens[$0.key] != nil }
     for (tok, ws) in cand.sorted(by: { $0.value.count > $1.value.count }) {
         print("   token \(tok)  windows: \(fmtWindows(ws))")
+    }
+    // Phase-4 verification: does the tile's CHILD STRUCTURE (role-shape) toggle
+    // with speech, independent of the CSS class? A role:count whose windows match
+    // who spoke = an indicator-child node -> class-free gallery attribution.
+    var rc: [String: Int] = [:]
+    for s in samples { for tok in s.roles { rc[tok, default: 0] += 1 } }
+    let interRoles = rc.filter { $0.value >= max(1, n / 10) && $0.value <= n * 9 / 10 }
+    if interRoles.isEmpty {
+        print("   role-shape: FLAT (no indicator-child — the class is the only gallery signal)")
+    } else {
+        for (tok, c) in interRoles.sorted(by: { $0.value > $1.value }).prefix(8) {
+            print("   role-shape \(tok)  [\(c)/\(n)]  \(fmtWindows(windows(samples) { $0.roles.contains(tok) }))")
+        }
     }
 }
 

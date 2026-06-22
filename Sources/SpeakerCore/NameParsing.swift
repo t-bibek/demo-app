@@ -69,6 +69,8 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "minimize", "search", "send", "someone", "you", "host", "co-host",
         // Zoom web toolbar labels that leak in as fake tiles:
         "react", "switch", "avatar", "end", "home", "apps", "notes", "whiteboard",
+        // Google Meet panel / chrome labels that leak in as fake tiles:
+        "people", "contributors", "in call",
     ]
     if rejectExact.contains(lower) { return false }
 
@@ -87,6 +89,21 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "options", "upgrade to", "my notes", "my audio", "stop video", "start video",
     ]
     if rejectSubstrings.contains(where: { lower.contains($0) }) { return false }
+
+    // Multi-word UI labels (Meet/Google chrome, toasts) contain function words a
+    // display name never has as a STANDALONE token. Reject on a whole-token match
+    // — so "Erin Callahan" is NOT caught by "in" — or on a token that is itself a
+    // meeting code ("Meet - stw-emif-czt").
+    let stopwordTokens: Set<String> = [
+        "and", "for", "with", "the", "you", "you're", "you\u{2019}re",
+        "can't", "can\u{2019}t", "someone", "else", "people", "contributors",
+        "notifications", "feature", "search", "continuously", "framed",
+        "meet", "unmute",
+    ]
+    for tok in lower.split(whereSeparator: { " ,()".contains($0) }).map(String.init) {
+        if stopwordTokens.contains(tok) { return false }
+        if tok.range(of: #"^[a-z]{3}-[a-z]{3,4}-[a-z]{3}$"#, options: .regularExpression) != nil { return false }
+    }
 
     // Notifications/toasts (sentences), clock times, and Meet meeting codes
     // (e.g. "ryv-ppcs-qpb") are not participant names.

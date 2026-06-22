@@ -46,6 +46,22 @@ public struct MeetSpeakerRules: Codable, Sendable, Equatable {
     )
 }
 
+extension MeetSpeakerRules {
+    /// Phase 3 — load a config'd override so a class rotation is a config drop,
+    /// not an app release. Reads a JSON override from Application Support
+    /// (`MeetSpeakerDetector/meet-rules.json`); falls back to `builtin`. A remote
+    /// URL fetch (ETag-cached to this same file) can layer on top later.
+    public static func resolved() -> MeetSpeakerRules {
+        guard let url = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("MeetSpeakerDetector/meet-rules.json"),
+            let data = try? Data(contentsOf: url),
+            let rules = try? JSONDecoder().decode(MeetSpeakerRules.self, from: data)
+        else { return .builtin }
+        return rules
+    }
+}
+
 /// True when a Meet tile's class tokens indicate it is the active speaker.
 public func meetTileIsSpeaking(classTokens: Set<String>, rules: MeetSpeakerRules = .builtin) -> Bool {
     rules.speakingClasses.contains { classTokens.contains($0) }

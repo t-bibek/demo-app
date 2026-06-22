@@ -24,6 +24,9 @@ struct ScannedWindow {
     /// Native Zoom roster (name + mute + isMe) for mute-gated attribution; empty
     /// for every other platform.
     var zoomRoster: [ZoomRosterEntry]
+    /// Meet per-tile observations (geometry + class) for the fused, VAD-gated
+    /// active-speaker resolver in the engine; empty for every other platform.
+    var meetTiles: [MeetTileObservation]
 }
 
 /// The macOS equivalent of the original's Windows UI Automation engine.
@@ -98,10 +101,14 @@ final class AccessibilityScanner {
                 var speakers = dedup(collector.speakers)
                 var participants = dedup(collector.participants)
                 var zoomRoster: [ZoomRosterEntry] = []
+                var meetTiles: [MeetTileObservation] = []
 
                 if platform == .meet {
-                    let m = meetSpeakingNames(in: window)
-                    speakers = m.speakers
+                    // Meet's active speaker is fused (geometry + class + VAD) in the
+                    // engine — the scanner just supplies the per-tile observations.
+                    let m = meetTileObservations(in: window)
+                    meetTiles = m.tiles
+                    speakers = []   // engine resolves Meet speakers from meetTiles
                     participants = dedup(participants + m.participants)
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +
@@ -133,7 +140,8 @@ final class AccessibilityScanner {
                     participants: participants,
                     localUserUnmuted: collector.localUserUnmuted,
                     directSpeakerRead: directSpeakerRead,
-                    zoomRoster: zoomRoster
+                    zoomRoster: zoomRoster,
+                    meetTiles: meetTiles
                 ))
             }
         }
@@ -315,12 +323,15 @@ final class AccessibilityScanner {
 
     // MARK: Google Meet per-tile active-speaker scan
 
-    /// Finds participant tiles in a Meet window and returns the names whose tile
-    /// carries the active-speaker class (see SpeakerCore.meetTileIsSpeaking).
-    /// Verified mechanism: Meet adds `kssMZb` to the speaking tile's DOM classes,
-    /// surfaced via AXDOMClassList. Names are obfuscated-class-driven, so the rule
-    /// is remote-config'd in MeetSpeakerRules.
-    private func meetSpeakingNames(in window: AXUIElement) -> (speakers: [String], participants: [String]) {
+    /// Config-loaded Meet class rules (Phase 3): a rotation is a config drop, not
+    /// a rebuild. Loaded once per scanner.
+    private let meetRules = MeetSpeakerRules.resolved()
+
+    /// Builds the per-tile observations the engine's fused resolver needs: name +
+    /// geometry (AXFrame area, the durable signal) + DOM order + whether the
+    /// rotating CSS class matched (fallback signal). The engine then fuses these
+    /// with audio VAD — see docs/meet-active-speaker-no-hardcoded-css.md.
+    private func meetTileObservations(in window: AXUIElement) -> (tiles: [MeetTileObservation], participants: [String]) {
         var nameNodes: [(AXUIElement, String)] = []
         var scanned = 0
         func collect(_ el: AXUIElement, _ depth: Int) {
@@ -335,14 +346,44 @@ final class AccessibilityScanner {
         }
         collect(window, 0)
 
-        var speakers = Set<String>()
-        var participants = Set<String>()
+        // One entry per name; keep the largest tile (the real video tile, not a
+        // tiny duplicate label). Track frame for geometry + reading order.
+        struct Acc { var area: Double; var speaking: Bool; var isMe: Bool; var minY: CGFloat; var minX: CGFloat }
+        var byName: [String: Acc] = [:]
         for (node, name) in nameNodes {
             guard let tile = meetTileAncestor(of: node) else { continue }
-            participants.insert(name)
-            if meetTileIsSpeaking(classTokens: tileClassTokens(tile)) { speakers.insert(name) }
+            let frame = axFrame(tile) ?? .zero
+            let area = Double(frame.width * frame.height)
+            let speaking = meetTileIsSpeaking(classTokens: tileClassTokens(tile), rules: meetRules)
+            let isMe = meetTileIsSelf(tile)
+            if let ex = byName[name], ex.area >= area { continue }
+            byName[name] = Acc(area: area, speaking: speaking, isMe: isMe, minY: frame.minY, minX: frame.minX)
         }
-        return (Array(speakers), Array(participants))
+
+        let ordered = byName.sorted { ($0.value.minY, $0.value.minX) < ($1.value.minY, $1.value.minX) }
+        let tiles = ordered.enumerated().map { i, kv in
+            MeetTileObservation(name: kv.key, area: kv.value.area, orderIndex: i,
+                                classSpeaking: kv.value.speaking, isMe: kv.value.isMe)
+        }
+        return (tiles, ordered.map { $0.key })
+    }
+
+    /// True if a tile is the LOCAL user's — Meet puts a "(You)" label in the self
+    /// tile's subtree. Lets audio-direction separate self from remotes (so a
+    /// remote speaking is never attributed to your own tile's persistent highlight).
+    private func meetTileIsSelf(_ tile: AXUIElement) -> Bool {
+        var found = false
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if found || n >= 600 || d > 30 { return }
+            n += 1
+            for attr in ["AXValue", "AXTitle", "AXDescription"] {
+                if let s = axString(el, attr)?.lowercased(), s.contains("(you)") { found = true; return }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found { return } }
+        }
+        rec(tile, 0)
+        return found
     }
 
     /// Climb from a name node to the nearest participant-tile-sized ancestor.

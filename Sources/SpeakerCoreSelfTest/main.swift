@@ -119,6 +119,19 @@ check(cleanParticipantName("Stop video") == nil, "zoom native 'Stop video' rejec
 check(cleanParticipantName("My notes off") == nil, "zoom native 'My notes off' rejected")
 check(cleanParticipantName("Upgrade to Pro") == nil, "zoom native 'Upgrade to Pro' banner rejected")
 check(cleanParticipantName("David's Iphone") == "David's Iphone", "zoom native phone participant still a name")
+// Google Meet UI chrome (People panel open) leaked in as fake speaking tiles:
+check(cleanParticipantName("People") == nil, "meet 'People' panel label rejected")
+check(cleanParticipantName("Contributors 2") == nil, "meet 'Contributors 2' rejected")
+check(cleanParticipantName("In call") == nil, "meet 'In call' rejected")
+check(cleanParticipantName("Search for people") == nil, "meet 'Search for people' rejected")
+check(cleanParticipantName("Call feature notifications and actions") == nil, "meet feature-bar label rejected")
+check(cleanParticipantName("You can't unmute someone else") == nil, "meet 'can't unmute' toast rejected")
+check(cleanParticipantName("You’re continuously framed") == nil, "meet framing toast rejected")
+check(cleanParticipantName("Meet - stw-emif-czt") == nil, "meet title + code rejected")
+check(cleanParticipantName("(You)") == nil, "meet '(You)' label rejected")
+check(cleanParticipantName("Erin Callahan") == "Erin Callahan", "name containing 'in call' substring still passes")
+check(cleanParticipantName("Wedding Thapas") == "Wedding Thapas", "real name 'Wedding Thapas' still passes")
+check(cleanParticipantName("An Nguyen") == "An Nguyen", "short given name 'An' not clipped")
 check(cleanParticipantName("Bidheyak Thapa") == "Bidheyak Thapa", "real name still passes after control filters")
 check(cleanParticipantName("Wedding thapas") == "Wedding thapas", "real name 'Wedding thapas' still passes")
 check(isSpeakingMarker("Bidheyak Thapa, Computer audio unmuted, active speaker"), "active-speaker marker detected")
@@ -176,6 +189,39 @@ equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "You
 equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: true, localName: "Bibek Thapa",
         remoteActive: true, remoteUnmutedNames: ["Neymar junior"]),
       ["Bibek Thapa", "Neymar junior"], "overlap -> both named")
+
+// MARK: Meet fused active-speaker resolver (geometry + class + VAD gate)
+print("Meet fused resolver:")
+let mtGallery = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: false),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: false),
+]
+let mtClass = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: true),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: false),
+]
+let mtSpotlight = [
+    MeetTileObservation(name: "Alice", area: 200_000, orderIndex: 0, classSpeaking: false),
+    MeetTileObservation(name: "Bob",   area: 10_000,  orderIndex: 1, classSpeaking: false),
+]
+// 1) VAD gate closed -> nobody (kills stale-class false positives).
+equal(meetActiveSpeaker(tiles: mtClass, prevAreas: [:], vadSpeechActive: false).names, [],
+      "vad silent -> no speaker even with class match")
+// 2) class match wins when speaking.
+equal(meetActiveSpeaker(tiles: mtClass, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "class match -> name")
+equal(meetActiveSpeaker(tiles: mtClass, prevAreas: [:], vadSpeechActive: true).via, .cssClass,
+      "class match -> via cssClass")
+// 3) no class, dominant tile -> geometry (survives a class rotation in speaker view).
+equal(meetActiveSpeaker(tiles: mtSpotlight, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "no class, spotlight -> geometry name")
+equal(meetActiveSpeaker(tiles: mtSpotlight, prevAreas: [:], vadSpeechActive: true).via, .geometry,
+      "spotlight -> via geometry")
+// 4) gallery (equal tiles), no class -> Someone floor (geometry must NOT guess).
+equal(meetActiveSpeaker(tiles: mtGallery, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "gallery, no class -> Someone floor")
+equal(meetActiveSpeaker(tiles: mtGallery, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
+      "gallery, no class -> via someoneFloor")
 
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

@@ -23,6 +23,47 @@ compiled logic we reason about but can't read directly._
 
 ---
 
+## Implementation status (2026-06-22)
+
+> **Update after live testing:** the per-tile CSS class turned out to be the
+> tile's **hover / self-view highlight, not speech** — it over-fires (self tile
+> lights up on any hover; stays lit while muted+silent) *and* under-fires
+> (**Meet itself sometimes omits the remote speaker's indicator**). A signal the
+> app never draws can't be scraped. So the class is now **telemetry-only**, and
+> Meet attributes by **audio direction** (mic = you, system audio = a remote) —
+> identical to native Zoom, converging both platforms (B3). The class +
+> geometry resolver remains only as the **no-audio (no Screen-Recording)
+> fallback**.
+
+Phases 1–3 + the fused resolver are **implemented** (feasibility study first; see
+the per-phase ✅/⏳ markers in §4). Summary:
+
+- ✅ **Fused resolver** — [SpeakerCore/MeetActiveSpeaker.swift](../Sources/SpeakerCore/MeetActiveSpeaker.swift):
+  `meetActiveSpeaker(tiles:prevAreas:vadSpeechActive:)` → VAD-gate → class →
+  geometry → `Someone` floor, returning a `MeetSpeakerSignal` for telemetry.
+- ✅ **Phase 1 — VAD gate (soft)** — gated on the existing `SystemAudioMeter` peak,
+  but **only when audio capture is actually running** (no Screen-Recording
+  permission ⇒ no gating, so Meet still works Accessibility-only). Real
+  Silero/WebRTC VAD is the later **R1** upgrade.
+- ✅ **Phase 2 — geometry attribution** — a clearly-dominant tile (auto
+  speaker/spotlight view) is attributed without the class; gallery (equal tiles)
+  correctly defers. Built on the `AXFrame` area we already read.
+- ✅ **Phase 3 — class demoted + config-loadable + telemetered** —
+  `MeetSpeakerRules.resolved()` loads an override JSON (Application Support) with
+  `builtin` fallback; the engine counts class/geometry/`Someone` decisions and
+  warns on stop when speech had floors but **no** class hits (the rotation signal).
+- ⏳ **Phase 4 — indicator-child (C)** — *deferred pending live verification* that a
+  non-class child node marks the speaker (MeetProbe already captures `roleCounts`).
+- ⏳ **Phase 5 — `AXObserver` event-drive** and **R1 — real VAD** — deferred.
+
+Honest limit (unchanged from the plan): this **demotes** the class, it doesn't
+delete it — **gallery-view multi-party attribution still needs the class** until
+Phase 4 verifies an indicator-child. The win is durability: a rotation is now a
+config drop + a telemetry warning, not a silent failure, and speaker-view +
+"is anyone talking" no longer depend on the class.
+
+---
+
 ## 1. What Recall's binary actually does for Meet [verified — symbols]
 
 ### 1.1 The active-speaker code path (demangled `nm`)
@@ -115,26 +156,26 @@ This is exactly Recall's shape: VAD + geometry + AX → a participant **ID** set
 per-tile feature dump (frame, order, class set, child-role signature, mic node) sampled on a scripted
 call. This is how you verify B/C and re-derive D when it rotates.
 
-**Phase 1 — Audio VAD backbone.** Run a VAD (Silero/WebRTC) on the system audio you already capture
+**Phase 1 — Audio VAD backbone. ✅ (soft peak-gate done; Silero/WebRTC = R1)** Run a VAD (Silero/WebRTC) on the system audio you already capture
 (`SystemAudioMeter`). Produce `speechActive: Bool` + on/off timestamps. Gate all attribution on it.
 *Immediately* removes false speakers and gives a rotation-proof "Someone" floor. **No class needed for this.**
 
-**Phase 2 — Geometry attribution.** From the per-tile model, detect the **promoted/spotlit tile**
+**Phase 2 — Geometry attribution. ✅** From the per-tile model, detect the **promoted/spotlit tile**
 (largest `AXFrame` area, or the tile whose area grew across ticks, or moved to spotlight position).
 Attribute the VAD speech to that tile. Covers speaker/spotlight view with **zero class dependency**.
 
-**Phase 3 — Demote the class to remote-config fallback.** Keep `MeetSpeakerRules` but:
+**Phase 3 — Demote the class to remote-config fallback. ✅ (local override + telemetry; URL fetch later)** Keep `MeetSpeakerRules` but:
 - only consult it in **gallery view** when geometry can't decide;
 - load it from **remote config** (it's already `Codable` with a `version` field — fetch URL, ETag-cache,
   fall back to `builtin`);
 - add **telemetry**: count `VAD speech AND a tile is attributable by geometry/child BUT class-set matched 0`
   → that's your "Meet rotated the class" signal → refresh remote config / alert. No app release.
 
-**Phase 4 — Per-tile indicator-child (C) to cut the last class dependency.** Use MeetProbe to test
+**Phase 4 — Per-tile indicator-child (C) to cut the last class dependency. ⏳ (deferred — verify live first)** Use MeetProbe to test
 whether the speaking tile gains a **non-class** child node (an indicator/equalizer element) detectable via
 `AXChildren` role-shape. If yes → use it for gallery-view attribution and the class becomes pure backup.
 
-**Phase 5 — `AXObserver` + event-drive.** Replace the polling `walk()` with `AXObserver` notifications
+**Phase 5 — `AXObserver` + event-drive. ⏳ (deferred)** Replace the polling `walk()` with `AXObserver` notifications
 (Recall uses `kAXTitleChangedNotification`) on the Meet web area; lower CPU, precise transitions.
 
 > Realistic end-state: **VAD + geometry handle speaker-view and the "is anyone talking" question with no

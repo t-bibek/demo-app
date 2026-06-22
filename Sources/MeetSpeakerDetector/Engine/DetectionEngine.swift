@@ -29,6 +29,13 @@ final class DetectionEngine {
     private var tracker: SessionTracker!
     private var lastStatusKey = ""
 
+    // Meet fused-resolver state: last tick's tile areas (geometry history) and
+    // telemetry counters (a class rotation shows up as floors with no class hits).
+    private var meetPrevAreas: [String: Double] = [:]
+    private var meetNamed = 0        // ticks attributed to a real name (audio-direction)
+    private var meetSomeone = 0      // ticks attributed to anonymous "Someone"
+    private var meetClassFired = 0   // ticks the CSS class matched (telemetry: hover/self highlight)
+
     /// Where completed-session NDJSON is written.
     let logURL: URL
 
@@ -76,6 +83,13 @@ final class DetectionEngine {
             (systemMeter as? SystemAudioMeter)?.stop()
         }
         systemMeter = nil
+
+        // Meet attribution telemetry. `class fired` is how often the CSS class
+        // matched — kept only to monitor the hover/self-highlight; it is NOT used
+        // for attribution when audio is available.
+        if meetNamed + meetSomeone + meetClassFired > 0 {
+            status(.info, "Meet attribution — named: \(meetNamed), someone: \(meetSomeone); CSS class fired \(meetClassFired)× (telemetry only — hover/self highlight, not speech).")
+        }
         status(.info, "Detection stopped.")
     }
 
@@ -92,6 +106,15 @@ final class DetectionEngine {
         let micActive = micPeak > config.micThreshold
         let remoteActive = systemPeak > config.remoteThreshold
 
+        // The VAD gate is SOFT: only trustworthy when system-audio capture is
+        // actually running. Without Screen Recording permission systemPeak is
+        // always 0, so gating Meet on it would drop every remote speaker — so when
+        // audio isn't reliable we don't gate (Meet falls back to class-only).
+        var audioReliable = false
+        if #available(macOS 13.0, *) {
+            audioReliable = (systemMeter as? SystemAudioMeter)?.running ?? false
+        }
+
         let scanned = scanner.scan()
 
         if scanned.isEmpty {
@@ -107,7 +130,34 @@ final class DetectionEngine {
             // WHO is speaking — resolved per platform from the right signal.
             var who = Set(w.speakers)
 
-            if w.directSpeakerRead {
+            if w.platform == .meet {
+                // Meet's per-tile CSS class is the tile's HOVER / self-view
+                // highlight on current builds — NOT speech (verified live:
+                // hovering toggles it, a muted-silent self tile still shows it,
+                // and a remote speaking lights up the self tile too). So attribute
+                // by AUDIO DIRECTION + roster, exactly like Zoom: mic = you,
+                // system audio = a remote. The class is telemetry-only.
+                // See docs/meet-active-speaker-no-hardcoded-css.md.
+                if w.meetTiles.contains(where: { $0.classSpeaking }) { meetClassFired += 1 }
+
+                if audioReliable {
+                    let me = w.meetTiles.first(where: { $0.isMe })
+                    let localUnmuted = w.localUserUnmuted ?? false
+                    let localName = me?.name ?? config.localUserName
+                    let remotes = w.meetTiles.filter { !$0.isMe }.map { $0.name }
+                    let names = zoomMuteGateSpeakers(
+                        micActive: micActive, localUnmuted: localUnmuted, localName: localName,
+                        remoteActive: remoteActive, remoteUnmutedNames: remotes)
+                    who.formUnion(names)
+                    if names.contains("Someone") { meetSomeone += 1 } else if !names.isEmpty { meetNamed += 1 }
+                } else {
+                    // No system-audio capture (Screen Recording off) — fall back to
+                    // the hover/self-confounded class so we're not fully blind.
+                    let r = meetActiveSpeaker(tiles: w.meetTiles, prevAreas: meetPrevAreas, vadSpeechActive: true)
+                    who.formUnion(r.names)
+                }
+                meetPrevAreas = Dictionary(w.meetTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
+            } else if w.directSpeakerRead {
                 // Meet (kssMZb class) / Zoom web ("active speaker" marker): the UI
                 // names the speaker, including your own tile. Trust it; only fall
                 // back to the anonymous "Someone" when the tree itself is
