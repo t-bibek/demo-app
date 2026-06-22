@@ -1,17 +1,20 @@
 # How we detect "who is speaking, when" in Google Meet (macOS, AX-only)
 
-> ⚠️ **SUPERSEDED for the live app (2026-06-22).** Live testing showed the per-tile
-> CSS class below is the tile's **hover / self-view highlight, not a reliable
-> speaking signal**: it *over-fires* (your own tile lights up on hover anywhere,
-> and stays lit while you're muted+silent) and *under-fires* (**Google Meet itself
-> sometimes doesn't render the remote speaker's indicator at all** — a signal you
-> can't scrape if the app never draws it). So the app no longer attributes Meet
-> from this class. It now uses **audio direction** — mic = you, system audio =
-> a remote — the same hover/rotation-proof approach as native Zoom, with the class
-> kept **telemetry-only**. See
-> [meet-active-speaker-no-hardcoded-css.md](meet-active-speaker-no-hardcoded-css.md)
-> §"Implementation status". The mechanism below is retained as the historical
-> derivation + the no-audio fallback path.
+> ⚠️ **REVISED (2026-06-22).** Two corrections from live narrated runs:
+> 1. The original `speakingClasses` lumped together two different things. The
+>    **self-cluster** (`eT1oJ, nn1vQb, s4hFTd, yHy1rc, tWDL4c, hk9qKe`) is the
+>    tile's **hover / self-focus highlight — NOT speech** (it fires on hover and
+>    stays lit while muted+silent). That was the false-positive source; it's
+>    dropped from the rule.
+> 2. **`kssMZb` alone IS a real per-tile active-speaker class** — verified in a
+>    narrated run (remote 1.3–16.0, self 19.5–31.5, silent after, not on hover).
+>    `kssMZb` is the cross-tile token; `ACcyyc/tC2Wod/t9yCsb` are self-only.
+>
+> Current direction: **narrow the rule to `kssMZb` + FUSE with VAD** (VAD-gate →
+> `kssMZb` per-tile → audio-direction fallback), config-loadable since it rotates.
+> See [meet-active-speaker-no-hardcoded-css.md](meet-active-speaker-no-hardcoded-css.md)
+> §"Implementation status" for the corrected plan. The mechanism below is the
+> historical derivation; the rule narrows to `kssMZb`.
 
 **Status (historical):** class-based detection — verified 2026-06-20, superseded
 2026-06-22 (see banner). Meet logged the active speaker **by name** via the

@@ -41,7 +41,7 @@ FileManager.default.createFile(atPath: jsonlURL.path, contents: nil)
 let jsonl = try? FileHandle(forWritingTo: jsonlURL)
 
 // Per-tile session history (gallery view keeps tiles persistent).
-struct Sample { var t: Double; var pill: Set<String>; var full: Set<String>; var roles: Set<String>; var width: CGFloat; var order: Int; var micOff: Bool; var speaking: Bool }
+struct Sample { var t: Double; var pill: Set<String>; var full: Set<String>; var roles: Set<String>; var structure: Set<String>; var hovered: Bool; var width: CGFloat; var order: Int; var micOff: Bool; var speaking: Bool }
 var history: [String: [Sample]] = [:]
 var firstPill: [String: Set<String>] = [:]
 var globalHistory: [(t: Double, tokens: Set<String>)] = []   // whole web-area tokens per sample
@@ -78,6 +78,8 @@ func tick() {
         // tokenized so a role:count that toggles with speech = an indicator-child
         // node (a speaking signal independent of the CSS class).
         let roles = Set(f.roleCounts.split(separator: "|").map(String.init))
+        // Recall-style structural selector surface (subrole / DOM id / description).
+        let structure = Set(f.structureTokens.split(separator: "\u{1f}").map(String.init))
         // The `eT1oJ` self-cluster is the self tile's HOVER/focus highlight, NOT
         // speech — verified live: it lights up on hover-anywhere and stays on a
         // muted, silent self tile. Only `kssMZb` is the real cross-tile
@@ -89,7 +91,7 @@ func tick() {
         let markerSpk = f.markerSpeaking                          // Zoom "…, active speaker"
         let speaking = kssSpk || markerSpk
         let highlightOnly = !speaking && !full.isDisjoint(with: selfHighlightCluster)
-        history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, roles: roles, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
+        history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, roles: roles, structure: structure, hovered: f.hovered, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
         tilesJson.append([
             "name": f.name, "order": f.orderIndex,
             "w": Int(f.frame.width), "h": Int(f.frame.height),
@@ -208,6 +210,26 @@ for (name, samples) in history.sorted(by: { $0.key < $1.key }) {
     } else {
         for (tok, c) in interRoles.sorted(by: { $0.value > $1.value }).prefix(8) {
             print("   role-shape \(tok)  [\(c)/\(n)]  \(fmtWindows(windows(samples) { $0.roles.contains(tok) }))")
+        }
+    }
+
+    // Recall-style STRUCTURAL indicator hunt: which subrole / DOM-identifier /
+    // description tokens toggle with speech, EXCLUDING hovered samples (so a hover
+    // can't masquerade as the signal). A token whose windows match who you
+    // narrated speaking = the "active speaker indicator" node Recall keys on.
+    let hoveredCount = samples.filter { $0.hovered }.count
+    let cleanN = n - hoveredCount
+    if hoveredCount > 0 { print("   (\(hoveredCount)/\(n) samples were hovered — excluded from the structure hunt)") }
+    var sc: [String: Int] = [:]
+    for s in samples where !s.hovered { for tok in s.structure { sc[tok, default: 0] += 1 } }
+    let interStruct = sc.filter { $0.value >= max(1, cleanN / 10) && $0.value <= cleanN * 9 / 10 }
+    if cleanN == 0 {
+        print("   structure: (every sample hovered — keep the mouse OFF the meet window)")
+    } else if interStruct.isEmpty {
+        print("   structure: no indicator-node toggles (mouse-off) — no structural speaking signal on this build")
+    } else {
+        for (tok, c) in interStruct.sorted(by: { $0.value > $1.value }).prefix(12) {
+            print("   indicator? \(tok)  [\(c)/\(cleanN)]  \(fmtWindows(windows(samples) { !$0.hovered && $0.structure.contains(tok) }))")
         }
     }
 }

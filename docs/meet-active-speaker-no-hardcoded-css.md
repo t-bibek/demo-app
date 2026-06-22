@@ -25,15 +25,31 @@ compiled logic we reason about but can't read directly._
 
 ## Implementation status (2026-06-22)
 
-> **Update after live testing:** the per-tile CSS class turned out to be the
-> tile's **hover / self-view highlight, not speech** — it over-fires (self tile
-> lights up on any hover; stays lit while muted+silent) *and* under-fires
-> (**Meet itself sometimes omits the remote speaker's indicator**). A signal the
-> app never draws can't be scraped. So the class is now **telemetry-only**, and
-> Meet attributes by **audio direction** (mic = you, system audio = a remote) —
-> identical to native Zoom, converging both platforms (B3). The class +
-> geometry resolver remains only as the **no-audio (no Screen-Recording)
-> fallback**.
+> **Update — CORRECTED finding (2026-06-22, narrated run 2).** The earlier
+> "class = hover, not speech" was true only for the **self-cluster**
+> (`eT1oJ, nn1vQb, s4hFTd, yHy1rc, tWDL4c, hk9qKe`) — that's the hover/self-focus
+> highlight, and it was the false-positive source. **Isolating `kssMZb` shows it
+> IS a working per-tile active-speaker class:** in a narrated run it fired on the
+> **remote 1.3–16.0** and on **self 19.5–31.5**, only while each actually spoke,
+> nothing in silence, and **not on hover**. `kssMZb` is the **cross-tile** token
+> (fires on self AND remote); `ACcyyc/tC2Wod/t9yCsb` toggle with speech too but
+> are **self-only**.
+>
+> So the plan is **not** "drop the class for a structural indicator" — there is
+> **no separate indicator node** in Chrome's AX (the role/subrole/identifier
+> structure hunt found nothing toggling; the class *is* the state). Recall reads
+> that same element by a rotation-stable property (or its Safari pixel path) not
+> exposed to us. The corrected plan:
+>
+> **Narrow the class to `kssMZb`, keep it config-loadable + telemetered, and FUSE
+> with VAD** — VAD-gate → `kssMZb` per-tile (precise *who*, incl. multi-remote) →
+> audio-direction fallback when `kssMZb` is absent. `kssMZb` still rotates (~6 wks)
+> and Meet sometimes drops it, so VAD + audio fallback + config-load are the
+> **mandatory** robustness floor. Per-tile `kssMZb` is the capability Zoom can
+> never give (Metal UI) — it solves the multi-remote "which one" that mixed audio
+> can't. **Pending:** confirm the speaking order, and validate across
+> spotlight/pinned / 3+ remotes / screenshare / gallery-scroll before treating as
+> fully settled.
 
 Phases 1–3 + the fused resolver are **implemented** (feasibility study first; see
 the per-phase ✅/⏳ markers in §4). Summary:

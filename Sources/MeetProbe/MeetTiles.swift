@@ -26,6 +26,14 @@ struct TileFeatures {
     /// True if the tile subtree text carries a Zoom-style speaking marker
     /// ("…, active speaker" etc.). Complements the Meet class rule.
     var markerSpeaking: Bool = false
+    /// AXSubrole + AXDOMIdentifier + AXDescription tokens across the tile subtree
+    /// (separator: US \u{1f}) — the structural selector surface Recall matches its
+    /// "active speaker indicator" node on (role/subrole/identifier/description),
+    /// NOT a CSS class. This is the Phase-4 indicator-child hunt.
+    var structureTokens: String = ""
+    /// True if a hover-control class (Bz112c/LgbsSe/…) is in the subtree — the
+    /// cursor is over this tile, so any structural change is hover, not speech.
+    var hovered: Bool = false
 
     /// Everything except geometry — the "did the structure change" key.
     var structuralKey: String {
@@ -236,14 +244,23 @@ enum MeetTiles {
         return tokens.sorted().joined(separator: ",")
     }
 
+    /// Hover-control classes Meet adds to the tile under the cursor (and the
+    /// auto-shown controls). Their presence means "this tile is hovered."
+    static func isHoverChromeToken(_ t: String) -> Bool {
+        t.contains("Bz112c") || t.contains("LgbsSe") || t.contains("OWXEXe")
+            || t.contains("Jh9lGc") || t == "MSqqjf" || t == "S5GDme"
+    }
+
     private static func extractFeatures(name: String, tile: AXUIElement) -> TileFeatures {
         var roleCount: [String: Int] = [:]
         var classes = Set<String>()
+        var structure = Set<String>()
         var count = 0
         var focusedOrSelected = false
         var micOff = false
         var markerSpeaking = false
         var n = 0
+        let lowName = name.lowercased()
 
         func walk(_ el: AXUIElement, _ depth: Int) {
             if n >= maxTileSubtreeNodes || depth > 40 { return }
@@ -253,6 +270,17 @@ enum MeetTiles {
             roleCount[sub != nil ? "\(role)/\(sub!)" : role, default: 0] += 1
             for t in AX.classList(el) { classes.insert(t) }
             if AX.bool(el, "AXFocused") || AX.bool(el, "AXSelected") { focusedOrSelected = true }
+
+            // Recall's selector surface: subrole, DOM identifier, description.
+            if let sub { structure.insert("s:\(role)/\(sub)") }
+            if let id = AX.string(el, "AXDOMIdentifier"), !id.isEmpty { structure.insert("id:\(id)") }
+            if let d = AX.string(el, "AXDescription"), !d.isEmpty {
+                var norm = d.lowercased().replacingOccurrences(of: lowName, with: "")
+                norm = norm.replacingOccurrences(of: #"\d+"#, with: "#", options: .regularExpression)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: " ,.:;|-_"))
+                if norm.count >= 2 { structure.insert("d:\(String(norm.prefix(40)))") }
+            }
+
             let combined = [AX.string(el, "AXDescription"), AX.string(el, "AXValue"), AX.string(el, "AXTitle")]
                 .compactMap { $0 }.joined(separator: " ")
             let text = combined.lowercased()
@@ -267,11 +295,14 @@ enum MeetTiles {
 
         let roleCounts = roleCount.keys.sorted().map { "\($0):\(roleCount[$0]!)" }.joined(separator: "|")
         let classTokens = classes.sorted().joined(separator: ",")
+        let structureTokens = structure.sorted().joined(separator: "\u{1f}")
+        let hovered = classes.contains(where: isHoverChromeToken)
         let frame = AX.frame(tile) ?? .zero
         return TileFeatures(name: name, frame: frame, orderIndex: 0,
                             roleCounts: roleCounts, classTokens: classTokens,
                             descendantCount: count, focusedOrSelected: focusedOrSelected,
-                            micOff: micOff, markerSpeaking: markerSpeaking)
+                            micOff: micOff, markerSpeaking: markerSpeaking,
+                            structureTokens: structureTokens, hovered: hovered)
     }
 
     /// All AXDOMClassList tokens across the whole web area (bounded). Used to hunt
