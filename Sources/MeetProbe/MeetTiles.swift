@@ -483,6 +483,27 @@ enum MeetTiles {
         return hits
     }
 
+    /// Live roster state: participant name -> unmuted, parsed from the People-panel
+    /// rows via `parseTeamsRosterRow` (the SAME parser the app's engine uses). Empty
+    /// when the Participants panel is closed.
+    static func rosterStates(in webArea: AXUIElement) -> [String: Bool] {
+        var out: [String: Bool] = [:]
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 9000 || depth > 80 { return }
+            n += 1
+            for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                if let s = AX.string(el, attr), let row = parseTeamsRosterRow(s) {
+                    if out[row.name] == nil { out[row.name] = row.unmuted }
+                    break
+                }
+            }
+            for c in AX.children(el) { rec(c, depth + 1) }
+        }
+        rec(webArea, 0)
+        return out
+    }
+
     /// One-shot audit of WHERE per-participant mute state lives: every element whose
     /// text carries "muted"/"unmute", with its role + the nearest name in its
     /// ancestor chain. Run with the People panel OPEN — remote mute is an

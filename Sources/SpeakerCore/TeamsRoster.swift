@@ -23,22 +23,31 @@ public func parseTeamsRosterRow(_ raw: String) -> (name: String, unmuted: Bool)?
     else if low.contains("muted") { unmuted = false }
     else { return nil }   // not a mute-bearing row (skip "Mute all", headers, etc.)
 
+    // Self tile reads "Myself video, <Name>, …" — drop that prefix first.
+    var body = s
+    for prefix in ["myself video, ", "my video, "] {
+        if body.lowercased().hasPrefix(prefix) { body = String(body.dropFirst(prefix.count)); break }
+    }
+
     // The name is everything before the first appended tag. Cut at the EARLIEST
-    // tag separator we know Teams appends.
+    // tag separator Teams appends — including VIDEO/camera/share/status tags
+    // (a camera-on row is "<Name> (Guest), video is on, Muted").
     let tagSeparators = [
         ", has context menu", ", has ", ", meeting guest", ", guest",
         ", organizer", ", co-organizer", ", presenter", ", attendee",
-        ", muted", ", unmuted", ", in this meeting",
+        ", video is on", ", video is off", ", video ", ", camera",
+        ", sharing", ", presenting", ", screen", ", hand", ", raised",
+        ", pinned", ", spotlight", ", muted", ", unmuted", ", in this meeting",
     ]
-    var cut = s.endIndex
+    var cut = body.endIndex
     for sep in tagSeparators {
-        if let r = s.range(of: sep, options: .caseInsensitive), r.lowerBound < cut {
+        if let r = body.range(of: sep, options: .caseInsensitive), r.lowerBound < cut {
             cut = r.lowerBound
         }
     }
-    var name = String(s[..<cut])
-    // Strip a trailing role parenthetical: "David Thapa (Guest)" -> "David Thapa".
-    name = name.replacingOccurrences(of: #"\s*\([^)]*\)\s*$"#, with: "", options: .regularExpression)
+    var name = String(body[..<cut])
+    // Strip role parentheticals anywhere: "David Thapa (Guest)" -> "David Thapa".
+    name = name.replacingOccurrences(of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
     name = name.trimmingCharacters(in: CharacterSet(charactersIn: " ,\u{2019}'"))
 
     // Reject standalone status icons ("Muted"/"Unmuted" with no name) and the

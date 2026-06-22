@@ -276,6 +276,13 @@ do {
     check(david?.name == "David Thapa" && david?.unmuted == true, "remote roster row -> (David Thapa, unmuted)")
     let bibek = parseTeamsRosterRow("Bibek Thapa, Has context menu, Organizer, Muted")
     check(bibek?.name == "Bibek Thapa" && bibek?.unmuted == false, "self roster row -> (Bibek Thapa, muted)")
+    // Camera-ON variant: ", video is on" tag must not leak into the name.
+    let davCam = parseTeamsRosterRow("David Thapa (Guest), video is on, Muted")
+    check(davCam?.name == "David Thapa" && davCam?.unmuted == false, "camera-on row -> (David Thapa, muted) [no 'video is on' leak]")
+    let davCamUn = parseTeamsRosterRow("David Thapa (Guest), video is on, Unmuted")
+    check(davCamUn?.name == "David Thapa" && davCamUn?.unmuted == true, "camera-on unmuted row -> (David Thapa, unmuted)")
+    let myself = parseTeamsRosterRow("Myself video, Bibek Thapa, Muted, Has context menu")
+    check(myself?.name == "Bibek Thapa" && myself?.unmuted == false, "self video tile -> (Bibek Thapa, muted) [drop 'Myself video,']")
     check(parseTeamsRosterRow("Muted") == nil, "standalone 'Muted' icon rejected")
     check(parseTeamsRosterRow("Unmuted") == nil, "standalone 'Unmuted' icon rejected")
     check(parseTeamsRosterRow("In this meeting, 2 total Mute all") == nil, "'Mute all' header rejected")

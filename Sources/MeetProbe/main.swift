@@ -78,29 +78,42 @@ func axAnnouncementCallback(_ observer: AXObserver, _ element: AXUIElement,
 }
 
 if args.contains("roster") {
-    // One-shot: where does per-participant MUTE live? Open the People panel first.
+    // LIVE roster watch — OPEN the Participants/People panel, then toggle anyone's
+    // mic and watch it update. Uses parseTeamsRosterRow (the SAME parser the app's
+    // engine uses), so this directly validates remote mute/unmute detection.
     MeetTiles.enableEnhancedAccessibility()
-    print("MUTE-AUDIT mode — open the Participants/People panel, then this dumps every")
-    print("element carrying muted/unmuted text + the nearest name. Remote mute should")
-    print("appear as roster-row labels (aria_calling_roster_(un)muted); video tiles often don't.\n")
+    print("ROSTER-WATCH mode — OPEN the Participants/People panel, then toggle mute on")
+    print("any participant (esp. a REMOTE one). Changes print live below. Watching \(Int(duration))s…\n")
     Thread.sleep(forTimeInterval: 1.2)
-    guard let hit = MeetTiles.findMeetingWebAreas(platform: platformArg).first else {
-        print("No \(platformArg ?? "meeting") web area found — join the call (and open People) first.")
-        exit(1)
+    let t0 = Date()
+    var prev: [String: Bool] = [:]
+    var everSawRoster = false
+    while Date().timeIntervalSince(t0) < duration {
+        let elapsed = Date().timeIntervalSince(t0)
+        let states = MeetTiles.findMeetingWebAreas(platform: platformArg).first
+            .map { MeetTiles.rosterStates(in: $0.web) } ?? [:]
+        if !states.isEmpty { everSawRoster = true }
+        // Diff against the previous tick: joins / leaves / mute toggles.
+        var changes: [String] = []
+        for name in Set(prev.keys).union(states.keys).sorted() {
+            let old = prev[name], new = states[name]
+            if old == nil, let new { changes.append("\(name) [\(new ? "unmuted" : "MUTED")]") }
+            else if new == nil, old != nil { changes.append("\(name) left/closed") }
+            else if let old, let new, old != new { changes.append("\(name): \(old ? "unmuted" : "MUTED") → \(new ? "unmuted" : "MUTED")") }
+        }
+        if !changes.isEmpty {
+            print(String(format: "t=%5.1fs  %@", elapsed, changes.joined(separator: "  |  ")))
+        }
+        prev = states
+        Thread.sleep(forTimeInterval: Double(intervalMs) / 1000.0)
     }
-    // Self-validate: did we actually capture the People panel this run?
-    let panelMarkers = MeetTiles.needleScan(in: hit.web,
-        needles: ["mute all", "in this meeting", "attendees", "share invite", "add people"])
-    print("People panel detected in AX tree: \(panelMarkers.isEmpty ? "NO — open it (or it's a separate web area) and re-run" : "YES (\(panelMarkers.count) markers)")\n")
-    let rows = MeetTiles.muteAudit(in: hit.web)
-    if rows.isEmpty {
-        print("NONE — no muted/unmuted text anywhere in the AX tree (open the People panel and retry).")
+    print("")
+    if !everSawRoster {
+        print("→ No roster rows seen the whole run. Open the Participants panel (People button)")
+        print("  BEFORE/at start and keep it open — remote mute only exists while it's open.")
     } else {
-        print("\(rows.count) mute-bearing element(s):")
-        for r in rows { print("  \(r)") }
-        print("\n→ If you see one row PER remote participant with their name + muted/unmuted, that's")
-        print("  the readable remote-mute source (needs the panel open). If remotes are missing,")
-        print("  remote mute is not exposed even in the roster on this build.")
+        print("→ Each line above is a real mute/unmute change read via parseTeamsRosterRow —")
+        print("  the exact path the app uses to name a single unmuted remote.")
     }
     exit(0)
 }
