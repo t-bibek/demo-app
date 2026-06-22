@@ -269,6 +269,19 @@ do {
     check(back.tileIsSpeaking(textBlob: "", classTokens: ["xyz"]), "custom speakingClasses token works")
 }
 
+// MARK: Teams roster row parsing (real AX strings from `MeetProbe teams roster`)
+print("TeamsRoster:")
+do {
+    let david = parseTeamsRosterRow("David Thapa (Guest), Has context menu, Meeting guest, Unmuted")
+    check(david?.name == "David Thapa" && david?.unmuted == true, "remote roster row -> (David Thapa, unmuted)")
+    let bibek = parseTeamsRosterRow("Bibek Thapa, Has context menu, Organizer, Muted")
+    check(bibek?.name == "Bibek Thapa" && bibek?.unmuted == false, "self roster row -> (Bibek Thapa, muted)")
+    check(parseTeamsRosterRow("Muted") == nil, "standalone 'Muted' icon rejected")
+    check(parseTeamsRosterRow("Unmuted") == nil, "standalone 'Unmuted' icon rejected")
+    check(parseTeamsRosterRow("In this meeting, 2 total Mute all") == nil, "'Mute all' header rejected")
+    check(parseTeamsRosterRow("David Thapa (Guest), Has context menu, Meeting guest") == nil, "row without mute state -> nil")
+}
+
 // MARK: Teams fused active-speaker resolver
 print("Teams fused resolver:")
 let ttGallery = [

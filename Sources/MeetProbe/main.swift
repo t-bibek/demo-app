@@ -77,6 +77,34 @@ func axAnnouncementCallback(_ observer: AXObserver, _ element: AXUIElement,
     print(String(format: "t=%6.1fs  📢 %@  \"%@\"", t, notif, text))
 }
 
+if args.contains("roster") {
+    // One-shot: where does per-participant MUTE live? Open the People panel first.
+    MeetTiles.enableEnhancedAccessibility()
+    print("MUTE-AUDIT mode — open the Participants/People panel, then this dumps every")
+    print("element carrying muted/unmuted text + the nearest name. Remote mute should")
+    print("appear as roster-row labels (aria_calling_roster_(un)muted); video tiles often don't.\n")
+    Thread.sleep(forTimeInterval: 1.2)
+    guard let hit = MeetTiles.findMeetingWebAreas(platform: platformArg).first else {
+        print("No \(platformArg ?? "meeting") web area found — join the call (and open People) first.")
+        exit(1)
+    }
+    // Self-validate: did we actually capture the People panel this run?
+    let panelMarkers = MeetTiles.needleScan(in: hit.web,
+        needles: ["mute all", "in this meeting", "attendees", "share invite", "add people"])
+    print("People panel detected in AX tree: \(panelMarkers.isEmpty ? "NO — open it (or it's a separate web area) and re-run" : "YES (\(panelMarkers.count) markers)")\n")
+    let rows = MeetTiles.muteAudit(in: hit.web)
+    if rows.isEmpty {
+        print("NONE — no muted/unmuted text anywhere in the AX tree (open the People panel and retry).")
+    } else {
+        print("\(rows.count) mute-bearing element(s):")
+        for r in rows { print("  \(r)") }
+        print("\n→ If you see one row PER remote participant with their name + muted/unmuted, that's")
+        print("  the readable remote-mute source (needs the panel open). If remotes are missing,")
+        print("  remote mute is not exposed even in the roster on this build.")
+    }
+    exit(0)
+}
+
 if args.contains("listen") {
     MeetTiles.enableEnhancedAccessibility()
     print("ANNOUNCEMENT-LISTENER mode — enabled enhanced AX; registering AXAnnouncementRequested + live-region notifications.")

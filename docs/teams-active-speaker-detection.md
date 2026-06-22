@@ -215,9 +215,22 @@ grep -rinE "teams" demo-app/Sources/SpeakerCore/PlatformDetection.swift demo-app
 
 ### What IS readable from Teams AX (passive, native client)
 - Participant **names** (cleaned: drop `Myself video,` / `(Guest)`).
-- Per-participant **mute/unmute** (`aria_calling_roster_*` → AXDescription text), like Zoom native.
-- **Local** mic + camera state (roster text AND real-time `AXAnnouncementRequested` events).
+- **Local** mute + camera (self tile `"Myself video, <you>, Muted"`, toolbar
+  `"Unmute mic"`, AND real-time `AXAnnouncementRequested` events — reliable, no panel needed).
+- **Remote** per-participant mute — **ONLY from the open Participants panel.** Each
+  roster row's `AXDescription`/`AXTitle` is `"<Name>, …roles…, Muted|Unmuted"`
+  (e.g. `"David Thapa (Guest), Has context menu, Meeting guest, Unmuted"`). It is
+  **NOT** on the video tiles (those carry it only inconsistently). Verified live
+  2026-06-23 (`MeetProbe teams roster`, panel detected). Parser:
+  `SpeakerCore.parseTeamsRosterRow`; reader: `AccessibilityScanner.teamsRosterEntries`.
+  ⚠️ Caveat: if the user closes the panel, remote mute disappears from the tree.
 - Tile **geometry** (`AXFrame`) + DOM order.
+
+### How the engine uses it (mute-gate, like Zoom native)
+With remote mute from the roster + VAD: when exactly **one** remote is unmuted and
+remote audio is active → attribute to that remote by name. 2+ unmuted → `"Someone"`
+(needs diarization). This names a single active remote **only while the panel is
+open**; closed → falls back to the (unreliable) tile mute → usually `"Someone"`.
 
 ### What is NOT readable
 - Who is speaking. No is-speaking attribute, class, geometry change, or announcement. Period.

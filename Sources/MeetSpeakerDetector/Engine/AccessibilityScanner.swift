@@ -30,6 +30,10 @@ struct ScannedWindow {
     /// Teams per-tile observations (geometry + structural is-speaking + mute) for
     /// the fused, VAD-gated resolver in the engine; empty for every other platform.
     var teamsTiles: [TeamsTileObservation]
+    /// Teams People-panel roster (name + mute + isMe) — the only reliable
+    /// per-participant REMOTE mute source in Teams AX, readable only when the
+    /// Participants panel is open. Empty otherwise / for every other platform.
+    var teamsRoster: [ZoomRosterEntry]
 }
 
 /// The macOS equivalent of the original's Windows UI Automation engine.
@@ -106,6 +110,7 @@ final class AccessibilityScanner {
                 var zoomRoster: [ZoomRosterEntry] = []
                 var meetTiles: [MeetTileObservation] = []
                 var teamsTiles: [TeamsTileObservation] = []
+                var teamsRoster: [ZoomRosterEntry] = []
 
                 if platform == .meet {
                     // Meet's active speaker is fused (geometry + class + VAD) in the
@@ -122,8 +127,14 @@ final class AccessibilityScanner {
                     // docs/teams-active-speaker-detection.md.
                     let t = teamsTileObservations(in: window)
                     teamsTiles = t.tiles
+                    // Remote mute is NOT reliable on the video tiles — read it from
+                    // the People-panel roster rows ("<Name>, …, Muted/Unmuted"),
+                    // the one dependable source (requires the panel open). Mark the
+                    // row matching the self tile as isMe. See docs/teams-probe.md.
+                    let selfName = t.tiles.first(where: { $0.isMe })?.name
+                    teamsRoster = teamsRosterEntries(in: window, selfName: selfName)
                     speakers = []   // engine resolves Teams speakers from teamsTiles + audio
-                    participants = dedup(participants + t.participants)
+                    participants = dedup(participants + t.participants + teamsRoster.map { $0.name })
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +
                     // per-participant mute instead (see zoomNativeRoster), and
@@ -156,7 +167,8 @@ final class AccessibilityScanner {
                     directSpeakerRead: directSpeakerRead,
                     zoomRoster: zoomRoster,
                     meetTiles: meetTiles,
-                    teamsTiles: teamsTiles
+                    teamsTiles: teamsTiles,
+                    teamsRoster: teamsRoster
                 ))
             }
         }
@@ -482,6 +494,32 @@ final class AccessibilityScanner {
                                  isSpeaking: kv.value.speaking, isMe: kv.value.isMe, unmuted: kv.value.unmuted)
         }
         return (tiles, ordered.map { $0.key })
+    }
+
+    /// Reads the Teams People/Participants-panel roster: each row's AXDescription/
+    /// AXTitle is `"<Name>, …roles…, Muted/Unmuted"` (see parseTeamsRosterRow).
+    /// This is the only reliable per-participant REMOTE mute source — present only
+    /// when the panel is open; returns [] otherwise. `selfName` (from the self
+    /// tile) flags the local user's row. Mirrors `zoomNativeRoster`.
+    private func teamsRosterEntries(in window: AXUIElement, selfName: String?) -> [ZoomRosterEntry] {
+        var byName: [String: ZoomRosterEntry] = [:]
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= maxNodesPerWindow || depth > maxDepth { return }
+            n += 1
+            for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                guard let raw = axString(el, attr), let row = parseTeamsRosterRow(raw) else { continue }
+                // Keep one entry per name; prefer an explicit unmuted reading.
+                if byName[row.name] == nil {
+                    let isMe = selfName != nil && row.name == selfName
+                    byName[row.name] = ZoomRosterEntry(name: row.name, unmuted: row.unmuted, isMe: isMe)
+                }
+                break
+            }
+            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
+        }
+        rec(window, 0)
+        return Array(byName.values)
     }
 
     /// Lowercased concatenation of a tile subtree's AX text + the union of its

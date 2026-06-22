@@ -170,35 +170,40 @@ final class DetectionEngine {
                 }
                 meetPrevAreas = Dictionary(w.meetTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
             } else if w.platform == .teams {
-                // Teams (new client) is a Chromium WebView with a STRUCTURAL AX
-                // is-speaking signal keyed on stable aria_*/calling_* tokens (the
-                // mirror of Recall's TeamsScraper). Resolve like Meet: VAD-gate →
-                // structural per-tile (precise who, incl. multi-tile) → audio-
-                // direction + mute fallback → nothing. The token is config-loadable
-                // + telemetered (TeamsSpeakerRules); because it falls back to audio
-                // it can never regress below the old anonymous-"Someone" behavior.
-                // See docs/teams-active-speaker-detection.md.
+                // Teams (new client) exposes NO AX is-speaking signal — proven live
+                // (state/geometry/announcements all empty) and in Recall's binary
+                // (its " is active speaker" check is inert; it uses VAD). So attribute
+                // by AUDIO DIRECTION + MUTE, exactly like native Zoom: mic = you,
+                // system audio = a remote, gated by per-participant mute. Remote mute
+                // comes from the People-panel ROSTER (the only reliable source —
+                // requires the panel open); local mute from the self tile/roster.
+                // `teamsActiveSpeaker` stays as a config-driven hook (speakingClasses
+                // is empty today) but never fires, so this is the live path.
+                // See docs/teams-active-speaker-detection.md §7.
                 let vad = audioReliable ? (micActive || remoteActive) : true
                 let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: vad)
                 if r.via == .structural {
-                    who.formUnion(r.names)            // the UI names the speaker(s) — trust it
+                    who.formUnion(r.names)            // only if a config'd class ever matches
                     teamsStructural += 1
                 } else if audioReliable {
-                    // Token didn't fire but we DO have a VAD signal — fall back to
-                    // audio direction + per-tile mute (mic = you, system = a remote),
-                    // exactly like native Zoom.
-                    let me = w.teamsTiles.first(where: { $0.isMe })
-                    let localUnmuted = me?.unmuted ?? (w.localUserUnmuted ?? false)
-                    let localName = me?.name ?? config.localUserName
-                    let remotes = w.teamsTiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+                    // Prefer the People-panel ROSTER for mute (reliable per-remote,
+                    // panel-open); fall back to per-tile mute when the panel is closed.
+                    let roster = w.teamsRoster
+                    let meRoster = roster.first(where: { $0.isMe })
+                    let meTile = w.teamsTiles.first(where: { $0.isMe })
+                    let localUnmuted = meRoster?.unmuted ?? meTile?.unmuted ?? (w.localUserUnmuted ?? false)
+                    let localName = meRoster?.name ?? meTile?.name ?? config.localUserName
+                    let remotes = roster.isEmpty
+                        ? w.teamsTiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+                        : roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
                     let names = zoomMuteGateSpeakers(
                         micActive: micActive, localUnmuted: localUnmuted, localName: localName,
                         remoteActive: remoteActive, remoteUnmutedNames: remotes)
                     who.formUnion(names)
                     if names.contains("Someone") { teamsSomeone += 1 } else if !names.isEmpty { teamsNamed += 1 }
                 }
-                // else: no structural hit AND no reliable audio → emit nothing
-                // (don't spam "Someone" when we can't even confirm there's speech).
+                // else: no audio capture and no class → emit nothing (don't spam
+                // "Someone" when we can't even confirm there's speech).
                 teamsPrevAreas = Dictionary(w.teamsTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
             } else if w.directSpeakerRead {
                 // Meet (kssMZb class) / Zoom web ("active speaker" marker): the UI

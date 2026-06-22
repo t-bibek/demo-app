@@ -483,6 +483,48 @@ enum MeetTiles {
         return hits
     }
 
+    /// One-shot audit of WHERE per-participant mute state lives: every element whose
+    /// text carries "muted"/"unmute", with its role + the nearest name in its
+    /// ancestor chain. Run with the People panel OPEN — remote mute is an
+    /// `aria_calling_roster_(un)muted` label on the ROSTER ROWS, not the video tiles.
+    static func muteAudit(in webArea: AXUIElement) -> [String] {
+        var out: [String] = []
+        var seen = Set<String>()
+        var n = 0
+        func nearestName(_ el: AXUIElement) -> String {
+            var cur: AXUIElement? = el
+            var steps = 0
+            while let e = cur, steps < 8 {
+                for attr in ["AXDescription", "AXValue", "AXTitle"] {
+                    if let s = AX.string(e, attr), let name = cleanParticipantName(s) { return name }
+                }
+                cur = AX.parent(e); steps += 1
+            }
+            return "?"
+        }
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 9000 || depth > 80 { return }
+            n += 1
+            let role = AX.string(el, "AXRole") ?? "?"
+            // Read EVERY attribute (not just desc/value/title) — mute may live in
+            // AXRoleDescription / AXHelp / an aria-derived attr. Broad needle:
+            // "mute" catches muted/unmuted/"Mute <name>"/"Mute all"; "microphone"
+            // catches mic on/off icon labels.
+            for attr in AX.attributeNames(el) {
+                guard let s = AX.valueString(el, attr) else { continue }
+                let low = s.lowercased()
+                guard low.contains("mute") || low.contains("microphone") else { continue }
+                let key = "\(role).\(attr)=\(s)"
+                if seen.insert(key).inserted {
+                    out.append("[name=\(nearestName(el))] \(role).\(attr)=\"\(s.prefix(110))\"")
+                }
+            }
+            for c in AX.children(el) { rec(c, depth + 1) }
+        }
+        rec(webArea, 0)
+        return out.sorted()
+    }
+
     /// Raw subtree dump (role + subrole + classlist + text) for eyeballing transitions.
     static func dumpSubtree(_ tile: AXUIElement) -> String {
         var out = ""
