@@ -504,6 +504,35 @@ enum MeetTiles {
         return out
     }
 
+    /// RAW diagnostic for the roster: every element whose text resolves to a person
+    /// name (via `cleanParticipantName`) OR mentions mic state ("mut"), returned as
+    /// "AXRole | raw text". Captures the EXACT row strings in both muted AND unmuted
+    /// states — including the unmuted form `parseTeamsRosterRow` may currently drop
+    /// (Teams labels mic state only when MUTED) — so we can fix the parser from
+    /// ground truth instead of guessing. Deduped by formatted line.
+    static func rosterRawDump(in webArea: AXUIElement) -> [String] {
+        var out: [String] = []
+        var seen = Set<String>()
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if n >= 9000 || depth > 80 { return }
+            n += 1
+            let role = AX.string(el, "AXRole") ?? "?"
+            for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                guard let s = AX.string(el, attr), !s.isEmpty else { continue }
+                let low = s.lowercased()
+                let isPerson = cleanParticipantName(s) != nil
+                let mentionsMute = low.contains("mut")
+                guard isPerson || mentionsMute else { continue }
+                let line = "\(role) [\(attr)] | \(s)"
+                if seen.insert(line).inserted { out.append(line) }
+            }
+            for c in AX.children(el) { rec(c, depth + 1) }
+        }
+        rec(webArea, 0)
+        return out
+    }
+
     /// One-shot audit of WHERE per-participant mute state lives: every element whose
     /// text carries "muted"/"unmute", with its role + the nearest name in its
     /// ancestor chain. Run with the People panel OPEN — remote mute is an

@@ -84,14 +84,17 @@ if args.contains("roster") {
     MeetTiles.enableEnhancedAccessibility()
     print("ROSTER-WATCH mode — OPEN the Participants/People panel, then toggle mute on")
     print("any participant (esp. a REMOTE one). Changes print live below. Watching \(Int(duration))s…\n")
+    print("RAW lines (every NEW person/mic-bearing string) print under each change so we can")
+    print("see the EXACT muted-vs-unmuted text — toggle David's mic a few times.\n")
     Thread.sleep(forTimeInterval: 1.2)
     let t0 = Date()
     var prev: [String: Bool] = [:]
     var everSawRoster = false
+    var seenRaw = Set<String>()
     while Date().timeIntervalSince(t0) < duration {
         let elapsed = Date().timeIntervalSince(t0)
-        let states = MeetTiles.findMeetingWebAreas(platform: platformArg).first
-            .map { MeetTiles.rosterStates(in: $0.web) } ?? [:]
+        let web = MeetTiles.findMeetingWebAreas(platform: platformArg).first?.web
+        let states = web.map { MeetTiles.rosterStates(in: $0) } ?? [:]
         if !states.isEmpty { everSawRoster = true }
         // Diff against the previous tick: joins / leaves / mute toggles.
         var changes: [String] = []
@@ -103,6 +106,13 @@ if args.contains("roster") {
         }
         if !changes.isEmpty {
             print(String(format: "t=%5.1fs  %@", elapsed, changes.joined(separator: "  |  ")))
+        }
+        // RAW feed: print any newly-seen person/mic-bearing string (ground truth for
+        // the parser fix — esp. the UNMUTED row form, which the diff misreads above).
+        if let web {
+            for line in MeetTiles.rosterRawDump(in: web) where seenRaw.insert(line).inserted {
+                print(String(format: "t=%5.1fs  RAW  %@", elapsed, line))
+            }
         }
         prev = states
         Thread.sleep(forTimeInterval: Double(intervalMs) / 1000.0)

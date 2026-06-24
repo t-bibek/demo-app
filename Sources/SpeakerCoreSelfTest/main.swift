@@ -283,10 +283,20 @@ do {
     check(davCamUn?.name == "David Thapa" && davCamUn?.unmuted == true, "camera-on unmuted row -> (David Thapa, unmuted)")
     let myself = parseTeamsRosterRow("Myself video, Bibek Thapa, Muted, Has context menu")
     check(myself?.name == "Bibek Thapa" && myself?.unmuted == false, "self video tile -> (Bibek Thapa, muted) [drop 'Myself video,']")
+    let myselfUn = parseTeamsRosterRow("Myself video, Bibek Thapa, Unmuted, Has context menu")
+    check(myselfUn?.name == "Bibek Thapa" && myselfUn?.unmuted == true, "self video tile unmuted -> (Bibek Thapa, unmuted)")
+
+    // WEB client (teams.microsoft.com) real strings: the row anchor is "Context
+    // menu is available", and the UNMUTED form DROPS the mic word entirely.
+    let webMuted = parseTeamsRosterRow("David Thapa (Guest), muted, Context menu is available")
+    check(webMuted?.name == "David Thapa" && webMuted?.unmuted == false, "web muted row -> (David Thapa, muted)")
+    let webUnmuted = parseTeamsRosterRow("David Thapa (Guest), Context menu is available")
+    check(webUnmuted?.name == "David Thapa" && webUnmuted?.unmuted == true, "web row, no mic word -> (David Thapa, UNMUTED) [the bug fix]")
+
     check(parseTeamsRosterRow("Muted") == nil, "standalone 'Muted' icon rejected")
     check(parseTeamsRosterRow("Unmuted") == nil, "standalone 'Unmuted' icon rejected")
     check(parseTeamsRosterRow("In this meeting, 2 total Mute all") == nil, "'Mute all' header rejected")
-    check(parseTeamsRosterRow("David Thapa (Guest), Has context menu, Meeting guest") == nil, "row without mute state -> nil")
+    check(parseTeamsRosterRow("David Thapa (Guest)") == nil, "bare name label (no context-menu anchor) -> nil")
 }
 
 // MARK: Teams fused active-speaker resolver
