@@ -119,6 +119,12 @@ check(cleanParticipantName("Stop video") == nil, "zoom native 'Stop video' rejec
 check(cleanParticipantName("My notes off") == nil, "zoom native 'My notes off' rejected")
 check(cleanParticipantName("Upgrade to Pro") == nil, "zoom native 'Upgrade to Pro' banner rejected")
 check(cleanParticipantName("David's Iphone") == "David's Iphone", "zoom native phone participant still a name")
+// Zoom NATIVE (us.zoom.xos) DOES expose the active speaker — verified live in an
+// AXTabGroup description with 3 participants (ax-dumps/20260625-200432). The web
+// format and native format are identical, so the same parse path attributes it.
+check(cleanParticipantName("David's Iphone, Computer audio unmuted, active speaker") == "David's Iphone", "zoom NATIVE active-speaker tile -> name")
+check(isSpeakingMarker("David's Iphone, Computer audio unmuted, active speaker"), "zoom NATIVE active-speaker marker -> speaking")
+check(!isSpeakingMarker("David Thapa, Computer audio unmuted"), "zoom tile without marker -> not speaking")
 // Google Meet UI chrome (People panel open) leaked in as fake speaking tiles:
 check(cleanParticipantName("People") == nil, "meet 'People' panel label rejected")
 check(cleanParticipantName("Contributors 2") == nil, "meet 'Contributors 2' rejected")

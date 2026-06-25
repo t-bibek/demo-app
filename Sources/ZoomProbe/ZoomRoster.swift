@@ -109,8 +109,36 @@ enum ZoomRoster {
         let uiWords = ["unmute", "mute all", "invite", "more", "raise", "lower",
                        "rename", "remove", "search", "waiting", "participants ("]
         if uiWords.contains(where: { low.contains($0) }) { return nil }
+        // Reject Zoom Workplace HOME-shell chrome (left nav rail, promo banners,
+        // calendar) — these pass the generic name cleaner and otherwise masquerade
+        // as participants when the probe locks onto the home window instead of the
+        // meeting (the "Back in Chat / Hub, 5 of 6 / Redeem offer" leak).
+        if homeChromeWords.contains(where: { low.contains($0) }) { return nil }
+        // Tab-position labels ("Home, selected, 1 of 6") and weekday/date headers
+        // ("Wednesday, 24 June") are never people.
+        if low.range(of: #"\b\d+\s+of\s+\d+\b"#, options: .regularExpression) != nil { return nil }
+        if low.contains(", selected") || low.contains("selected,") { return nil }
+        // Participants-panel STATE images (panel open) — "Computer audio muted",
+        // "Video on/off" — have AXDescriptions that pass the generic cleaner but
+        // are not people. (Tiles like "David's Iphone, Computer audio…" are already
+        // cut to the name before this, so this only drops the bare state strings.)
+        if low.contains("computer audio") || low.contains("video on") || low.contains("video off") { return nil }
+        // Participants-panel header / outline chrome (these AXButton/AXOutline
+        // descriptions pass the generic cleaner but are not people).
+        let panelChrome: Set<String> = ["button", "pop out", "participants list", "close", "invite"]
+        if panelChrome.contains(low) { return nil }
         return name
     }
+
+    /// Labels from the Zoom Workplace HOME window that the name cleaner lets
+    /// through. A meeting roster never contains these — so dropping them stops the
+    /// home shell from posing as participants (see personName).
+    private static let homeChromeWords = [
+        "back in", "forward in", "history", "create new", "activity center",
+        "new messages", "team chat", "chat", "hub", "scheduler", "navigation",
+        "redeem", "offer", "calendar", "contacts", "whiteboard", "apps", "settings",
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ]
 
     // MARK: per-row fingerprint
 
@@ -208,9 +236,17 @@ enum ZoomRoster {
 
     // MARK: public sampling API
 
-    /// Current participant rows across all Zoom windows (one per name, largest box).
+    /// Current participants across all Zoom windows (one entry per name).
+    ///
+    /// A participant shows up as SEVERAL elements — spotlight tile + thumbnail tile
+    /// + Participants-panel row — and the state is NOT all on the biggest one:
+    /// Zoom puts the `", active speaker"` marker on the small ACTIVE thumbnail and
+    /// mute on the panel row. So we gather every instance per name and MERGE their
+    /// state, keeping the largest box only as the representative frame. (The old
+    /// keep-largest-box-only logic silently dropped the active-speaker marker.)
     static func rows() -> [(features: RowFeatures, element: AXUIElement)] {
-        var byName: [String: (feats: RowFeatures, el: AXUIElement, area: CGFloat)] = [:]
+        struct Inst { var feats: RowFeatures; var el: AXUIElement; var area: CGFloat }
+        var byName: [String: [Inst]] = [:]
         for (win, wtitle) in meetingWindows() {
             var nameNodes: [(AXUIElement, String)] = []
             var scanned = 0
@@ -227,16 +263,31 @@ enum ZoomRoster {
             collect(win, 0)
 
             for (node, name) in nameNodes {
-                let row = rowAncestor(of: node)
-                let f = AX.frame(row) ?? (AX.frame(node) ?? .zero)
-                let area = f.width * f.height
-                if let ex = byName[name], ex.area >= area { continue }
-                byName[name] = (extractRow(name: name, row: row, window: wtitle), row, area)
+                // Read state from the tile's OWN node — do NOT climb. Native Zoom's
+                // entire window is only ~tens of nodes (< rowMaxNodes), so climbing
+                // to find a "row" returned the WHOLE WINDOW for every name, whose
+                // subtree contains every tile's text → the ", active speaker" marker
+                // then matched for EVERY participant. A tile's own AXDescription
+                // already carries name + mute + active-speaker, so the node itself is
+                // the correct, per-participant scope.
+                let f = AX.frame(node) ?? .zero
+                let feats = extractRow(name: name, row: node, window: wtitle)
+                byName[name, default: []].append(Inst(feats: feats, el: node, area: f.width * f.height))
             }
         }
-        return byName.values
-            .sorted { ($0.feats.frame.minY, $0.feats.frame.minX) < ($1.feats.frame.minY, $1.feats.frame.minX) }
-            .map { ($0.feats, $0.el) }
+
+        var out: [(RowFeatures, AXUIElement)] = []
+        for (_, insts) in byName {
+            let rep = insts.max(by: { $0.area < $1.area })!   // biggest box = representative frame
+            var feats = rep.feats
+            // MERGE state across all of this participant's tiles/rows:
+            feats.markerSpeaking = insts.contains { $0.feats.markerSpeaking }   // speaking on ANY tile ⇒ speaking
+            if feats.micState == "?", let m = insts.first(where: { $0.feats.micState != "?" })?.feats {
+                feats.micState = m.micState; feats.micOff = m.micOff
+            }
+            out.append((feats, rep.el))
+        }
+        return out.sorted { ($0.0.frame.minY, $0.0.frame.minX) < ($1.0.frame.minY, $1.0.frame.minX) }
     }
 
     /// All fingerprint tokens across every Zoom window (no name-strip) — catches a
@@ -286,6 +337,50 @@ enum ZoomRoster {
             lines.append("  • \"\(title.prefix(60))\"  nodes=\(n)  \(top)")
         }
         lines.append("If you see few nodes / no AXRow: OPEN the Participants panel, then re-run.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Up-front inventory of every Zoom window: title, size, node count, whether it
+    /// looks like a meeting, whether per-participant mute text ("computer audio") is
+    /// present, and any candidate person-names found. Printed ALWAYS at startup so
+    /// it's obvious when the probe is looking at the Workplace HOME shell (no
+    /// meeting) rather than a meeting — and, crucially, when the meeting isn't in
+    /// the native app at all (it's in the browser: app.zoom.us web client).
+    static func windowInventory() -> String {
+        guard AX.isTrusted else { return "Accessibility NOT trusted." }
+        guard zoomApp() != nil else {
+            return "Native Zoom (us.zoom.xos) is not running. If your meeting is at "
+                 + "app.zoom.us (web client / PWA), use MeetProbe instead: `swift run MeetProbe zoom`."
+        }
+        let wins = zoomWindows()
+        var lines = ["Native-Zoom windows: \(wins.count)"]
+        var anyMeeting = false
+        for (win, title) in wins {
+            var n = 0, hasCA = false
+            var names = Set<String>()
+            func rec(_ el: AXUIElement, _ d: Int) {
+                if n >= 8000 || d > 60 { return }; n += 1
+                for attr in ["AXDescription", "AXValue", "AXTitle"] {
+                    guard let s = AX.string(el, attr) else { continue }
+                    if s.range(of: "computer audio", options: .caseInsensitive) != nil { hasCA = true }
+                    if let nm = personName(from: s) { names.insert(nm) }
+                }
+                for c in AX.children(el) { rec(c, d + 1) }
+            }
+            rec(win, 0)
+            let meeting = looksLikeMeetingWindow(win, title: title)
+            anyMeeting = anyMeeting || meeting
+            let f = AX.frame(win) ?? .zero
+            lines.append(String(format: "  • \"%@\"  %.0fx%.0f  nodes=%d  meeting=%@  computerAudio=%@",
+                                String(title.prefix(50)), f.width, f.height, n,
+                                meeting ? "YES" : "no", hasCA ? "YES" : "no"))
+            lines.append("      participant-name candidates: \(names.isEmpty ? "—" : names.sorted().prefix(10).joined(separator: ", "))")
+        }
+        if !anyMeeting {
+            lines.append("⚠️ No native-Zoom MEETING window found (no \"computer audio\" rows, no \"meeting\" title).")
+            lines.append("   If you joined via app.zoom.us (web/PWA), this is EXPECTED — the meeting is in the")
+            lines.append("   browser, not us.zoom.xos. Use: swift run MeetProbe zoom 45 250")
+        }
         return lines.joined(separator: "\n")
     }
 

@@ -6,14 +6,14 @@ import SpeakerCore
 // ZoomProbe — native Zoom (us.zoom.xos) active-speaker probe, the Zoom-native
 // analog of MeetProbe.
 //
-// Native Zoom's video grid is Metal-rendered and OPAQUE to Accessibility
-// (docs/recall-and-demo-extraction.md §1.11), with no AXDOMClassList. So the
-// readable surface is the Participants panel / name overlays — plain AppKit AX.
-// This fingerprints each NAMED ROW's subtree (roles + role-counts + text +
-// state) every ~250 ms and, at the end, reports which tokens TOGGLE and their
-// on-windows — so a narrated run reveals whether ANY AX feature tracks who is
-// speaking. If nothing toggles in lockstep with speech, native Zoom's active
-// speaker is NOT in AX on this build -> Phase 5 (audio VAD).
+// Native Zoom's video GRID is Metal-rendered and opaque to AX, BUT each tile and
+// panel row is a real AppKit AX node: Zoom packs name + mute + active-speaker into
+// their AXDescription. FINDING (2026-06-25, ax-dumps/20260625-200432): the active
+// speaker's tile reads "<Name>, Computer audio unmuted, active speaker" — a plain
+// text marker, same format as Zoom web. So WHO-IS-SPEAKING *is* in AX (no VAD
+// needed for attribution; fuse VAD only for precise on/off timing).
+// This samples every ~250 ms, prints the current 🔊 ACTIVE speaker per tick, and
+// at the end reports any other tokens that toggle with speech (legacy analysis).
 //
 //   swift run ZoomProbe [durationSeconds] [intervalMs]
 //   swift run ZoomProbe 45 250
@@ -62,23 +62,26 @@ func tick() {
     if !rows.isEmpty { sawAnyRow = true }
 
     var rowsJson: [[String: Any]] = []
-    var line = String(format: "t=%5.1fs ", elapsed)
+    var statuses: [String] = []
     for r in rows {
         let f = r.features
-        let speaking = f.markerSpeaking   // only the text marker is unambiguous up front
-        history[f.name, default: []].append(Sample(t: elapsed, tokens: f.tokens, micState: f.micState, micOff: f.micOff, speaking: speaking, window: f.window))
+        history[f.name, default: []].append(Sample(t: elapsed, tokens: f.tokens, micState: f.micState, micOff: f.micOff, speaking: f.markerSpeaking, window: f.window))
         rowsJson.append([
             "name": f.name, "window": f.window,
             "roleSig": f.roleSig, "micState": f.micState, "micOff": f.micOff,
             "markerSpeaking": f.markerSpeaking,
             "tokens": f.tokens.sorted(),
         ])
-        // Live mic state per participant: 🎙️ unmuted (candidate speaker until VAD),
-        // 🔇 muted, · unknown. 🔊 if a text speaking-marker is ever present.
-        let glyph = speaking ? "🔊SPEAKING"
-            : (f.micState == "on" ? "🎙️on" : f.micState == "off" ? "🔇off" : "·")
-        line += "| \(f.name) \(glyph) "
+        // Compact per-participant mic glyph: 🎙️ unmuted, 🔇 muted, · unknown.
+        let mic = f.micState == "on" ? "🎙️" : f.micState == "off" ? "🔇" : "·"
+        statuses.append("\(f.name)\(mic)")
     }
+    // Lead with the current ACTIVE SPEAKER(s) — the `, active speaker` text Zoom
+    // appends to the speaking tile's AXTabGroup description — then the roster.
+    let speakers = rows.map { $0.features }.filter { $0.markerSpeaking }.map { $0.name }
+    let active = speakers.isEmpty ? "—" : speakers.joined(separator: ", ")
+    let activePad = active.count < 18 ? active + String(repeating: " ", count: 18 - active.count) : active
+    let line = String(format: "t=%5.1fs  🔊 ACTIVE: %@ ·  %@", elapsed, activePad, statuses.joined(separator: "  "))
     if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "rows": rowsJson]), let jsonl {
         jsonl.write(data); jsonl.write(Data([0x0a]))
     }
@@ -89,6 +92,10 @@ print("ZoomProbe — native Zoom (us.zoom.xos) speaker probe")
 print("duration=\(Int(duration))s interval=\(intervalMs)ms  output=\(outDir.path)")
 print("🎙️on = unmuted (candidate speaker until VAD)   🔇off = muted   🔊SPEAKING = text marker")
 print("OPEN the Participants panel, Gallery view. Narrate turns; KEEP THE MOUSE STILL.\n")
+
+print("WINDOW INVENTORY (what native Zoom exposes right now):")
+print(ZoomRoster.windowInventory())
+print("")
 
 let timer = Timer(timeInterval: Double(intervalMs) / 1000.0, repeats: true) { t in
     tick()
