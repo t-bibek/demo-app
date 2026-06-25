@@ -99,6 +99,46 @@
             "target": "MeetProbe",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release MeetProbe"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Debug AXSnapshot",
+            "target": "AXSnapshot",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXSnapshot"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Release AXSnapshot",
+            "target": "AXSnapshot",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXSnapshot"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Debug AXObserve",
+            "target": "AXObserve",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXObserve"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}",
+            "name": "Release AXObserve",
+            "target": "AXObserve",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXObserve"
         }
     ]
 }

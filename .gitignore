@@ -7,3 +7,6 @@ build/
 # Probe run captures (scratch — e.g. `swift run ZoomProbe … | tee logzoom.md`)
 /log*.md
 /zoom-native*.md
+
+# AXSnapshot output (full AX-tree dumps for analysis)
+/ax-dumps/

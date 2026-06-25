@@ -31,6 +31,23 @@ let package = Package(
             name: "AXDump",
             path: "Sources/AXDump"
         ),
+        // Detailed AX-tree snapshotter: dumps the COMPLETE tree (every node, every
+        // attribute incl. AXDOMClassList) of the Chrome meeting tab / native Zoom /
+        // native Teams to JSON + readable .txt for offline analysis. Unlike AXDump
+        // (stdout pretty-printer) this writes diffable files. Run: `swift run
+        // AXSnapshot chrome`.
+        .executableTarget(
+            name: "AXSnapshot",
+            path: "Sources/AXSnapshot"
+        ),
+        // Live AX observer (event-driven, not a snapshot): registers AXObserver
+        // notifications and logs aria-live / announcement / value changes in real
+        // time. The decisive test for whether Teams exposes who-is-speaking in AX.
+        // Run: `swift run AXObserve teams 20`.
+        .executableTarget(
+            name: "AXObserve",
+            path: "Sources/AXObserve"
+        ),
         // Per-tile structural probe for Google Meet (the decisive experiment from
         // docs/recall-and-demo-extraction.md §4). Models each participant tile and
         // tracks geometry + AXDOMClassList + subtree shape over time so we can see
