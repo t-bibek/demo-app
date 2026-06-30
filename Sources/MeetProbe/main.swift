@@ -170,8 +170,8 @@ if args.contains("listen") {
     var registered = 0
     for app in NSWorkspace.shared.runningApplications {
         guard let bid = app.bundleIdentifier, !app.isTerminated,
-              MeetTiles.browserBundleIDs.contains(bid) || MeetTiles.nativeWebviewApps[bid] != nil else { continue }
-        if let plat = platformArg, !(MeetTiles.nativeWebviewApps[bid] == plat || MeetTiles.browserBundleIDs.contains(bid)) { continue }
+              MeetTiles.isBrowserBundle(bid) || MeetTiles.nativeWebviewApps[bid] != nil else { continue }
+        if let plat = platformArg, !(MeetTiles.nativeWebviewApps[bid] == plat || MeetTiles.isBrowserBundle(bid)) { continue }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var observer: AXObserver?
         guard AXObserverCreateWithInfoCallback(app.processIdentifier, axAnnouncementCallback, &observer) == .success,
@@ -334,11 +334,21 @@ func tick() {
         line += "| \(f.name) \(tag) "
     }
     line += speakingNames.isEmpty ? "   →  🔊 —" : "   →  🔊 ACTIVE: " + speakingNames.joined(separator: ", ")
-    globalHistory.append(GlobalSample(
-        t: elapsed, tokens: MeetTiles.allClassTokens(in: hit.web),
-        facts: MeetTiles.pageFacts(in: hit.web),
-        spotName: spotName, spotArea: spotArea, speakingAny: speakingAny))
-    needleTimeline.append((elapsed, MeetTiles.needleScan(in: hit.web, needles: speakingNeedles)))
+    // The whole-page structural / needle / class walks are 3 EXTRA full-tree passes
+    // (6–7k nodes each) — the main per-tick cost, and pathologically slow on a large
+    // tree like the Meet PWA. They only feed the oracle-discovery analysis, so run
+    // them ONLY in oracle mode; a plain "who's speaking" run stays fast (tiles only).
+    if !oracleWindows.isEmpty {
+        globalHistory.append(GlobalSample(
+            t: elapsed, tokens: MeetTiles.allClassTokens(in: hit.web),
+            facts: MeetTiles.pageFacts(in: hit.web),
+            spotName: spotName, spotArea: spotArea, speakingAny: speakingAny))
+        needleTimeline.append((elapsed, MeetTiles.needleScan(in: hit.web, needles: speakingNeedles)))
+    } else {
+        globalHistory.append(GlobalSample(
+            t: elapsed, tokens: [], facts: [],
+            spotName: spotName, spotArea: spotArea, speakingAny: speakingAny))
+    }
     if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "wall": Date().timeIntervalSince1970, "platform": detectedPlatform, "tiles": tilesJson]), let jsonl {
         jsonl.write(data); jsonl.write(Data([0x0a]))
     }

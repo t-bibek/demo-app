@@ -65,6 +65,20 @@ final class AccessibilityScanner {
         "org.mozilla.firefox", "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
     ]
 
+    /// True for a real browser OR an installed PWA / "Add to Dock" web app, which
+    /// run as their OWN app process with a derived bundle id but host the SAME
+    /// Chromium/WebKit AX tree. Without this the Google Meet PWA
+    /// (`com.google.Chrome.app.<id>`) is skipped and never scanned. Patterns:
+    /// Chrome/Edge/Brave `…app.<id>`, Safari `com.apple.Safari.WebApp.<uuid>`.
+    private static func isBrowserBundle(_ bid: String) -> Bool {
+        if browserBundleIDs.contains(bid) { return true }
+        if bid.hasPrefix("com.apple.Safari.WebApp") { return true }
+        guard bid.contains(".app.") else { return false }
+        return ["com.google.Chrome", "com.microsoft.edgemac", "com.brave.Browser",
+                "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
+                "company.thebrowser.Browser"].contains(where: bid.hasPrefix)
+    }
+
     private let maxNodesPerWindow = 6000
     private let maxDepth = 80
 
@@ -87,13 +101,16 @@ final class AccessibilityScanner {
         for app in NSWorkspace.shared.runningApplications {
             guard let bundleID = app.bundleIdentifier, !app.isTerminated else { continue }
             let isNative = Self.nativeApps[bundleID] != nil
-            let isBrowser = Self.browserBundleIDs.contains(bundleID)
+            let isBrowser = Self.isBrowserBundle(bundleID)
             guard isNative || isBrowser else { continue }
 
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             for window in axArray(axApp, "AXWindows") {
                 let title = axString(window, "AXTitle") ?? ""
-                guard var platform = Self.platform(forNative: bundleID, windowTitle: title) else { continue }
+                // PWA windows often have a short/empty title — fall back to the app
+                // NAME ("Google Meet") so the Meet PWA still resolves a platform.
+                guard var platform = Self.platform(forNative: bundleID, windowTitle: title)
+                        ?? platformForBrowserTitle(app.localizedName ?? "") else { continue }
 
                 var collector = TreeCollector()
                 walk(window, depth: 0, into: &collector)

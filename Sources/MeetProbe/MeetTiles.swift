@@ -54,6 +54,22 @@ enum MeetTiles {
         "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "org.mozilla.firefox",
     ]
 
+    /// True for a real browser OR an installed PWA / "Add to Dock" web app. A PWA
+    /// runs as its OWN app process with a DERIVED bundle id but hosts the SAME
+    /// Chromium/WebKit AX tree — so it must be scanned too. Without this the Google
+    /// Meet PWA (`com.google.Chrome.app.<id>`, i.e. "Google Meet.app") is skipped
+    /// and nothing is detected. Patterns: Chrome `com.google.Chrome.app.<id>`, Edge
+    /// `com.microsoft.edgemac.app.<id>`, Brave `com.brave.Browser.app.<id>`, Safari
+    /// `com.apple.Safari.WebApp.<uuid>` (macOS Sonoma "Add to Dock").
+    static func isBrowserBundle(_ bid: String) -> Bool {
+        if browserBundleIDs.contains(bid) { return true }
+        if bid.hasPrefix("com.apple.Safari.WebApp") { return true }
+        guard bid.contains(".app.") else { return false }
+        return ["com.google.Chrome", "com.microsoft.edgemac", "com.brave.Browser",
+                "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
+                "company.thebrowser.Browser"].contains(where: bid.hasPrefix)
+    }
+
     /// Native WebView apps that expose a Chromium AX tree but NO address-bar URL,
     /// so the platform is forced by bundle id. New Microsoft Teams is one (the
     /// whole client is a WebView2/Chromium app — see docs/teams-active-speaker-detection.md).
@@ -111,7 +127,7 @@ enum MeetTiles {
         guard AX.isTrusted else { return }
         for app in NSWorkspace.shared.runningApplications {
             guard let bid = app.bundleIdentifier, !app.isTerminated,
-                  browserBundleIDs.contains(bid) || nativeWebviewApps[bid] != nil else { continue }
+                  isBrowserBundle(bid) || nativeWebviewApps[bid] != nil else { continue }
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             AX.setBool(axApp, "AXManualAccessibility", true)     // Electron / WebView2
             AX.setBool(axApp, "AXEnhancedUserInterface", true)   // Chromium / Cocoa AT flag
@@ -124,11 +140,12 @@ enum MeetTiles {
         for app in NSWorkspace.shared.runningApplications {
             guard let bid = app.bundleIdentifier, !app.isTerminated else { continue }
             let nativePlat = nativeWebviewApps[bid]
-            guard browserBundleIDs.contains(bid) || nativePlat != nil else { continue }
+            guard isBrowserBundle(bid) || nativePlat != nil else { continue }
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             // Keep the enhanced tree on (some apps reset it) — idempotent.
             AX.setBool(axApp, "AXManualAccessibility", true)
             AX.setBool(axApp, "AXEnhancedUserInterface", true)
+            let appName = (app.localizedName ?? "").lowercased()
             for window in AX.windows(axApp) {
                 if let nativePlat {
                     // Native WebView (new Teams): no URL to detect — force the
@@ -141,10 +158,23 @@ enum MeetTiles {
                     continue
                 }
                 let title = (AX.string(window, "AXTitle") ?? "").lowercased()
-                let pre = title.contains("meet") || title.contains("zoom") || title.contains("teams") || title.isEmpty
+                // Skip a DevTools window outright — never a meeting, huge + slow tree.
+                if title.contains("devtools") || title.contains("developer tools") { continue }
+                // Include the APP NAME so a PWA window (often empty/short title, app
+                // name "Google Meet") still passes and resolves its platform.
+                let hint = title + " " + appName
+                let pre = hint.contains("meet") || hint.contains("zoom") || hint.contains("teams") || title.isEmpty
                 guard pre else { continue }
                 if let (web, plat) = findMeetingWebArea(in: window) {
                     if wanted == nil || wanted == plat { roots.append((web, plat)) }
+                } else if let web = largestWebArea(in: window) {
+                    // PWA / "Add to Dock" web app: no address-bar URL to detect from,
+                    // so derive the platform from the window/app title (zoom & teams
+                    // first — "Zoom Meeting" contains "meet"). Mirrors the native path.
+                    let plat = hint.contains("zoom") ? "zoom"
+                             : hint.contains("teams") ? "teams"
+                             : hint.contains("meet") ? "meet" : nil
+                    if let plat, wanted == nil || wanted == plat { roots.append((web, plat)) }
                 }
             }
         }
@@ -159,7 +189,7 @@ enum MeetTiles {
         func rec(_ el: AXUIElement, _ depth: Int) {
             if n >= maxScanNodes || depth > 70 { return }
             n += 1
-            if AX.string(el, "AXRole") == "AXWebArea" {
+            if AX.string(el, "AXRole") == "AXWebArea", !isInternalWebArea(el) {
                 let f = AX.frame(el)
                 let area = (f?.width ?? 0) * (f?.height ?? 0)
                 if best == nil || area > best!.area { best = (el, area) }
@@ -168,6 +198,18 @@ enum MeetTiles {
         }
         rec(window, 0)
         return best?.el
+    }
+
+    /// A DevTools / chrome-internal web area (`devtools://`, `chrome://`) — never a
+    /// meeting. DevTools is a HUGE tree that BOTH pollutes tile detection (its
+    /// Elements panel exposes the inspected page's CSS selectors as "names": `.crqnQb`,
+    /// `Console`, `Network`, …) AND makes the scan pathologically slow. Excluded
+    /// wherever we pick a meeting web area.
+    static func isInternalWebArea(_ el: AXUIElement) -> Bool {
+        for s in [AX.urlString(el, "AXURL"), AX.urlString(el, "AXDocument")].compactMap({ $0?.lowercased() }) {
+            if s.hasPrefix("devtools:") || s.hasPrefix("chrome:") || s.hasPrefix("chrome-devtools:") { return true }
+        }
+        return false
     }
 
     /// One traversal of the window: collect every AXWebArea (with area) and detect
@@ -180,7 +222,7 @@ enum MeetTiles {
         func rec(_ el: AXUIElement, _ depth: Int) {
             if n >= maxScanNodes || depth > 70 { return }
             n += 1
-            if AX.string(el, "AXRole") == "AXWebArea" {
+            if AX.string(el, "AXRole") == "AXWebArea", !isInternalWebArea(el) {
                 let f = AX.frame(el)
                 webAreas.append((el, (f?.width ?? 0) * (f?.height ?? 0)))
             }
@@ -202,7 +244,7 @@ enum MeetTiles {
         guard AX.isTrusted else { return "Accessibility NOT trusted." }
         var lines: [String] = []
         for app in NSWorkspace.shared.runningApplications {
-            guard let bid = app.bundleIdentifier, browserBundleIDs.contains(bid), !app.isTerminated else { continue }
+            guard let bid = app.bundleIdentifier, isBrowserBundle(bid), !app.isTerminated else { continue }
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             let wins = AX.windows(axApp)
             lines.append("\(app.localizedName ?? bid): \(wins.count) window(s)")
