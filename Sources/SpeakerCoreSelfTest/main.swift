@@ -118,6 +118,11 @@ check(cleanParticipantName("Mute my audio") == nil, "zoom native 'Mute my audio'
 check(cleanParticipantName("Stop video") == nil, "zoom native 'Stop video' rejected")
 check(cleanParticipantName("My notes off") == nil, "zoom native 'My notes off' rejected")
 check(cleanParticipantName("Upgrade to Pro") == nil, "zoom native 'Upgrade to Pro' banner rejected")
+// Meet screen-share / chrome button labels that were leaking in as fake tiles.
+check(cleanParticipantName("Enter Full Screen") == nil, "meet 'Enter Full Screen' button rejected")
+check(cleanParticipantName("Show my screen anyway") == nil, "meet 'Show my screen anyway' button rejected")
+check(cleanParticipantName("2 others") == nil, "meet '2 others' overflow label rejected")
+check(cleanParticipantName("User profile picture") == nil, "meet 'User profile picture' rejected")
 check(cleanParticipantName("David's Iphone") == "David's Iphone", "zoom native phone participant still a name")
 // Zoom NATIVE (us.zoom.xos) DOES expose the active speaker — verified live in an
 // AXTabGroup description with 3 participants (ax-dumps/20260625-200432). The web
@@ -173,10 +178,10 @@ check(platformExposesSpeakerNames(.zoom) == true, "zoom exposes speaker names")
 check(platformExposesSpeakerNames(.meet) == true, "meet exposes speaker names (kssMZb via AXDOMClassList)")
 check(platformExposesSpeakerNames(.teams) == false, "teams not yet verified -> audio-only")
 
-// MARK: MeetSpeakerRules (verified active-speaker class cluster)
+// MARK: MeetSpeakerRules (STRICT kssMZb-only — self/hover cluster removed)
 print("MeetSpeakerRules:")
 check(meetTileIsSpeaking(classTokens: ["kssMZb", "OFfHfd", "urlhDe"]), "kssMZb (thumbnail speaker) -> speaking")
-check(meetTileIsSpeaking(classTokens: ["eT1oJ", "hk9qKe"]), "self spotlight cluster -> speaking")
+check(!meetTileIsSpeaking(classTokens: ["eT1oJ", "hk9qKe"]), "self/hover cluster -> NOT speaking (removed: lit on hover & for muted-silent self)")
 check(!meetTileIsSpeaking(classTokens: ["FTMc0c", "OFfHfd", "urlhDe"]), "silent state -> not speaking")
 check(!meetTileIsSpeaking(classTokens: []), "empty -> not speaking")
 check(meetTileIsSpeaking(classTokens: ["xyz"], rules: MeetSpeakerRules(speakingClasses: ["xyz"], version: "test")), "custom remote-config ruleset works")
@@ -244,6 +249,16 @@ equal(meetActiveSpeaker(tiles: mtGallery, prevAreas: [:], vadSpeechActive: true)
       "gallery, no class -> Someone floor")
 equal(meetActiveSpeaker(tiles: mtGallery, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
       "gallery, no class -> via someoneFloor")
+// 5) presentation active -> geometry SUPPRESSED (the big tile is the shared
+//    screen, not the speaker). No class either -> Someone floor, not the screen.
+equal(meetActiveSpeaker(tiles: mtSpotlight, prevAreas: [:], vadSpeechActive: true, presentationActive: true).names, ["Someone"],
+      "presentation on -> geometry suppressed -> Someone floor")
+equal(meetActiveSpeaker(tiles: mtSpotlight, prevAreas: [:], vadSpeechActive: true, presentationActive: true).via, .someoneFloor,
+      "presentation on -> via someoneFloor (not geometry)")
+// 5b) presentation on but a class names a tile -> class still wins (the speaker's
+//     kssMZb is independent of the share; only geometry is unsafe under share).
+equal(meetActiveSpeaker(tiles: mtClass, prevAreas: [:], vadSpeechActive: true, presentationActive: true).names, ["Alice"],
+      "presentation on + class match -> class still names the speaker")
 
 // MARK: Teams rules (stable aria_*/calling_* tokens; speaking markers seeded)
 print("TeamsSpeakerRules:")

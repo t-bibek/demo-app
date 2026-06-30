@@ -7,25 +7,25 @@
 
 ## Summary — what macOS AX exposes per platform
 
-| Platform | Participant name | is-speaking | Mute / unmute | How we get the speaker |
-|---|---|---|---|---|
-| **Meet** (web) | ✅ | ✅ `kssMZb` class on tile (`AXDOMClassList`) | ✅ local · ⚠️ remote (needs panel) | AX class + VAD |
-| **Zoom native** (`us.zoom.xos`) | ✅ | ✅ `", active speaker"` text on tile `AXDescription` | ✅ per-participant (tile + roster) | AX text marker (+ VAD timing) |
-| **Zoom web** (`app.zoom.us`) | ✅ | ❌ | ❌ (not on tiles) | audio diarization only |
-| **Teams native** (`com.microsoft.teams2`) | ✅ | ❌ (DOM `data-is-speaking`, not in AX) | ✅ local · ⚠️ remote (roster panel, absence-coded) | VAD + mute-gate |
-| **Teams web** (`teams.microsoft.com`) | ✅ | ❌ (DOM `data-is-speaking`, not in AX) | ✅ local · ⚠️ remote (roster panel, absence-coded) | VAD + mute-gate |
+| Platform | Participant name | is-speaking | Mute / unmute |
+|---|---|---|---|
+| **Meet** (web) | ✅ | ✅ `kssMZb` class on tile (`AXDOMClassList`) | ✅ local · ⚠️ remote (needs panel) |
+| **Zoom native** (`us.zoom.xos`) | ✅ | ✅ `", active speaker"` text on tile `AXDescription` | ✅ per-participant (tile + roster) |
+| **Zoom web** (`app.zoom.us`) | ✅ | ❌ | ❌ (not on tiles) |
+| **Teams native** (`com.microsoft.teams2`) | ✅ | ✅ per-tile speaking-class set in `AXDOMClassList` (anchor `vdi-frame-occlusion`; rotating hashes → remote-config) + VAD | ✅ local · ⚠️ remote (roster panel, absence-coded) |
+| **Teams web** (`teams.microsoft.com`) | ✅ | ✅ same class set as native | ✅ local · ⚠️ remote (roster panel, absence-coded) |
 
 ✅ = readable from the macOS AX tree · ❌ = not in AX (DOM/visual only) · ⚠️ = conditional / unconfirmed.
 
-**Names are always readable. Only Meet and Zoom-native expose who-is-speaking directly in AX** (a CSS class and a text marker respectively); Zoom-web and both Teams clients give names + mute but need audio VAD for the timeline. Per-platform detail below.
+**Names are always readable. Meet, Zoom-native, AND Teams (native + web) expose who-is-speaking directly in AX** — Meet and Teams via a **per-tile CSS class in `AXDOMClassList`** (Teams' classes are obfuscated, rotating Griffel hashes → remote-config; `vdi-frame-occlusion` is the durable anchor), Zoom-native via a `", active speaker"` text marker. Only Zoom-web needs audio VAD for the timeline. The **self/local user is always the mic**, never a tile — the speaking ring is drawn only on *remote* tiles. Per-platform detail below.
 
-> **The speaker read on the two marker platforms is independent of how many participants are unmuted.** Meet/Zoom-native mark the single *active* tile regardless of mute count (verified: 3 simultaneously-unmuted remotes on Zoom-native, AX named the one talking and tracked the hand-off). The **mute-gate** — the only speaker hint on Teams/Zoom-web — is different: it names the speaker only when **exactly one** remote is unmuted; 2+ unmuted needs audio diarization. (The marker is still single-valued, so genuinely *simultaneous* talkers show only the app-promoted dominant one.)
+> **The AX speaker read is independent of mute count.** Meet/Zoom-native/Teams mark the active tile(s) regardless of how many are unmuted (verified: 3-unmuted Zoom-native; Teams handoff across speakers, camera on AND off). Teams' class is **per-tile** — each speaking tile lights independently → genuine *simultaneous* multi-speaker — whereas Meet/Zoom-native expose only the single *dominant* speaker. Only **Zoom-web** falls back to the mute-gate (names a speaker only when exactly one remote is unmuted; 2+ needs audio).
 
 ---
 
-## Teams web — mute/unmute is readable, is-speaking is not (2026-06-25)
+## Teams web — mute readable, AND is-speaking via a per-tile class (CORRECTED 2026-06-29)
 
-Capture: Chrome tab on `teams.microsoft.com`, local "bibek thapa" + remote "David Thapa (Guest)".
+Capture: Chrome tab on `teams.microsoft.com`, local "bibek thapa" + remotes. **Same handle as native** (confirmed live: `vdi-frame-occlusion`/`___1vvhwjq` light the speaking tile, camera on AND off).
 
 **What Teams provides**
 
@@ -34,36 +34,29 @@ Capture: Chrome tab on `teams.microsoft.com`, local "bibek thapa" + remote "Davi
 | Participant name | ✅ | `AXStaticText` / descriptor |
 | Mute/unmute (remote) | ✅ | roster `AXDescription` — `, Muted` present/absent |
 | Mute/unmute (local) | ✅ | own tile `AXDescription` carries `Unmuted`/`Muted` |
-| **is-speaking** | ❌ | only in the DOM (`data-is-speaking`), not in AX |
+| **is-speaking** (remote) | ✅ | per-tile speaking-class set in `AXDOMClassList` (the `data-is-speaking` *attribute* stays DOM-only) |
+| is-speaking (self) | ❌→mic | self-tile never rings (ring is for remote streams) → use mic + mute |
 
-**Why mute/unmute works** — it rides on a *named, accessible* node, so the state is baked into `AXDescription`:
+**Mute/unmute** rides on a named, accessible node (`"David Thapa (Guest), …"` / `"Mute mic"`), so it's in `AXDescription`.
+
+**Why is-speaking IS readable (the correction).** The speaking ring is `<div data-tid="voice-level-stream-outline" data-is-speaking="true" class="… ___1vvhwjq vdi-frame-occlusion …">`. The `data-*` attrs never bridge to AX — **but the `class` on that same node does** (`class` → `AXDOMClassList`), and the ring carries a distinct set when active:
 
 ```
-description="David Thapa (Guest), Context menu is available"        # remote, UNMUTED (no "Muted")
-description="Myself video, bibek thapa, Unmuted, Has context menu"  # local, explicit
-description="Mute mic"                                              # local mic button
+SPEAKING:  ___1vvhwjq  vdi-frame-occlusion  fn8mz29  f1ky4vpe  frwhdur  ftevtku  f1qyaz97  f14rmoke  fm03cl5  f3ve9t9
+SILENT:    ___dv8x4j0  f1429bq1  f9pox2d
 ```
 
-**Why is-speaking fails** — Teams *does* track it, but on the one surface AX can't see. In the DOM:
+It toggles **per tile, following the speaker** — verified live on a 3-person handoff (the set moved speaker→speaker, cleared in silence), **camera on AND off**, never on the self-tile. `vdi-frame-occlusion` is the durable semantic anchor; the rest are rotating Griffel hashes → remote-config.
 
-```html
-<div data-tid="voice-level-stream-outline" data-is-speaking="true"  class="… ___1vvhwjq …"></div>
-<div data-tid="voice-level-stream-outline" data-is-speaking="false" class="… ___dv8x4j0 …"></div>
-```
+**Why earlier dumps said "not in AX" — false negative.** A static snapshot taken during *silence* shows only the non-speaking classes; the speaking variants are obfuscated hashes (keyword grep can't find them); and `AXObserve` saw nothing because Chromium toggles `AXDOMClassList` **without posting an AX notification**. Only a high-frequency **per-tile interval diff** (`swift run MeetProbe teams … oracle=…`) surfaces it.
 
-It's invisible to AX for two reasons:
-1. **`data-*` is never bridged to macOS AX** (only `class`/`id`/ARIA are). Grep of the AX dump: `data-is-speaking` / `voice-level-stream-outline` = **0 hits**.
-2. The node is an **empty decorative `<div>`** (no role/name) → Chrome marks it `ignored` and prunes it from the platform tree.
-
-One line: *mute is on a meaningful named element; speaking is on a presentational element via a non-bridged attribute.* That asymmetry is the whole reason we get mute but not speaking.
-
-**Consequence** — desktop/AX route: Teams gives **roster + mute/unmute only**; who-is-speaking must come from **audio VAD + the mute-gate**. The only way to read `data-is-speaking` directly is an **in-browser extension** (web Teams only).
+**Consequence** — who-is-speaking IS in AX: read the speaking-class set per tile (anchor `vdi-frame-occlusion`, ≥K of the set, remote-config'd), fuse VAD for precise on/off. **Self → mic + mute** (the ring is for remote streams only). No extension needed.
 
 ---
 
-## Teams native (`com.microsoft.teams2`) — identical to web: mute readable, is-speaking not (2026-06-25)
+## Teams native (`com.microsoft.teams2`) — same as web: is-speaking IS in AX (CORRECTED 2026-06-29)
 
-Capture: `swift run AXSnapshot teams` (`ax-dumps/20260625-202855`, 128 nodes). Teams native is a Chromium webview, so it behaves exactly like Teams web.
+Teams native is a Chromium webview, so it behaves exactly like Teams web — including the speaking-class signal (confirmed live on native: 3-person handoff, camera on/off, multi-speaker).
 
 | Signal | In macOS AX? | How |
 |---|---|---|
@@ -71,7 +64,8 @@ Capture: `swift run AXSnapshot teams` (`ax-dumps/20260625-202855`, 128 nodes). T
 | Camera on/off | ✅ | `", video is on"` in the description |
 | Mute/unmute (local) | ✅ | own tile desc + mic button (`Unmute mic` / `Mute mic`) |
 | Mute/unmute (remote) | ✅ | roster desc — `, Muted` present/absent |
-| **is-speaking** | ❌ | nothing in AX (exhaustively checked) |
+| **is-speaking** (remote) | ✅ | per-tile speaking-class set in `AXDOMClassList` (same handle as web) |
+| is-speaking (self) | ❌→mic | self-tile never rings → mic + mute |
 
 ```
 description="Myself video, Bibek Thapa, Muted, Has context menu"        # local, MUTED
@@ -80,11 +74,11 @@ description="David Thapa (Guest), Context menu is available"            # remote
 description="Unmute mic"                                                # mic button ⇒ you're muted
 ```
 
-**Why is-speaking fails (exhaustive check)** — across all 128 nodes: every attribute type read, **555 class tokens**, and a raw grep for `voice-level`/`stream-outline`/`is-speaking`/`active-speaker`/`talking` → **0 hits**. The tiles carry no `AXValue`/`AXSelected`/speaking class. Same root cause as web: the speaking ring is the `ignored` `voice-level-stream-outline` div + `data-is-speaking` (`data-*` not bridged).
+**Why is-speaking IS readable** — same as Teams web: the `data-is-speaking` attr stays DOM-only, but the **speaking-ring class set** (`vdi-frame-occlusion`/`___1vvhwjq`/…) on that node IS in `AXDOMClassList` and toggles per tile with the speaker. Detection rule: a tile is speaking iff `AXDOMClassList` contains `vdi-frame-occlusion` (anchor) or ≥4 of the set. Verified live on native — handoff across speakers, camera on/off, multi-speaker, never on self.
 
-**Live-observer test — SETTLED (2026-06-25).** Ran `swift run AXObserve teams 20` (`Sources/AXObserve`, an event-driven `AXObserver`, not a snapshot) during narrated speech. The observer works — it caught David's tile description flip to `", video is on"` (camera toggle) and focus changes — but across ~40s of speech fired **no speaking signal**: the `AXARIALive` regions stayed silent, no `AXAnnouncementRequested`, and tile descriptions mutate for **camera/mute only, never speaking**. So who-is-speaking is **not in AX live either**, not just statically. (Residual: `AXAnnouncementRequested` can be gated on VoiceOver being active — re-run with VoiceOver (⌘F5) to close that one sub-channel; the tile + live-region *change* events, which fire regardless, are a confirmed negative.)
+> **The earlier "SETTLED — not in AX" verdict was a FALSE NEGATIVE** (the static `AXSnapshot` + `AXObserve` runs). Three reasons it missed: the snapshot was captured during *silence* (only non-speaking classes present); the speaking variants are obfuscated hashes (grep-proof); and Chromium toggles `AXDOMClassList` with **no AX notification**, so the event observer was blind. The per-tile interval diff (`MeetProbe`) is the method that found it. Lesson: an obfuscated, transient, migrating class needs a high-freq per-tile diff — not a snapshot, not a notification listener.
 
-**Consequence** — Teams (native **and** web): roster + mute only; who-is-speaking = **audio VAD + mute-gate**. Recall ships a structural PIP is-speaking scan (`TeamsScraper.scrapeMeetingParticipants`) but it's **inert on current builds → falls to VAD**, and binds VAD clusters to names by correlating with the AX mute timeline (not voiceprints). See `teams-active-speaker-detection.md`.
+**Consequence** — Teams (native + web): who-is-speaking IS in AX (per-tile class set, remote-config'd anchor `vdi-frame-occlusion`) + VAD for timing; **self → mic + mute**. This corrects `speaker-detection-platform-summary.md` (which lists Teams active-speaker as audio-only) and the open question in `TeamsSpeakerRules.swift` (a camera-independent AX signal — now found). Recall's own `TeamsScraper` PIP scan is inert on its build → it uses VAD; we have a working class handle on this build.
 
 ---
 

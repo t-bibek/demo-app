@@ -32,9 +32,9 @@ final class DetectionEngine {
     // Meet fused-resolver state: last tick's tile areas (geometry history) and
     // telemetry counters (a class rotation shows up as floors with no class hits).
     private var meetPrevAreas: [String: Double] = [:]
-    private var meetNamed = 0        // ticks attributed to a real name (audio-direction)
-    private var meetSomeone = 0      // ticks attributed to anonymous "Someone"
-    private var meetClassFired = 0   // ticks the CSS class matched (telemetry: hover/self highlight)
+    private var meetNamed = 0        // ticks a remote/active tile was named via AX (geometry/class)
+    private var meetSomeone = 0      // ticks attributed to anonymous "Someone" (speech, no AX attribution)
+    private var meetClassFired = 0   // ticks the strict kssMZb class matched (rotation monitor)
 
     // Teams fused-resolver state (mirrors Meet): last tile areas + telemetry.
     private var teamsPrevAreas: [String: Double] = [:]
@@ -90,11 +90,12 @@ final class DetectionEngine {
         }
         systemMeter = nil
 
-        // Meet attribution telemetry. `class fired` is how often the CSS class
-        // matched — kept only to monitor the hover/self-highlight; it is NOT used
-        // for attribution when audio is available.
+        // Meet attribution telemetry. `class fired` monitors the strict kssMZb
+        // match so a rotation shows up as named/someone accruing while class-fired
+        // drops to 0. (kssMZb measured ~83% prec / 89% recall for remotes, ~14%
+        // recall for self vs Recall's VAD truth — corroboration, not the source.)
         if meetNamed + meetSomeone + meetClassFired > 0 {
-            status(.info, "Meet attribution — named: \(meetNamed), someone: \(meetSomeone); CSS class fired \(meetClassFired)× (telemetry only — hover/self highlight, not speech).")
+            status(.info, "Meet attribution — named: \(meetNamed), someone: \(meetSomeone); kssMZb fired \(meetClassFired)×.")
         }
         // Teams attribution. `structural` = the AX is-speaking token named a tile
         // (Recall-style); if it stays 0 while `named`/`someone` accrue, the token
@@ -143,30 +144,36 @@ final class DetectionEngine {
             var who = Set(w.speakers)
 
             if w.platform == .meet {
-                // Meet's per-tile CSS class is the tile's HOVER / self-view
-                // highlight on current builds — NOT speech (verified live:
-                // hovering toggles it, a muted-silent self tile still shows it,
-                // and a remote speaking lights up the self tile too). So attribute
-                // by AUDIO DIRECTION + roster, exactly like Zoom: mic = you,
-                // system audio = a remote. The class is telemetry-only.
-                // See docs/meet-active-speaker-no-hardcoded-css.md.
+                // Remote/active naming comes ONLY from the AX tree now (structural →
+                // geometry → strict kssMZb), VAD-gated. Corrected understanding:
+                // kssMZb IS a real per-tile active-speaker class — the self-CLUSTER
+                // that confounded it with hover/self-view was removed. Audio
+                // direction is NO LONGER used to name remotes; the mic only names the
+                // LOCAL user, whose own tile never carries the speaking ring.
                 if w.meetTiles.contains(where: { $0.classSpeaking }) { meetClassFired += 1 }
 
-                if audioReliable {
+                // Soft VAD gate (trustworthy only when system-audio capture runs).
+                let vad = audioReliable ? (micActive || remoteActive) : true
+                let r = meetActiveSpeaker(tiles: w.meetTiles, prevAreas: meetPrevAreas,
+                                          vadSpeechActive: vad, presentationActive: w.presentationActive)
+                if r.via != .none && r.via != .someoneFloor {
+                    who.formUnion(r.names)            // structural / geometry / class
+                    meetNamed += 1
+                }
+
+                // SELF via mic only — name the local user when the mic is active and
+                // you're unmuted (your tile gets no speaking ring to read).
+                if audioReliable && micActive && (w.localUserUnmuted ?? false) {
                     let me = w.meetTiles.first(where: { $0.isMe })
-                    let localUnmuted = w.localUserUnmuted ?? false
-                    let localName = me?.name ?? config.localUserName
-                    let remotes = w.meetTiles.filter { !$0.isMe }.map { $0.name }
-                    let names = zoomMuteGateSpeakers(
-                        micActive: micActive, localUnmuted: localUnmuted, localName: localName,
-                        remoteActive: remoteActive, remoteUnmutedNames: remotes)
-                    who.formUnion(names)
-                    if names.contains("Someone") { meetSomeone += 1 } else if !names.isEmpty { meetNamed += 1 }
-                } else {
-                    // No system-audio capture (Screen Recording off) — fall back to
-                    // the hover/self-confounded class so we're not fully blind.
-                    let r = meetActiveSpeaker(tiles: w.meetTiles, prevAreas: meetPrevAreas, vadSpeechActive: true)
-                    who.formUnion(r.names)
+                    who.insert(me?.name ?? config.localUserName)
+                }
+
+                // Confirmed speech but AX attributed nobody and self wasn't added →
+                // anonymous floor. Only when audio confirms speech (no Someone spam
+                // when we can't even tell anyone is talking).
+                if r.via == .someoneFloor && who.isEmpty && audioReliable {
+                    who.insert("Someone")
+                    meetSomeone += 1
                 }
                 meetPrevAreas = Dictionary(w.meetTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
             } else if w.platform == .teams {

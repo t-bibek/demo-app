@@ -26,23 +26,29 @@ public struct MeetSpeakerRules: Codable, Sendable, Equatable {
         self.version = version
     }
 
-    /// Built-in defaults from the 2026-06-20 verification runs.
+    /// Built-in default — STRICT, single-class last-resort fallback (2026-06-29).
     ///
-    /// The Meet active-speaker class is LAYOUT-DEPENDENT — a single token does
-    /// not generalize, so we match a UNION (ANY present => speaking):
-    /// - `kssMZb`        — active speaker on a THUMBNAIL-strip tile (verified on a
-    ///                     self thumbnail spoke 0–35→10–37 AND a remote thumbnail
-    ///                     spoke 5–25→8–30; disambiguated from mute via a 4-phase run).
-    /// - `eT1oJ`,`hk9qKe`,`nn1vQb`,`s4hFTd`,`tWDL4c`,`yHy1rc` — the cluster Meet
-    ///                     adds to your OWN tile while you speak (fired on a self
-    ///                     SPOTLIGHT tile 9.8–14 when kssMZb did not).
-    /// Still unverified: a REMOTE spotlight tile (different class likely). These
-    /// names are obfuscated and rotate (~6 wks) — refresh from remote config.
-    /// `FTMc0c` marks the silent/idle state.
+    /// `kssMZb` ONLY, and deliberately the LAST signal, not the first. Per the
+    /// structural-tile-state plan (Recall's binary ships `active speaker
+    /// indicator` / `active speaker container` / `isActiveSpeaker` symbols but
+    /// NONE of our class tokens), Meet's durable active-speaker handle is a
+    /// STRUCTURAL indicator/container node, not an obfuscated CSS class.
+    /// `meetActiveSpeaker()` resolves structure/geometry first and only falls back
+    /// to this class when nothing structural attributes a tile.
+    ///
+    /// The old self/hover cluster (`eT1oJ,hk9qKe,nn1vQb,s4hFTd,tWDL4c,yHy1rc`) was
+    /// REMOVED: it is the tile's HOVER/focus highlight, not speech — it lights on
+    /// hover-anywhere and stays ON for a muted, silent self tile (verified; see
+    /// `MeetTileObservation.classSpeaking`). Shipping it caused hover/self false
+    /// positives. `FTMc0c` (the old silent marker) is dropped with it — diagnostic
+    /// only and equally rotation-prone.
+    ///
+    /// `kssMZb` is obfuscated and Google rotates it (~6 wks) — refresh from remote
+    /// config; re-derive with `swift run MeetProbe` against a narrated call.
     public static let builtin = MeetSpeakerRules(
-        speakingClasses: ["kssMZb", "eT1oJ", "hk9qKe", "nn1vQb", "s4hFTd", "tWDL4c", "yHy1rc"],
-        silentClasses: ["FTMc0c"],
-        version: "2026-06-20"
+        speakingClasses: ["kssMZb"],
+        silentClasses: [],
+        version: "2026-06-29-strict"
     )
 }
 

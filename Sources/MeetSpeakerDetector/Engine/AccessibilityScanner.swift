@@ -24,9 +24,14 @@ struct ScannedWindow {
     /// Native Zoom roster (name + mute + isMe) for mute-gated attribution; empty
     /// for every other platform.
     var zoomRoster: [ZoomRosterEntry]
-    /// Meet per-tile observations (geometry + class) for the fused, VAD-gated
-    /// active-speaker resolver in the engine; empty for every other platform.
+    /// Meet per-tile observations (geometry + class + structural facts) for the
+    /// fused, VAD-gated active-speaker resolver in the engine; empty for every
+    /// other platform.
     var meetTiles: [MeetTileObservation]
+    /// True when a presentation / screen-share dominates the meeting stage
+    /// (Meet). The resolver SUPPRESSES geometry attribution then, so the shared
+    /// screen's large tile isn't mistaken for the speaker. False off Meet.
+    var presentationActive: Bool
     /// Teams per-tile observations (geometry + structural is-speaking + mute) for
     /// the fused, VAD-gated resolver in the engine; empty for every other platform.
     var teamsTiles: [TeamsTileObservation]
@@ -111,12 +116,15 @@ final class AccessibilityScanner {
                 var meetTiles: [MeetTileObservation] = []
                 var teamsTiles: [TeamsTileObservation] = []
                 var teamsRoster: [ZoomRosterEntry] = []
+                var presentationActive = false
 
                 if platform == .meet {
-                    // Meet's active speaker is fused (geometry + class + VAD) in the
-                    // engine — the scanner just supplies the per-tile observations.
+                    // Meet's active speaker is fused (structural + geometry + class +
+                    // VAD) in the engine — the scanner supplies the per-tile
+                    // observations and whether a presentation dominates the stage.
                     let m = meetTileObservations(in: window)
                     meetTiles = m.tiles
+                    presentationActive = meetPresentationActive(in: window)
                     speakers = []   // engine resolves Meet speakers from meetTiles
                     participants = dedup(participants + m.participants)
                 } else if platform == .teams {
@@ -167,6 +175,7 @@ final class AccessibilityScanner {
                     directSpeakerRead: directSpeakerRead,
                     zoomRoster: zoomRoster,
                     meetTiles: meetTiles,
+                    presentationActive: presentationActive,
                     teamsTiles: teamsTiles,
                     teamsRoster: teamsRoster
                 ))
@@ -445,6 +454,32 @@ final class AccessibilityScanner {
         }
         rec(tile, 0)
         return tokens
+    }
+
+    /// Best-effort: is a presentation / screen-share dominating the Meet stage?
+    /// Heuristic text scan for a clear "presenting" / "stop sharing" phrase (Meet
+    /// labels the share control + a "<name> is presenting" banner). Conservative on
+    /// purpose — only a definite presenting phrase counts, so we don't spuriously
+    /// suppress the geometry signal. Validated as a matrix axis; replace with a
+    /// structural container check if the probe finds a stabler one.
+    private func meetPresentationActive(in window: AXUIElement) -> Bool {
+        var found = false
+        var n = 0
+        func rec(_ el: AXUIElement, _ depth: Int) {
+            if found || n >= maxNodesPerWindow || depth > maxDepth { return }
+            n += 1
+            for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                guard let s = axString(el, attr)?.lowercased() else { continue }
+                if s.contains("is presenting") || s.contains("stop presenting")
+                    || s.contains("stop sharing") || s.contains("you are presenting")
+                    || s.contains("is sharing their screen") {
+                    found = true; return
+                }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
+        }
+        rec(window, 0)
+        return found
     }
 
     // MARK: Microsoft Teams per-tile active-speaker scan

@@ -23,6 +23,66 @@ compiled logic we reason about but can't read directly._
 
 ---
 
+## 2026-07-01 — SETTLED against Recall's ground truth: Meet speaking is AUDIO, not AX
+
+We built an automated harness that scores our AX detection against **Recall's own
+speaker timeline** (the real product's output) and ran a live co-run. This settles
+the question.
+
+### How we compared
+- `RECALLAI_DESKTOP_SDK_DEV=1 npm run start:debug 2>&1 | tee recall.log` in the
+  `recall-demos/dsdk-tutorial` app emits per-participant `participant_events.speech_on/off`
+  with absolute timestamps (`src/server/lib/initializeRecallAiSdk.ts:147`, console-only — must `tee`).
+- `MeetProbe` now stamps each tick with `wall` (epoch); `scripts/compare_recall_vs_ax.py`
+  aligns the two on the absolute clock and scores our `kssMZb` vs Recall's intervals.
+- Run both in the SAME call, then:
+  `python3 scripts/compare_recall_vs_ax.py recall.log <meet-probe>/timeline.jsonl --map "Host=Bibek Thapa"`
+
+### Result (clean 2-person gallery co-run, 57s overlap)
+| participant | our `kssMZb` precision | recall |
+|---|---|---|
+| remote (Wedding) | 83% | 89% |
+| self (Bibek) | 77% | **14%** |
+| anyone-speaking | 91% | 40% |
+
+- **`kssMZb` cannot see self** (14% recall) — your own tile never gets the speaking
+  ring. Self MUST come from the mic.
+- **`kssMZb` is decent-precision but low-recall for a remote** — corroboration, not a
+  primary source. (The earlier "17%" was a confounded pinned+screenshare+hover cell.)
+- **Recall's ground truth has every id tagged `VAD-audio` (0,1,2…)** with names from
+  the **AX roster** (ids ≥32766). i.e. Recall decides *who's talking* from **audio
+  VAD**, and only uses AX for **names**. No AX speaking signal is involved.
+
+### Why Recall works for 2 participants when there's NO UI signal
+The remote's **voice physically plays out of your speakers**, so it's present in the
+meeting app's audio output **whenever they talk** — independent of any tile/ring/class.
+Recall taps that stream (CoreAudio process-tap / ScreenCaptureKit) and runs VAD. With
+one remote, attribution is unambiguous (mic = you, system audio = the one remote; name
+from roster). No active-speaker UI needed.
+
+**"My speakers are muted — how do they hear it?"** The tap is on the **audio stream
+inside the OS**, *before* the output device. Speaker volume/mute, or wearing headphones,
+is applied at the very last stage and doesn't affect the tap:
+```
+Meet renders remote voice → OS audio stream → [TAP] → output device (volume/mute) → speaker
+```
+So muted speakers / headphones / volume 0 are all fine. Only **missing Screen-Recording
+permission** makes the tap silent (`systemPeak = 0`). Exceptions: muting the Meet *tab*
+in the browser or dragging Meet's in-app volume to 0 *does* zero the rendered stream.
+
+### Decision (and code state)
+- **Production path for Meet = audio VAD + per-participant mute-gate + roster names**
+  (identical to Teams-native / Zoom-native), **self via mic**. `kssMZb` stays only as
+  weak remote corroboration / a rotation monitor.
+- **A structural AX indicator was hunted exhaustively and PROVEN ABSENT** (no
+  subrole / DOM-id / description / role-shape / state surface co-varies with speech —
+  the active-tile border is pure CSS / a pruned node). So the structural scaffolding
+  (`MeetStructuralRules`, `MeetTileStructuralFacts`, `structuralSpeaking`) was
+  **removed** as dead code. The discovery harness that proved it is kept:
+  `MeetProbe`'s oracle scorer + `scripts/compare_recall_vs_ax.py`.
+
+---
+
 ## Implementation status (2026-06-22)
 
 > **Update — CORRECTED finding (2026-06-22, narrated run 2).** The earlier

@@ -115,6 +115,10 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "can't", "can\u{2019}t", "someone", "else", "people", "contributors",
         "notifications", "feature", "search", "continuously", "framed",
         "meet", "unmute",
+        // Meet/Zoom control + chrome button labels that leak in as fake tiles
+        // ("Enter Full Screen", "Show my screen anyway", "2 others",
+        // "User profile picture"). Whole-token match, so real names are unaffected.
+        "screen", "fullscreen", "picture", "profile", "others", "anyway",
     ]
     for tok in lower.split(whereSeparator: { " ,()".contains($0) }).map(String.init) {
         if stopwordTokens.contains(tok) { return false }

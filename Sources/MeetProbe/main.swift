@@ -27,19 +27,50 @@ let nums = args.filter { Double($0) != nil }
 let duration = Double(nums.first ?? "") ?? 45.0
 let intervalMs = Int(nums.dropFirst().first ?? "") ?? 250
 
-// Optional MANUAL speaking-truth windows, for platforms with no auto-marker
-// (Teams). Pass `oracle=0-10,30-40` → those seconds count as "speaking", the
-// rest as "silent", so the per-tile oracle-diff can run against YOUR narration
-// and test EVERY captured surface (classes + all AX attributes + role-shape) —
-// including the camera-off case where no class toggles.
-let oracleWindows: [(Double, Double)] = (args.first(where: { $0.hasPrefix("oracle=") }) ?? "")
+// Optional MANUAL speaking-truth windows. TWO forms, mixable in one run:
+//   oracle=0-10,30-40            → SOMEONE speaking in those seconds (time only)
+//   oracle=Alice:0-10,Bob:15-25  → NAMED speaker per window — enables the candidate
+//                                   scorer's wrong-participant FP metric (a token on
+//                                   the WRONG tile while someone else talks).
+// Plus an optional camera label for this matrix cell: cam=on | cam=off (the speaker
+// camera state), echoed in the report so the camera-on/off split is aggregated
+// across runs. Everything outside every window counts as SILENCE.
+struct OracleWindow { let name: String?; let a: Double; let b: Double }
+let oracleParsed: [OracleWindow] = (args.first(where: { $0.hasPrefix("oracle=") }) ?? "")
     .replacingOccurrences(of: "oracle=", with: "")
-    .split(separator: ",").compactMap { seg -> (Double, Double)? in
-        let p = seg.split(separator: "-")
+    .split(separator: ",").compactMap { seg -> OracleWindow? in
+        let parts = seg.split(separator: ":")
+        let name: String?
+        let range: Substring
+        if parts.count == 2 { name = String(parts[0]).lowercased(); range = parts[1] }
+        else { name = nil; range = seg }
+        let p = range.split(separator: "-")
         guard p.count == 2, let a = Double(p[0]), let b = Double(p[1]) else { return nil }
-        return (a, b)
+        return OracleWindow(name: name, a: a, b: b)
     }
+let oracleWindows: [(Double, Double)] = oracleParsed.map { ($0.a, $0.b) }
+let oracleHasNames = oracleParsed.contains { $0.name != nil }
+let camLabel = args.first(where: { $0.hasPrefix("cam=") })?.replacingOccurrences(of: "cam=", with: "") ?? "unspecified"
 func oracleSpeaking(_ t: Double) -> Bool { oracleWindows.contains { t >= $0.0 && t <= $0.1 } }
+/// Names (lowercased) speaking at `t`; nil ⇒ SILENCE (t in no window); [] ⇒ a
+/// window covers t but is unnamed (someone speaking, who unknown).
+func oracleNamesAt(_ t: Double) -> [String]? {
+    let hits = oracleParsed.filter { t >= $0.a && t <= $0.b }
+    return hits.isEmpty ? nil : hits.compactMap { $0.name }
+}
+
+// Teams active-speaker class set (the data-is-speaking="true" ring classes).
+// BUILD-SPECIFIC obfuscated Griffel hashes — override with `tokens=a,b,c` when
+// they rotate (re-derive from a MeetProbe oracle-diff run). `vdi-frame-occlusion`
+// is the durable semantic anchor; the rest rotate.
+let defaultTeamsTokens = "___1vvhwjq,vdi-frame-occlusion,fn8mz29,f1ky4vpe,frwhdur,ftevtku,f1qyaz97,f14rmoke,fm03cl5,f3ve9t9"
+let teamsSpeakTokens = Set(
+    (args.first(where: { $0.hasPrefix("tokens=") })?.replacingOccurrences(of: "tokens=", with: "") ?? defaultTeamsTokens)
+        .split(separator: ",").map(String.init))
+// How many of the set must be present to call a tile "speaking". Defaults to 4 of
+// the full set; auto-shrinks to the set size, so `tokens=vdi-frame-occlusion`
+// tests that ONE class in isolation (threshold becomes 1).
+let teamsNeed = min(4, teamsSpeakTokens.count)
 
 guard AX.isTrusted else {
     print("Accessibility permission is NOT granted. Grant it in System Settings >")
@@ -217,9 +248,18 @@ var detectedPlatform = "?"
 func tick() {
     let elapsed = Date().timeIntervalSince(t0)
     guard let hit = MeetTiles.findMeetingWebAreas(platform: platformArg).first else {
+        // Heartbeat so the run never looks hung: full diagnostic on the first miss,
+        // then a throttled one-liner every ~5 ticks (the per-tick line only prints
+        // once a web area is found). Re-print the window summary every ~20 ticks so
+        // you can watch it the moment the Meet tab becomes foreground.
         if sampleCount == 0 {
             print(String(format: "t=%5.1fs  (no %@ web area found) — diagnostic:", elapsed, platformArg ?? "meeting"))
             print(MeetTiles.debugSummary()); print("")
+        } else if sampleCount % 20 == 0 {
+            print(String(format: "t=%5.1fs  still no %@ web area — windows seen:", elapsed, platformArg ?? "meeting"))
+            print(MeetTiles.debugSummary())
+        } else if sampleCount % 5 == 0 {
+            print(String(format: "t=%5.1fs  …still no %@ web area (make the Meet tab the FOREGROUND/active tab; join the call, cameras on)", elapsed, platformArg ?? "meeting"))
         }
         sampleCount += 1
         return
@@ -236,6 +276,7 @@ func tick() {
     // ~equal so this is a no-op (reported as such).
     var spotName = "", spotArea: CGFloat = 0
     var speakingAny = false
+    var speakingNames: [String] = []
 
     var tilesJson: [[String: Any]] = []
     var line = String(format: "t=%5.1fs ", elapsed)
@@ -261,9 +302,13 @@ func tick() {
         let selfHighlightCluster: Set<String> = ["eT1oJ", "hk9qKe", "nn1vQb", "s4hFTd", "tWDL4c", "yHy1rc"]
         let kssSpk = full.contains("kssMZb")
         let markerSpk = f.markerSpeaking                          // Zoom "…, active speaker"
-        let speaking = kssSpk || markerSpk
+        // Teams: per-tile speaking-ring class set. A tile is speaking when it
+        // carries >= teamsNeed of the set (teamsNeed auto-shrinks to the set size,
+        // so `tokens=vdi-frame-occlusion` tests that ONE class alone).
+        let teamsSpk = teamsNeed > 0 && full.intersection(teamsSpeakTokens).count >= teamsNeed
+        let speaking = kssSpk || markerSpk || teamsSpk
         let highlightOnly = !speaking && !full.isDisjoint(with: selfHighlightCluster)
-        if speaking { speakingAny = true }
+        if speaking { speakingAny = true; speakingNames.append(f.name) }
         let area = f.frame.width * f.frame.height
         if area > spotArea { spotArea = area; spotName = f.name }
         history[f.name, default: []].append(Sample(t: elapsed, pill: pill, full: full, roles: roles, structure: structure, facts: facts, hovered: f.hovered, width: f.frame.width, order: f.orderIndex, micOff: f.micOff, speaking: speaking))
@@ -273,20 +318,28 @@ func tick() {
             "pillTokens": f.pillTokens, "classTokens": f.classTokens,
             "micOff": f.micOff, "speaking": speaking,
             "markerSpeaking": markerSpk, "classSpeaking": kssSpk,
-            "selfHighlight": highlightOnly,
+            "selfHighlight": highlightOnly, "hovered": f.hovered,
+            // Structural surfaces (canonical tokens) so the candidate scoring can be
+            // recomputed offline from the log alone — no terminal copy needed.
+            "structureTokens": f.structureTokens, "roleCounts": f.roleCounts,
+            "stateFacts": f.stateFacts,
         ])
         let tag: String
-        if speaking { tag = "🔊SPEAKING(\(markerSpk ? "mark" : "")\(markerSpk && kssSpk ? "+" : "")\(kssSpk ? "cls" : ""))" }
+        if speaking {
+            let src = [markerSpk ? "mark" : nil, kssSpk ? "cls" : nil, teamsSpk ? "teams" : nil].compactMap { $0 }.joined(separator: "+")
+            tag = "🔊SPEAKING(\(src))"
+        }
         else if highlightOnly { tag = "✋hl(self/hover, not speech)" }
         else { tag = "·" }
         line += "| \(f.name) \(tag) "
     }
+    line += speakingNames.isEmpty ? "   →  🔊 —" : "   →  🔊 ACTIVE: " + speakingNames.joined(separator: ", ")
     globalHistory.append(GlobalSample(
         t: elapsed, tokens: MeetTiles.allClassTokens(in: hit.web),
         facts: MeetTiles.pageFacts(in: hit.web),
         spotName: spotName, spotArea: spotArea, speakingAny: speakingAny))
     needleTimeline.append((elapsed, MeetTiles.needleScan(in: hit.web, needles: speakingNeedles)))
-    if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "platform": detectedPlatform, "tiles": tilesJson]), let jsonl {
+    if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "wall": Date().timeIntervalSince1970, "platform": detectedPlatform, "tiles": tilesJson]), let jsonl {
         jsonl.write(data); jsonl.write(Data([0x0a]))
     }
     print(line)
@@ -297,11 +350,12 @@ print("duration=\(Int(duration))s interval=\(intervalMs)ms  output=\(outDir.path
 print("Per tile: 🔊SPEAKING(mark=Zoom text marker / cls=Meet class rule)")
 print("GALLERY view, 2-3 cameras on. Narrate turns out loud; DON'T hover tiles/open settings.\n")
 
-var ticksRemaining = Int(duration * 1000.0 / Double(intervalMs))
+// Stop on WALL-CLOCK elapsed, not a tick count: each tick blocks on a full AX
+// walk (~1–2s with many tiles), so a fixed tick count overruns the intended
+// duration many times over. `duration` is SECONDS of real time.
 let timer = Timer(timeInterval: Double(intervalMs) / 1000.0, repeats: true) { t in
     tick()
-    ticksRemaining -= 1
-    if ticksRemaining <= 0 { t.invalidate(); CFRunLoopStop(CFRunLoopGetCurrent()) }
+    if Date().timeIntervalSince(t0) >= duration { t.invalidate(); CFRunLoopStop(CFRunLoopGetCurrent()) }
 }
 RunLoop.current.add(timer, forMode: .common)
 timer.fire()
@@ -330,6 +384,9 @@ func fmtWindows(_ ws: [(Double, Double)]) -> String {
 }
 
 print("\n================ SESSION ANALYSIS  (platform: \(detectedPlatform)) ================")
+if !oracleWindows.isEmpty {
+    print("oracle: \(oracleParsed.count) window(s), names=\(oracleHasNames ? "YES (wrong-participant scored)" : "no (time-only)"), camera=\(camLabel)")
+}
 if !sawAnyTile {
     print("No tiles detected. Use GALLERY view, the meeting tab FOREGROUND, cameras on.")
     print("samples: \(sampleCount)")
@@ -576,6 +633,101 @@ if !sharedTokens.isEmpty {
 }
 if sawChrome {
     print("⚠️  Hover-control chrome detected (Bz112c/LgbsSe/MSqqjf). KEEP THE MOUSE STILL and off the tiles next run — those classes are cursor-driven noise.")
+}
+
+// ── CANDIDATE SCORING (discovery: which AX surface, if any, marks the speaker) ──
+// Score every AX token against the oracle and rank it. A token clears the bar only
+// at precision ≥95%, recall ≥90%, and ZERO hover correlation. NOTE: on Meet this
+// hunt came back EMPTY for every structural surface (s:/id:/d:/role:/v:) — speaking
+// isn't in the AX tree, so production uses audio VAD + roster, not these. This
+// scorer is kept as the re-verification harness (future builds / other platforms);
+// only `cls:` (kssMZb) ever scores, and only as weak remote corroboration.
+if !oracleWindows.isEmpty {
+    // Tokens grouped by AX surface so a hit shows WHERE it lives. Drop hover-chrome
+    // and "n:" attr-presence facts (noise); score class + structural surfaces.
+    func candidateTokens(_ s: Sample) -> Set<String> {
+        var out = Set<String>()
+        for c in s.full where !isChrome(c) { out.insert("cls:\(c)") }
+        for t in s.structure where t.hasPrefix("s:") || t.hasPrefix("id:") || t.hasPrefix("d:") { out.insert(t) }
+        for r in s.roles { out.insert("role:\(r)") }
+        for f in s.facts where f.hasPrefix("v:") { out.insert(f) }
+        return out
+    }
+    func ruleField(_ tok: String) -> String {
+        if tok.hasPrefix("cls:")  { return "AXDOMClassList (→ MeetSpeakerRules.speakingClasses)" }
+        if tok.hasPrefix("s:")    { return "AXSubrole surface" }
+        if tok.hasPrefix("id:")   { return "AXDOMIdentifier surface" }
+        if tok.hasPrefix("d:")    { return "AXDescription surface" }
+        if tok.hasPrefix("role:") { return "role-shape surface" }
+        if tok.hasPrefix("v:")    { return "AX state-value surface" }
+        return "?"
+    }
+    // Flatten every sample to (tile, tokens, per-tile truth, hover).
+    struct Obs { let tile: String; let toks: Set<String>; let speakingTile: Bool?; let silence: Bool; let someoneElse: Bool; let hovered: Bool }
+    var obs: [Obs] = []
+    for (name, samples) in history {
+        let low = name.lowercased()
+        for s in samples {
+            let names = oracleNamesAt(s.t)               // nil ⇒ silence
+            let silence = (names == nil)
+            let speakingTile: Bool?
+            var someoneElse = false
+            if let names {
+                if names.isEmpty { speakingTile = nil }  // unnamed window: who is unknown
+                else {
+                    let me = names.contains { low.contains($0) || $0.contains(low) }
+                    speakingTile = me
+                    someoneElse = !me
+                }
+            } else { speakingTile = false }              // silence ⇒ this tile not speaking
+            obs.append(Obs(tile: name, toks: candidateTokens(s), speakingTile: speakingTile,
+                           silence: silence, someoneElse: someoneElse, hovered: s.hovered))
+        }
+    }
+    struct Score { let tok: String; let support: Int; let prec: Double; let recall: Double; let fpSil: Int; let fpWrong: Int; let hoverRate: Double; let promote: Bool }
+    var scores: [Score] = []
+    let clean = obs.filter { !$0.hovered }
+    for tok in Set(obs.flatMap { $0.toks }) {
+        let present = clean.filter { $0.toks.contains(tok) }
+        guard present.count >= 3 else { continue }
+        let judge = present.filter { $0.speakingTile != nil }   // silence + named only
+        let tp = judge.filter { $0.speakingTile == true }.count
+        let fpSil = present.filter { $0.silence }.count
+        let fpWrong = present.filter { $0.someoneElse }.count
+        let prec = judge.isEmpty ? 0 : Double(tp) / Double(judge.count)
+        let speaking = clean.filter { $0.speakingTile == true }
+        let recall = speaking.isEmpty ? 0 : Double(speaking.filter { $0.toks.contains(tok) }.count) / Double(speaking.count)
+        let allPresent = obs.filter { $0.toks.contains(tok) }   // incl. hovered, for hover corr.
+        let hoverRate = allPresent.isEmpty ? 0 : Double(allPresent.filter { $0.hovered }.count) / Double(allPresent.count)
+        let promote = prec >= 0.95 && recall >= 0.90 && hoverRate == 0 && !judge.isEmpty && !speaking.isEmpty
+        scores.append(Score(tok: tok, support: present.count, prec: prec, recall: recall,
+                            fpSil: fpSil, fpWrong: fpWrong, hoverRate: hoverRate, promote: promote))
+    }
+    print("\n================ CANDIDATE SCORING (oracle, camera=\(camLabel)) ================")
+    if !oracleHasNames {
+        print("(time-only oracle — wrong-participant FP is N/A; pass oracle=Name:0-10,… to score it)")
+    }
+    if scores.isEmpty {
+        print("No token reached support≥3 on non-hovered samples. Longer run / clearer turns / mouse off.")
+    } else {
+        let ranked = scores.sorted { ($0.promote ? 1 : 0, $0.prec + $0.recall) > ($1.promote ? 1 : 0, $1.prec + $1.recall) }
+        print(String(format: "%-44@ %4@ %6@ %6@ %5@ %6@ %5@  %@", "token", "sup", "prec", "recall", "fpSil", "fpWrong", "hov%", "verdict"))
+        for s in ranked.prefix(30) {
+            print(String(format: "%-44@ %4d %5.0f%% %5.0f%% %5d %6d %4.0f%%  %@",
+                         String(s.tok.prefix(44)), s.support, s.prec * 100, s.recall * 100,
+                         s.fpSil, s.fpWrong, s.hoverRate * 100,
+                         s.promote ? "✅ PROMOTE" : "—"))
+        }
+        let winners = ranked.filter { $0.promote }
+        if winners.isEmpty {
+            print("\n→ Nothing clears P≥95% / R≥90% / 0 hover on THIS cell (camera=\(camLabel)). Keep the")
+            print("  class fallback; run the remaining matrix cells before concluding.")
+        } else {
+            print("\n→ PROMOTABLE on this cell (camera=\(camLabel)) — verify on the OTHER cells (esp. the")
+            print("  opposite camera state) before shipping, then add to the printed rule field:")
+            for w in winners.prefix(8) { print("     \(w.tok)   →  \(ruleField(w.tok))") }
+        }
+    }
 }
 
 print("""
