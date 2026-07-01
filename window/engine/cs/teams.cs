@@ -41,15 +41,39 @@ namespace MeetingSpeakerEngine
             return blocks;
         }
 
-        public static List<string> DetectTeamsTileSpeakers(List<UiNode> nodes)
+        // Names of REMOTE participant tiles whose video-frame subtree carries the
+        // active-speaker className (`vdi-frame-occlusion`) — the macOS `.structural`
+        // signal, ported (commit "Teams: className speaker signal"). The class sits
+        // on a decorative child INSIDE the tile's box, visible only in the RAW UIA
+        // view the Teams scan now uses, so we map each speaking-class node to the
+        // MenuItem tile that geometrically CONTAINS it (index-proximity is unreliable
+        // in the raw tree) and read that tile's name + mute via ParseTeamsTiles.
+        // Self and muted tiles are excluded (self speech is mic-driven; a muted
+        // remote isn't talking). Returns EVERY speaking tile — so two remotes talking
+        // at once are BOTH named, which the single-remote mute-gate cannot do.
+        // Callers gate this on remote playback audio so a lingering class during
+        // silence never invents a speaker.
+        public static List<string> DetectTeamsSpeakingTiles(List<UiNode> nodes)
         {
             List<string> speakers = new List<string>();
             for (int i = 0; i < nodes.Count; i++)
             {
-                if (!ClassNameHasToken(nodes[i].ClassName, TeamsSpeakingClass) &&
-                    nodes[i].ClassName.IndexOf(TeamsSpeakingClass, StringComparison.Ordinal) < 0) continue;
-                string name = NearbyPersonName(nodes, i, null);
-                if (name != null && !speakers.Contains(name)) speakers.Add(name);
+                UiNode tileNode = nodes[i];
+                if (tileNode.ControlType != "MenuItem" || tileNode.Area() <= 0) continue;
+                if (tileNode.Name.IndexOf(',') < 0) continue;
+                List<UiNode> one = new List<UiNode>();
+                one.Add(tileNode);
+                List<TeamsTile> parsed = ParseTeamsTiles(one);
+                if (parsed.Count == 0) continue;
+                TeamsTile tile = parsed[0];
+                if (tile.IsSelf || !tile.Unmuted) continue;
+                for (int j = 0; j < nodes.Count; j++)
+                {
+                    if (j == i || !tileNode.Contains(nodes[j])) continue;
+                    if (!ClassNameHasToken(nodes[j].ClassName, TeamsSpeakingClass)) continue;
+                    if (!speakers.Contains(tile.Name)) speakers.Add(tile.Name);
+                    break;
+                }
             }
             return speakers;
         }

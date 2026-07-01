@@ -814,16 +814,22 @@ namespace MeetingSpeakerEngine
             {
                 return ScanNodes(w.Element, maxNodes);
             }
+            // Teams: scan the RAW view. The active-speaker className
+            // (`vdi-frame-occlusion`, see DetectTeamsSpeakingTiles) lives on a
+            // decorative video-frame node that the default control view PRUNES —
+            // so without raw the structural speaker signal is invisible and Teams
+            // collapses to the mute-gate "Someone" for concurrent speakers.
+            bool raw = w.Platform == "teams";
             AutomationElement doc = GetDocument(w);
             if (doc == null)
             {
                 // Accessibility tree not materialized yet; querying the window
                 // is itself the trigger that enables it for the next poll.
-                return ScanNodes(w.Element, maxNodes);
+                return ScanNodes(w.Element, maxNodes, raw);
             }
             try
             {
-                return ScanNodes(doc, maxNodes);
+                return ScanNodes(doc, maxNodes, raw);
             }
             catch (ElementNotAvailableException)
             {
@@ -866,6 +872,10 @@ namespace MeetingSpeakerEngine
             if (s.Length < 1 || s.Length > 60) return false;
             if (s.IndexOf('\n') >= 0 || s.IndexOf(':') >= 0) return false;
             if (Regex.IsMatch(s, "[.!?]$")) return false;          // sentences end captions, not names
+            // Display names don't contain digits — rejects roster/count chrome that
+            // the raw Teams tree surfaces ("In this meeting, 3 total", "2 others",
+            // "Elapsed time 05:13"). Mirrors the macOS isLikelyPersonName digit reject.
+            if (Regex.IsMatch(s, "[0-9]")) return false;
             string[] words = s.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (words.Length == 0 || words.Length > 6) return false;
             string lower = s.ToLowerInvariant();
@@ -1131,18 +1141,27 @@ namespace MeetingSpeakerEngine
                 }
                 if (det.MicState == Mic.Unknown) det.MicState = DetectTeamsMicState(nodes);
 
-                foreach (string s in DetectTeamsTileSpeakers(nodes)) AddSpeaker(det, s);
+                // (A) Structural active-speaker by className (macOS `.structural`,
+                // ported). `vdi-frame-occlusion` appears on the SPEAKING tile's
+                // video frame; DetectTeamsSpeakingTiles maps it to the tile by
+                // geometry (the Teams scan runs in the RAW view so the class is
+                // present). Gated on remote playback audio so a lingering class
+                // never names a silent tile. Names EVERY speaking remote, so two
+                // remotes talking at once are BOTH named — the concurrent case the
+                // mute-gate below cannot resolve.
+                if (remoteActive)
+                {
+                    foreach (string s in DetectTeamsSpeakingTiles(nodes))
+                        if (!SameName(s, det.SelfName)) AddSpeaker(det, s);
+                    if (det.Speakers.Count > 0) det.Source = "teams-structural";
+                }
 
-                // Teams mute-gate (the macOS .teams branch, ported). New Teams
-                // exposes NO dependable AX "is-speaking" signal — verified live:
-                // no speaking class and no "<name> is speaking" note even while a
-                // remote is talking (logs\uia-dump-1-20260701-163822.ndjson). So,
-                // exactly like native Zoom, fuse this app's remote PLAYBACK audio
-                // with the per-tile mute state: when this poll's playback is
-                // active and EXACTLY ONE remote is unmuted, that remote is the
-                // active speaker. Named here, so the anonymous "Someone" fallback
-                // is skipped. 2+ unmuted remotes stay ambiguous (mixed audio can't
-                // be split) -> no name -> the audio layer logs "Someone".
+                // (B) Mute-gate FALLBACK (the macOS .teams mute path, ported) for
+                // when the className signal didn't fire — the token rotates per
+                // Teams build, or the raw tree came back thin. Like native Zoom,
+                // fuse remote PLAYBACK audio with per-tile mute: playback active +
+                // EXACTLY ONE remote unmuted -> that remote is the speaker. 2+
+                // unmuted with no className stays ambiguous -> "Someone".
                 if (det.Speakers.Count == 0 && remoteActive)
                 {
                     List<string> unmutedRemotes = new List<string>();
@@ -2468,15 +2487,53 @@ namespace MeetingSpeakerEngine
                 mutedRemote.Count == 1 && !mutedRemote[0].Unmuted && !mutedRemote[0].IsSelf,
                 mutedRemote.Count > 0 ? mutedRemote[0].Name + "/" + mutedRemote[0].Unmuted : "(none)");
 
-            // --- Teams ring detection ---
+            // --- Teams structural active-speaker by className (vdi-frame-occlusion) ---
+            // The class sits on a video-frame child INSIDE the tile's box; the tile
+            // is a MenuItem whose name/mute ParseTeamsTiles reads. Geometry maps the
+            // class to the tile, and it is gated on remote playback audio.
             List<UiNode> teamsRing = new List<UiNode>();
             UiNode hangup = new UiNode("Leave", "Button");
             hangup.AutomationId = "hangup-button";
             teamsRing.Add(hangup);
-            teamsRing.Add(new UiNode("", "Group", "fui-Primitive vdi-frame-occlusion"));
-            teamsRing.Add(new UiNode("Carol Nguyen", "Text", "ui-text"));
-            Detection teamsRingDet = Detect("teams", teamsRing, "tr1", false, false);
-            CheckList("teams ring speaker detected", teamsRingDet.Speakers, new string[] { "Carol Nguyen" });
+            teamsRing.Add(GeoNode("Carol Nguyen External unfamiliar, video is on, Context menu is available",
+                "MenuItem", "", 0, 0, 600, 340));
+            teamsRing.Add(GeoNode("", "Group", "fui-Primitive vdi-frame-occlusion", 10, 10, 580, 320)); // ring inside the tile
+            Detection teamsRingDet = Detect("teams", teamsRing, "tr1", true, false); // remote playback active
+            CheckList("teams structural: className names the speaking remote",
+                teamsRingDet.Speakers, new string[] { "Carol Nguyen" });
+            Check("teams structural: source tagged", teamsRingDet.Source == "teams-structural", teamsRingDet.Source);
+
+            // Gated by audio: the same lingering class with no remote playback names no one.
+            Detection teamsRingQuiet = Detect("teams", teamsRing, "tr1b", false, false);
+            Check("teams structural: no playback -> no speaker",
+                teamsRingQuiet.Speakers.Count == 0, string.Join(",", teamsRingQuiet.Speakers.ToArray()));
+
+            // CONCURRENT: two remote tiles each carrying the class -> BOTH named
+            // (what the mute-gate cannot do). Two side-by-side tile boxes, each with
+            // its own ring child; geometry keeps them apart.
+            List<UiNode> teamsTwoRing = new List<UiNode>();
+            UiNode hangup2 = new UiNode("Leave", "Button"); hangup2.AutomationId = "hangup-button";
+            teamsTwoRing.Add(hangup2);
+            teamsTwoRing.Add(GeoNode("Bibek Thapa External unfamiliar, video is on, Context menu is available",
+                "MenuItem", "", 0, 0, 600, 340));
+            teamsTwoRing.Add(GeoNode("", "Group", "vdi-frame-occlusion", 10, 10, 580, 320));
+            teamsTwoRing.Add(GeoNode("Biheyak Thapa External unfamiliar, video is on, Context menu is available",
+                "MenuItem", "", 700, 0, 600, 340));
+            teamsTwoRing.Add(GeoNode("", "Group", "vdi-frame-occlusion", 710, 10, 580, 320));
+            Detection teamsTwoDet = Detect("teams", teamsTwoRing, "tr2", true, false);
+            CheckList("teams structural: concurrent speakers BOTH named",
+                teamsTwoDet.Speakers, new string[] { "Bibek Thapa", "Biheyak Thapa" });
+
+            // A muted tile carrying the class is NOT named (muted = not speaking).
+            List<UiNode> teamsMutedRing = new List<UiNode>();
+            UiNode hangup3 = new UiNode("Leave", "Button"); hangup3.AutomationId = "hangup-button";
+            teamsMutedRing.Add(hangup3);
+            teamsMutedRing.Add(GeoNode("Carol Nguyen External unfamiliar, muted, Context menu is available",
+                "MenuItem", "", 0, 0, 600, 340));
+            teamsMutedRing.Add(GeoNode("", "Group", "vdi-frame-occlusion", 10, 10, 580, 320));
+            Detection teamsMutedDet = Detect("teams", teamsMutedRing, "tr3", true, false);
+            Check("teams structural: muted tile with class -> not named",
+                teamsMutedDet.Speakers.Count == 0, string.Join(",", teamsMutedDet.Speakers.ToArray()));
 
             // --- call-marker gating ---
             ResetCaptionState();
