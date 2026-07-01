@@ -204,3 +204,74 @@ footer summary {
 .status-warn { color: var(--warn); }
 .status-error { color: var(--error); }
 .status-info { color: var(--muted); }
+
+/* Current meeting summary (Recall-style: title + live participant count). */
+.meeting-summary {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.meeting-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-meet { background: #4ade80; }
+.dot-zoom { background: #4a9eff; }
+.dot-teams { background: #a78bfa; }
+
+.meeting-title {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Live Recall-style event stream (newest first). */
+.event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.event-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.event-ts {
+  flex-shrink: 0;
+  width: 68px;
+}
+
+.event-type {
+  flex-shrink: 0;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.event-meeting { color: var(--warn); background: rgba(251, 191, 36, 0.14); }
+.event-participant { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
+.event-speech { color: var(--accent); background: rgba(74, 222, 128, 0.14); }
+
+.event-summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

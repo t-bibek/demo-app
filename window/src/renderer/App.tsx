@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppEvent,
   EngineStatus,
   EngineWindows,
+  MeetingSnapshot,
   PLATFORM_LABELS,
   Platform,
   SpeakerEnd,
@@ -17,22 +18,45 @@ interface ActiveSpeaker {
   durationMs: number;
 }
 
+type EventKind = 'meeting' | 'participant' | 'speech';
+
+interface EventRow {
+  id: number;
+  ts: number;
+  type: string;
+  kind: EventKind;
+  summary: string;
+}
+
 const MAX_LOG_ROWS = 500;
 const MAX_STATUS_LINES = 8;
+const MAX_EVENT_ROWS = 300;
 
 export function App() {
   const [active, setActive] = useState<Map<string, ActiveSpeaker>>(new Map());
   const [sessions, setSessions] = useState<SpeakerEnd[]>([]);
   const [windows, setWindows] = useState<EngineWindows['windows']>([]);
   const [statuses, setStatuses] = useState<EngineStatus[]>([]);
+  const [meetings, setMeetings] = useState<MeetingSnapshot[]>([]);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const eventId = useRef(0);
 
   useEffect(() => {
+    const logEvent = (ts: number, type: string, kind: EventKind, summary: string) => {
+      setEvents((prev) => [{ id: eventId.current++, ts, type, kind, summary }, ...prev].slice(0, MAX_EVENT_ROWS));
+    };
+    const upsertMeeting = (m: MeetingSnapshot) =>
+      setMeetings((prev) => {
+        const i = prev.findIndex((x) => x.id === m.id);
+        if (i < 0) return [...prev, m];
+        const next = [...prev];
+        next[i] = m;
+        return next;
+      });
+
     const unsubscribe = window.speakerLog.onEvent((event: AppEvent) => {
       switch (event.type) {
         case 'speaker-start': {
-          console.log(
-            `▶ [${PLATFORM_LABELS[event.platform]}] ${event.name} started speaking (${formatClock(event.startTs)})`,
-          );
           setActive((prev) => {
             const next = new Map(prev);
             next.set(`${event.platform}::${event.name}`, {
@@ -43,6 +67,7 @@ export function App() {
             });
             return next;
           });
+          logEvent(event.startTs, 'speech_on', 'speech', event.name);
           break;
         }
         case 'speaker-tick': {
@@ -62,25 +87,55 @@ export function App() {
           break;
         }
         case 'speaker-end': {
-          console.log(
-            `■ [${PLATFORM_LABELS[event.platform]}] ${event.name} spoke for ` +
-              `${formatDuration(event.durationMs)} (${formatClock(event.startTs)} → ${formatClock(event.endTs)})`,
-          );
           setActive((prev) => {
             const next = new Map(prev);
             next.delete(`${event.platform}::${event.name}`);
             return next;
           });
           setSessions((prev) => [event, ...prev].slice(0, MAX_LOG_ROWS));
+          logEvent(event.endTs, 'speech_off', 'speech', `${event.name} · ${formatDuration(event.durationMs)}`);
           break;
         }
         case 'windows':
           setWindows(event.windows);
           break;
         case 'status':
-          console.log(`[engine:${event.level}] ${event.message}`);
           setStatuses((prev) => [event, ...prev].slice(0, MAX_STATUS_LINES));
           break;
+        case 'meeting_initialized': {
+          upsertMeeting(event.meeting);
+          const n = event.meeting.participants.length;
+          logEvent(
+            event.meeting.updatedAt,
+            'meeting_initialized',
+            'meeting',
+            `${event.meeting.title} · ${n} participant${n === 1 ? '' : 's'}`,
+          );
+          break;
+        }
+        case 'meeting_updated':
+          upsertMeeting(event.meeting);
+          break;
+        case 'meeting_ended': {
+          setMeetings((prev) => {
+            const title = prev.find((m) => m.id === event.meetingId)?.title ?? event.meetingId;
+            logEvent(event.ts, 'meeting_ended', 'meeting', title);
+            return prev.filter((m) => m.id !== event.meetingId);
+          });
+          break;
+        }
+        case 'participant_joined':
+          logEvent(event.ts, 'participant_joined', 'participant', event.participant.name);
+          break;
+        case 'participant_left':
+          logEvent(event.ts, 'participant_left', 'participant', event.name);
+          break;
+        case 'participant_updated': {
+          const mute =
+            event.participant.isMuted === true ? 'muted' : event.participant.isMuted === false ? 'unmuted' : '—';
+          logEvent(event.ts, 'participant_updated', 'participant', `${event.participant.name} · ${mute}`);
+          break;
+        }
       }
     });
     return unsubscribe;
@@ -98,6 +153,7 @@ export function App() {
   }, [sessions, active]);
 
   const activeList = [...active.values()].sort((a, b) => a.startTs - b.startTs);
+  const meeting = meetings[0];
 
   return (
     <div className="app">
@@ -128,6 +184,15 @@ export function App() {
             );
           })}
         </div>
+        {meeting && (
+          <div className="meeting-summary">
+            <span className={`meeting-dot dot-${meeting.platform}`} />
+            <span className="meeting-title">{meeting.title || PLATFORM_LABELS[meeting.platform]}</span>
+            <span className="muted">
+              · {meeting.participants.length} participant{meeting.participants.length === 1 ? '' : 's'}
+            </span>
+          </div>
+        )}
       </header>
 
       <section className="now-speaking">
@@ -196,6 +261,25 @@ export function App() {
           )}
         </section>
       </div>
+
+      <section className="event-log">
+        <h2>
+          Event log <span className="muted">({events.length})</span>
+        </h2>
+        {events.length === 0 ? (
+          <p className="muted">meeting_initialized, participant_joined, speech_on …</p>
+        ) : (
+          <ul className="event-list">
+            {events.map((e) => (
+              <li key={e.id}>
+                <span className="mono event-ts">{formatClock(e.ts)}</span>
+                <span className={`event-type event-${e.kind}`}>{e.type}</span>
+                <span className="event-summary">{e.summary}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <footer>
         {statuses.length > 0 && (

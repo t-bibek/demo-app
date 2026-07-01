@@ -18,9 +18,8 @@ describe('SessionTracker', () => {
     const { tracker, events } = makeTracker();
 
     tracker.pulse('zoom', 'Alice', 10_000);
-    expect(events).toEqual([
-      { type: 'speaker-start', platform: 'zoom', name: 'Alice', startTs: 10_000 },
-    ]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'speaker-start', platform: 'zoom', name: 'Alice', startTs: 10_000 });
 
     // Within the silence window: still active, emits a tick.
     tracker.update(11_000);
@@ -145,5 +144,36 @@ describe('SessionTracker', () => {
     const ends = only(events, 'speaker-end');
     expect(ends).toHaveLength(1);
     expect(ends[0]).toMatchObject({ durationMs: 500 });
+  });
+
+  it('carries the meeting/participant/source context on speech events', () => {
+    const { tracker, events } = makeTracker();
+
+    tracker.pulse('meet', 'Alice', 0, {
+      meetingId: 'meet::abc-defg-hij',
+      participantId: 'meet::abc-defg-hij::alice',
+      source: 'meet-tiles',
+    });
+    tracker.update(3_000); // closes the session
+
+    const start = only(events, 'speaker-start')[0];
+    const end = only(events, 'speaker-end')[0];
+    for (const e of [start, end]) {
+      expect(e.ctx).toEqual({
+        meetingId: 'meet::abc-defg-hij',
+        participantId: 'meet::abc-defg-hij::alice',
+        source: 'meet-tiles',
+      });
+    }
+  });
+
+  it('keys sessions by participantId, so one name in two meetings stays distinct', () => {
+    const { tracker, events } = makeTracker();
+
+    tracker.pulse('meet', 'Alice', 0, { meetingId: 'm1', participantId: 'm1::alice' });
+    tracker.pulse('meet', 'Alice', 0, { meetingId: 'm2', participantId: 'm2::alice' });
+
+    expect(only(events, 'speaker-start')).toHaveLength(2);
+    expect(tracker.activeCount).toBe(2);
   });
 });

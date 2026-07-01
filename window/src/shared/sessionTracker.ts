@@ -1,4 +1,4 @@
-import { Platform, TrackerEvent } from './types';
+import { Platform, SpeechContext, TrackerEvent } from './types';
 
 export interface TrackerOptions {
   /**
@@ -25,6 +25,7 @@ interface ActiveSession {
   name: string;
   startTs: number;
   lastSeenTs: number;
+  ctx: SpeechContext;
 }
 
 /**
@@ -45,22 +46,36 @@ export class SessionTracker {
     this.opts = { ...DEFAULT_TRACKER_OPTIONS, ...opts };
   }
 
-  /** Report that `name` was observed speaking on `platform` at time `ts`. */
-  pulse(platform: Platform, name: string, ts: number): void {
+  /**
+   * Report that `name` was observed speaking on `platform` at time `ts`.
+   *
+   * `id` carries the Recall-style identity (meetingId / participantId / source).
+   * It defaults to `{}` so existing callers/tests compile unchanged; when omitted
+   * the session key falls back to the legacy `platform::name`.
+   */
+  pulse(
+    platform: Platform,
+    name: string,
+    ts: number,
+    id: { meetingId?: string; participantId?: string; source?: string } = {},
+  ): void {
     const cleaned = name.trim();
     if (!cleaned) return;
 
-    const key = `${platform}::${cleaned}`;
+    const pid = id.participantId && id.participantId.length ? id.participantId : `${platform}::${cleaned}`;
+    const ctx: SpeechContext = { meetingId: id.meetingId ?? '', participantId: pid, source: id.source };
+    const key = pid;
     const existing = this.sessions.get(key);
     if (existing) {
       // Guard against clock weirdness; never move lastSeen backwards.
       existing.lastSeenTs = Math.max(existing.lastSeenTs, ts);
+      existing.ctx = ctx; // last-seen-wins for the source attribution
       return;
     }
 
-    const session: ActiveSession = { platform, name: cleaned, startTs: ts, lastSeenTs: ts };
+    const session: ActiveSession = { platform, name: cleaned, startTs: ts, lastSeenTs: ts, ctx };
     this.sessions.set(key, session);
-    this.emit({ type: 'speaker-start', platform, name: cleaned, startTs: ts });
+    this.emit({ type: 'speaker-start', platform, name: cleaned, startTs: ts, ctx });
   }
 
   /**
@@ -79,6 +94,7 @@ export class SessionTracker {
           name: s.name,
           startTs: s.startTs,
           durationMs: this.durationOf(s),
+          ctx: s.ctx,
         });
       }
     }
@@ -109,6 +125,7 @@ export class SessionTracker {
       startTs: s.startTs,
       endTs: s.startTs + durationMs,
       durationMs,
+      ctx: s.ctx,
     };
   }
 }
