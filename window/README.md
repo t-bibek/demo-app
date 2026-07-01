@@ -91,6 +91,21 @@ npm run dump
 - Writes each meeting window's full accessibility tree to `logs\uia-dump-*.ndjson`. Search it for a participant's name, note the surrounding `c` (class) values, and update the class constants at the top of the detectors in [engine/uia-engine.ps1](engine/uia-engine.ps1) (`MeetSpeakingClasses`, `MeetNameClasses`, `TeamsSpeakingClass`, `ZoomTilePattern`).
 - Also prints current audio peaks.
 
+### 7. Observe who's speaking when on Zoom: the Zoom probe
+
+```powershell
+pwsh engine/uia-engine.ps1 -ZoomWatch -WatchSeconds 30
+```
+
+The Windows analog of the macOS `ZoomProbe`. Samples every Zoom meeting window ~4×/s and prints, per tick, both signals side by side:
+
+- **`badge`** — the raw `", Active speaker"` UIA marker (native Zoom exposes name + mute + this suffix on each video tile). It **lingers** on the last speaker during silence.
+- **`gated`** — the badge confirmed by audio (mic-capture peak for your own tile, playback peak for a remote), which is exactly what the live engine logs. This is what disambiguates the lingering badge from real speech.
+
+Narrate a back-and-forth while it runs; it writes an NDJSON timeline to `logs\zoom-watch-*.ndjson` and prints a per-speaker talk-window summary at the end. On the **web** client (no per-tile badge) it falls back to roster + audio, same as the engine.
+
+**Picture-in-Picture (minimised meeting):** when you minimise native Zoom to its floating thumbnail, the meeting window disappears and the tile grid goes with it — so instead the engine reads Zoom's own `Talking: <name>` label off the PIP window (Zoom's VAD), the same signal macOS uses (`zoom.pip`). This is a **direct, un-gated** active-speaker read that also keeps the call alive while minimised (both the PIP thumbnail and the full window are the one `zoom::meeting`). `-ZoomWatch` prints a `PIP  talking: <name>` line each tick while you're minimised, and `-Dump` captures the PIP window as `zoom-pip` so you can confirm the exact label. The PIP window is found by *content* (`Talking:` / video-render markers), not a title or class, so it survives Zoom version changes.
+
 ## Tuning
 
 Engine parameters (pass to `engine/uia-engine.ps1`, or edit the spawn args in [src/main/engine.ts](src/main/engine.ts)):

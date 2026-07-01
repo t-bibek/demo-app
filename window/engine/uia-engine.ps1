@@ -47,6 +47,12 @@
                              app is focused.
 .PARAMETER Simulate          Emit synthetic speaker events (pipeline testing, no meeting needed).
 .PARAMETER Dump              Write the UIA tree of every detected meeting window to logs\ and exit.
+.PARAMETER Watch             Live-sample Google Meet tiles + audio to logs\ for WatchSeconds (signal discovery).
+.PARAMETER ZoomWatch         Live-observe Zoom's active speaker for WatchSeconds: prints who is speaking each
+                             tick (raw ", Active speaker" badge + the audio-gated verdict the engine logs) and
+                             writes an NDJSON timeline + per-speaker talk-window summary. The Windows analog of
+                             the macOS ZoomProbe command.
+.PARAMETER WatchSeconds      Duration in seconds for -Watch / -ZoomWatch (default 25).
 .PARAMETER SelfTest          Run built-in detector/classifier tests and exit (0 = pass).
 .PARAMETER Once              Do a single real poll, emit results, and exit (diagnostics).
 #>
@@ -62,6 +68,11 @@ param(
   [switch]$ZoomGlobalHotkey,
   [switch]$Simulate,
   [switch]$Dump,
+  [switch]$Deep,
+  [switch]$Watch,
+  [switch]$ZoomWatch,
+  [switch]$TeamsWatch,
+  [int]$WatchSeconds = 25,
   [switch]$SelfTest,
   [switch]$Once
 )
@@ -87,14 +98,26 @@ $source = (
 ) -join "`n"
 
 Add-Type -TypeDefinition $source -ReferencedAssemblies @(
-  'UIAutomationClient', 'UIAutomationTypes', 'System.Web.Extensions'
+  'UIAutomationClient', 'UIAutomationTypes', 'System.Web.Extensions', 'WindowsBase'
 ) -ErrorAction Stop
 
 if ($SelfTest) {
   exit [MeetingSpeakerEngine.Engine]::SelfTest()
 }
 if ($Dump) {
-  [MeetingSpeakerEngine.Engine]::Dump($MaxNodes)
+  [MeetingSpeakerEngine.Engine]::Dump($MaxNodes, [bool]$Deep)
+  exit 0
+}
+if ($Watch) {
+  [MeetingSpeakerEngine.Engine]::Watch($WatchSeconds, $MaxNodes)
+  exit 0
+}
+if ($ZoomWatch) {
+  [MeetingSpeakerEngine.Engine]::ZoomWatch($WatchSeconds, $MaxNodes, [float]$RemoteAudioThreshold, [float]$MicAudioThreshold)
+  exit 0
+}
+if ($TeamsWatch) {
+  [MeetingSpeakerEngine.Engine]::TeamsWatch($WatchSeconds, $MaxNodes, [float]$RemoteAudioThreshold, [float]$MicAudioThreshold)
   exit 0
 }
 if ($Simulate) {

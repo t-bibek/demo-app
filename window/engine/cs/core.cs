@@ -100,6 +100,11 @@ namespace MeetingSpeakerEngine
         public string ClassName;
         public string AutomationId;
         public string ControlType;
+        // On-screen bounding box (UIA BoundingRectangle). W*H is the GEOMETRY
+        // signal the Meet active-speaker resolver uses (a spotlit tile is much
+        // larger than a gallery tile) — the durable, class-free signal the macOS
+        // engine relies on. 0 when unavailable (offscreen / not cached / tests).
+        public double X, Y, W, H;
 
         public UiNode()
         {
@@ -114,6 +119,20 @@ namespace MeetingSpeakerEngine
         public UiNode(string name, string controlType, string className)
         {
             Name = name; ControlType = controlType; ClassName = className; AutomationId = "";
+        }
+
+        /// Bounding-box area (px^2); 0 when geometry is unavailable.
+        public double Area() { return W * H; }
+
+        /// True when this node's box fully contains `inner` (with a small slop) —
+        /// used to attach a name label to its enclosing participant tile.
+        public bool Contains(UiNode inner)
+        {
+            if (W <= 0 || H <= 0 || inner.W < 0 || inner.H < 0) return false;
+            const double slop = 2.0;
+            return inner.X >= X - slop && inner.Y >= Y - slop &&
+                   inner.X + inner.W <= X + W + slop &&
+                   inner.Y + inner.H <= Y + H + slop;
         }
     }
 
@@ -173,6 +192,26 @@ namespace MeetingSpeakerEngine
     {
         public string SelfName = "";
         public List<string> All = new List<string>();
+
+        // Canonical display per person, keyed case-insensitively. Meeting apps
+        // render the SAME display name in different cases across sources — Teams
+        // uppercases the self tile ("BIDHEYAK THAPA") while its captions/roster
+        // use "Bidheyak Thapa" — and a case-sensitive pipeline would track one
+        // person as TWO speakers (self mislabelled as a remote; talk-time split
+        // across two rows). Canonical() collapses them to ONE stable spelling
+        // (first-seen wins, so the choice never flips mid-session and the
+        // downstream SessionTracker key stays put).
+        Dictionary<string, string> canon = new Dictionary<string, string>();
+
+        public string Canonical(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+            string key = name.Trim().ToLowerInvariant();
+            string chosen;
+            if (canon.TryGetValue(key, out chosen)) return chosen;
+            canon[key] = name;
+            return name;
+        }
     }
 
     /// Per-window detection outcome of one poll, used to aggregate audio
@@ -217,6 +256,26 @@ namespace MeetingSpeakerEngine
         [DllImport("user32.dll")]
         static extern short GetAsyncKeyState(int vKey);
 
+        // Chromium accessibility poke (empty-tree mitigation). oleacc's
+        // AccessibleObjectFromWindow on a Chrome_RenderWidgetHostHWND is the exact
+        // WM_GETOBJECT/OBJID_CLIENT request a screen reader sends, which makes
+        // Chrome/Edge build (and keep) the web accessibility tree.
+        delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("oleacc.dll")]
+        static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint id, ref Guid iid,
+            [MarshalAs(UnmanagedType.IUnknown)] out object ppvObject);
+
+        static readonly Guid IID_IAccessible = new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");
+        const uint OBJID_CLIENT = 0xFFFFFFFC;
+        const string ChromeRenderWidgetClass = "Chrome_RenderWidgetHostHWND";
+
         const byte VK_CONTROL = 0x11;
         const byte VK_2 = 0x32;
         const uint KEYEVENTF_KEYUP = 0x0002;
@@ -224,6 +283,43 @@ namespace MeetingSpeakerEngine
         const int VK_MENU = 0x12;     // Alt
         const int VK_LWIN = 0x5B;
         const int VK_RWIN = 0x5C;
+
+        /// Windows mitigation for Chromium's on-demand accessibility. Unlike macOS
+        /// — where a trusted AX client always sees the tree — Chrome/Edge only
+        /// build the web accessibility tree once an assistive-technology client
+        /// asks the RENDER widget for its IAccessible, and they tear it down for
+        /// tabs/windows that lose focus (the "browser accessibility tree is empty"
+        /// case, where speakers collapse to "Someone"/"You"). Poking the
+        /// render-widget HWND(s) each poll with the same request a screen reader
+        /// sends keeps the tree materialized so NAMES survive. Best-effort and
+        /// side-effect-free (no global screen-reader flag that could leak on a hard
+        /// kill). A fully backgrounded TAB can still need
+        /// --force-renderer-accessibility; the empty-tree status hint covers that.
+        static void PokeChromiumAccessibility(IntPtr topHwnd)
+        {
+            if (topHwnd == IntPtr.Zero) return;
+            try
+            {
+                EnumChildWindows(topHwnd, delegate (IntPtr h, IntPtr l)
+                {
+                    try
+                    {
+                        StringBuilder sb = new StringBuilder(64);
+                        GetClassName(h, sb, sb.Capacity);
+                        if (sb.ToString() == ChromeRenderWidgetClass)
+                        {
+                            object acc;
+                            Guid iid = IID_IAccessible;
+                            if (AccessibleObjectFromWindow(h, OBJID_CLIENT, ref iid, out acc) == 0 && acc != null)
+                                Marshal.ReleaseComObject(acc);
+                        }
+                    }
+                    catch (Exception) { }
+                    return true;   // keep enumerating: a window can host several render widgets
+                }, IntPtr.Zero);
+            }
+            catch (Exception) { }
+        }
 
         static JavaScriptSerializer CreateSerializer()
         {
@@ -476,6 +572,10 @@ namespace MeetingSpeakerEngine
             public List<MeetingWindow> Meetings = new List<MeetingWindow>();
             public List<AutomationElement> ZoomBubbles = new List<AutomationElement>();
             public List<AutomationElement> ZoomPanels = new List<AutomationElement>();
+            /// Zoom Picture-in-Picture / floating-thumbnail windows (minimised
+            /// meeting). The title-based classifier misses these, but they carry
+            /// Zoom's "Talking: <name>" active-speaker label — see ParseZoomPip.
+            public List<AutomationElement> ZoomPips = new List<AutomationElement>();
         }
 
         static TopWindows FindTopWindows()
@@ -525,6 +625,30 @@ namespace MeetingSpeakerEngine
                 }
 
                 string platform = ClassifyWindow(title, proc, className);
+
+                // Zoom Picture-in-Picture / floating thumbnail: a separate
+                // top-level window the title classifier misses (title is empty
+                // when collapsed, "Zoom" when expanded). Content-probe only such
+                // UNCLASSIFIED empty/"Zoom"-titled Zoom windows — cheap, and it
+                // skips the big Zoom Workplace home window — then keep it if it
+                // shows the PIP markers ("Talking:" / video-render).
+                if (isZoomProc && platform == null)
+                {
+                    string tt = (title == null ? "" : title).Trim();
+                    if (tt.Length == 0 || tt.Equals("Zoom", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            if (LooksLikeZoomPip(ScanNodes(el, 400)))
+                            {
+                                result.ZoomPips.Add(el);
+                                continue;
+                            }
+                        }
+                        catch (Exception) { }
+                    }
+                }
+
                 if (platform == null) continue;
 
                 if (result.Meetings.Count >= 4) continue; // cap meetings; keep collecting bubbles/panels
@@ -601,13 +725,24 @@ namespace MeetingSpeakerEngine
 
         static List<UiNode> ScanNodes(AutomationElement scope, int maxNodes)
         {
+            return ScanNodes(scope, maxNodes, false);
+        }
+
+        static List<UiNode> ScanNodes(AutomationElement scope, int maxNodes, bool raw)
+        {
             List<UiNode> list = new List<UiNode>();
             CacheRequest cr = new CacheRequest();
             cr.Add(AutomationElement.NameProperty);
             cr.Add(AutomationElement.ClassNameProperty);
             cr.Add(AutomationElement.AutomationIdProperty);
             cr.Add(AutomationElement.ControlTypeProperty);
+            cr.Add(AutomationElement.BoundingRectangleProperty);
             cr.AutomationElementMode = AutomationElementMode.None;
+            // RAW view = Chromium's un-pruned tree. The default (control) view
+            // drops decorative nodes like Meet's animated voice-level bars
+            // (class IisKdb/gjg47c/…), which is where the "speaking" state lives.
+            // Deep dumps use raw to check whether that indicator is reachable.
+            if (raw) cr.TreeFilter = Automation.RawViewCondition;
 
             Stopwatch sw = Stopwatch.StartNew();
             AutomationElementCollection found;
@@ -635,6 +770,21 @@ namespace MeetingSpeakerEngine
                     node.AutomationId = el.Cached.AutomationId;
                     ControlType ct = el.Cached.ControlType;
                     node.ControlType = ct == null ? "" : ct.ProgrammaticName.Replace("ControlType.", "");
+                    // Geometry (BoundingRectangle). Offscreen / unavailable comes
+                    // back as Rect.Empty (infinite W/H) — leave 0 in that case so
+                    // the resolver treats it as "no geometry".
+                    try
+                    {
+                        System.Windows.Rect r = el.Cached.BoundingRectangle;
+                        if (r.Width > 0 && r.Height > 0 &&
+                            !double.IsInfinity(r.Width) && !double.IsInfinity(r.Height) &&
+                            !double.IsNaN(r.Width) && !double.IsNaN(r.Height) &&
+                            r.Width < 100000 && r.Height < 100000)
+                        {
+                            node.X = r.X; node.Y = r.Y; node.W = r.Width; node.H = r.Height;
+                        }
+                    }
+                    catch (Exception) { }
                 }
                 catch (Exception) { continue; }
                 if (node.Name == null) node.Name = "";
@@ -725,6 +875,36 @@ namespace MeetingSpeakerEngine
             if (words.Length == 1 && s.Length > 1 && s == s.ToUpperInvariant() && Regex.IsMatch(s, "^[A-Z]+$"))
                 return false;
             return true;
+        }
+
+        /// Case-insensitive, trimmed name equality. The same display name reaches
+        /// us in different cases from different UI sources (Teams uppercases the
+        /// self tile), so identity comparisons must ignore case or one person is
+        /// tracked as two (self counted as a remote; talk-time split).
+        static bool SameName(string a, string b)
+        {
+            if (a == null || b == null) return false;
+            return string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool ContainsName(List<string> xs, string name)
+        {
+            for (int i = 0; i < xs.Count; i++) if (SameName(xs[i], name)) return true;
+            return false;
+        }
+
+        /// Map every name through the sticky roster's canonical spelling and drop
+        /// case-insensitive duplicates, so a list never carries the same person
+        /// twice under two casings.
+        static List<string> CanonList(List<string> xs, RosterMem mem)
+        {
+            List<string> outp = new List<string>();
+            for (int i = 0; i < xs.Count; i++)
+            {
+                string c = mem.Canonical(xs[i]);
+                if (!ContainsName(outp, c)) outp.Add(c);
+            }
+            return outp;
         }
 
         static void AddSpeaker(Detection det, string rawName)
@@ -855,6 +1035,16 @@ namespace MeetingSpeakerEngine
         public static Detection Detect(string platform, List<UiNode> nodes, string stateKey,
                                        bool remoteActive, bool selfActive)
         {
+            return Detect(platform, nodes, stateKey, remoteActive, selfActive, null);
+        }
+
+        /// `meetSpeakBoxes` = bounding boxes of Meet's raw-view speaking-class nodes
+        /// (kssMZb), matched to named tiles by geometry — the active-speaker signal
+        /// Chromium hides from the default UIA view. Null/empty off Meet or when the
+        /// raw pass found nothing (then geometry / captions carry attribution).
+        public static Detection Detect(string platform, List<UiNode> nodes, string stateKey,
+                                       bool remoteActive, bool selfActive, List<double[]> meetSpeakBoxes)
+        {
             Detection det = new Detection();
             if (platform == "meet")
             {
@@ -865,11 +1055,43 @@ namespace MeetingSpeakerEngine
                 MeetRoster roster = ParseMeetRoster(nodes);
                 foreach (string nm in roster.All) AddParticipant(det, nm);
                 det.SelfName = roster.Self;
-                foreach (string nm in roster.All)
-                    if (nm != roster.Self) det.RemoteNames.Add(nm);
 
-                // Speaking name signals: tile speaking-class, then captions.
-                foreach (string s in DetectMeetTileSpeakers(nodes)) AddSpeaker(det, s);
+                // Geometry-based tiles (macOS parity): area + speaking + "(You)".
+                // Fill self from a "(You)"-tagged tile carrying a real name when the
+                // roster didn't already resolve it — this is what stops the local
+                // user's own speech being logged as the placeholder "You".
+                List<MeetTile> meetTiles2 = ParseMeetTiles(nodes);
+                // Mark the tile whose region holds a raw-view "kssMZb" speaking box
+                // as speaking (the signal pruned from the control view).
+                MarkMeetSpeakingByBoxes(meetTiles2, meetSpeakBoxes);
+                for (int ti = 0; ti < meetTiles2.Count; ti++)
+                {
+                    MeetTile mt = meetTiles2[ti];
+                    if (mt.IsMe && det.SelfName.Length == 0 &&
+                        mt.Name.Length > 0 && mt.Name != "You")
+                        det.SelfName = mt.Name;
+                    // On-screen tiles are a clean roster source (each is an oZRSLe
+                    // participant tile), so everyone stays tracked with the
+                    // participants panel CLOSED — not just the enlarged speaker.
+                    if (mt.Name.Length > 0 && mt.Name != "You") AddParticipant(det, mt.Name);
+                }
+                foreach (string nm in det.Participants)
+                    if (nm != det.SelfName && !det.RemoteNames.Contains(nm)) det.RemoteNames.Add(nm);
+
+                // Speaking name signals, macOS order: geometry (durable) -> speaking
+                // class corroboration -> the index-based class scan (covers trees
+                // with no geometry, e.g. self-tests) -> captions. Geometry is
+                // VAD-gated: a spotlit tile persists during silence, so only trust
+                // it when audio confirms speech.
+                bool meetVad = remoteActive || selfActive;
+                foreach (string s in MeetActiveSpeaker(
+                             meetTiles2, meetVad, MeetPresentationActive(nodes), det.SelfName))
+                    AddSpeaker(det, s);
+                if (det.Speakers.Count == 0)
+                {
+                    foreach (string s in DetectMeetTileSpeakers(nodes))
+                        if (s != det.SelfName) AddSpeaker(det, s);
+                }
                 if (det.Speakers.Count == 0)
                 {
                     foreach (string s in CaptionSpeakers(ExtractMeetCaptionBlocks(nodes), stateKey))
@@ -901,6 +1123,33 @@ namespace MeetingSpeakerEngine
                 if (det.MicState == Mic.Unknown) det.MicState = DetectTeamsMicState(nodes);
 
                 foreach (string s in DetectTeamsTileSpeakers(nodes)) AddSpeaker(det, s);
+
+                // Teams mute-gate (the macOS .teams branch, ported). New Teams
+                // exposes NO dependable AX "is-speaking" signal — verified live:
+                // no speaking class and no "<name> is speaking" note even while a
+                // remote is talking (logs\uia-dump-1-20260701-163822.ndjson). So,
+                // exactly like native Zoom, fuse this app's remote PLAYBACK audio
+                // with the per-tile mute state: when this poll's playback is
+                // active and EXACTLY ONE remote is unmuted, that remote is the
+                // active speaker. Named here, so the anonymous "Someone" fallback
+                // is skipped. 2+ unmuted remotes stay ambiguous (mixed audio can't
+                // be split) -> no name -> the audio layer logs "Someone".
+                if (det.Speakers.Count == 0 && remoteActive)
+                {
+                    List<string> unmutedRemotes = new List<string>();
+                    for (int t = 0; t < tTiles.Count; t++)
+                    {
+                        TeamsTile tile = tTiles[t];
+                        if (tile.IsSelf || !tile.Unmuted) continue;
+                        if (!ContainsName(unmutedRemotes, tile.Name)) unmutedRemotes.Add(tile.Name);
+                    }
+                    if (unmutedRemotes.Count == 1)
+                    {
+                        AddSpeaker(det, unmutedRemotes[0]);
+                        det.Source = "teams-mute-gate";
+                    }
+                }
+
                 if (det.Speakers.Count == 0)
                 {
                     foreach (string s in CaptionSpeakers(ExtractTeamsCaptionBlocks(nodes), stateKey))
@@ -994,6 +1243,10 @@ namespace MeetingSpeakerEngine
                 "logged as 'Someone' (remote audio) or 'You' (microphone).",
                 pollMs));
 
+            // Load Meet speaking-class overrides (meet-rules.json), if present, so a
+            // kssMZb rotation is a config drop rather than a rebuild — like macOS.
+            LoadMeetRules();
+
             string lastWindowsKey = null;
             int tick = 0;
             int periodEvery = Math.Max(1, 5000 / Math.Max(pollMs, 1));
@@ -1020,6 +1273,10 @@ namespace MeetingSpeakerEngine
                     {
                         if (w.Platform == "zoom" && !w.IsBrowser) hasZoomDesktop = true;
 
+                        // Keep Chromium's a11y tree alive so speaker names don't
+                        // collapse to "Someone"/"You" when the tab loses focus.
+                        if (w.IsBrowser) PokeChromiumAccessibility(new IntPtr(w.Hwnd));
+
                         List<UiNode> nodes;
                         try
                         {
@@ -1040,34 +1297,65 @@ namespace MeetingSpeakerEngine
                         float capturePeak = GetCapturePeak(w.ProcName);
 
                         string stateKey = w.Platform + "#" + w.Hwnd;
-                        Detection det = Detect(w.Platform, nodes, stateKey, remoteActive, selfActive);
+
+                        // Meet's active-speaker class (kssMZb) is pruned from the
+                        // default UIA view but present in the RAW view. Do a cheap
+                        // second pass in raw view for JUST those speaking boxes, then
+                        // Detect matches them to named tiles by geometry.
+                        List<double[]> meetSpeakBoxes = null;
+                        if (w.Platform == "meet" && w.IsBrowser)
+                        {
+                            try
+                            {
+                                AutomationElement mdoc = GetDocument(w);
+                                if (mdoc == null) mdoc = w.Element;
+                                List<UiNode> rawNodes = ScanNodes(mdoc, maxNodes, true);
+                                meetSpeakBoxes = ExtractMeetSpeakingBoxes(rawNodes);
+                            }
+                            catch (Exception) { }
+                        }
+
+                        Detection det = Detect(w.Platform, nodes, stateKey, remoteActive, selfActive, meetSpeakBoxes);
 
                         // Resolve self + roster with sticky memory so a thin
                         // poll doesn't drop a name back to "You"/"Someone".
                         RosterMem mem;
                         if (!Rosters.TryGetValue(stateKey, out mem)) { mem = new RosterMem(); Rosters[stateKey] = mem; }
 
+                        // Collapse case variants of the same name to ONE spelling
+                        // (Teams uppercases the self tile) BEFORE any of the
+                        // self/remote/session logic keys off the string — otherwise
+                        // "BIDHEYAK THAPA" and "Bidheyak Thapa" split one person in
+                        // two. Everything below (and the emitted pulse) then uses
+                        // the canonical name.
+                        det.Speakers = CanonList(det.Speakers, mem);
+                        det.Participants = CanonList(det.Participants, mem);
+                        det.RemoteNames = CanonList(det.RemoteNames, mem);
+                        det.SelfName = mem.Canonical(det.SelfName);
+
                         string selfName = det.SelfName;
                         // Zoom: you usually host your own meeting, so the "<Name>'s
                         // Zoom Meeting" title names self when that name is present.
                         if (selfName.Length == 0 && w.Platform == "zoom")
                         {
-                            string host = ZoomHostName(w.Title);
-                            if (host.Length > 0 && det.Participants.Contains(host)) selfName = host;
+                            string host = mem.Canonical(ZoomHostName(w.Title));
+                            if (host.Length > 0 && ContainsName(det.Participants, host)) selfName = host;
                         }
                         if (selfName.Length == 0) selfName = mem.SelfName; // sticky
 
                         foreach (string p in det.Participants)
-                            if (!mem.All.Contains(p)) mem.All.Add(p);
+                            if (!ContainsName(mem.All, p)) mem.All.Add(p);
                         if (selfName.Length > 0) mem.SelfName = selfName;
 
-                        // Everyone known but self = remote candidates.
+                        // Everyone known but self = remote candidates (self matched
+                        // case-insensitively so an all-caps self tile is not counted
+                        // as a separate remote).
                         List<string> remotes = new List<string>();
                         List<string> nameSrc = det.Participants.Count > 0 ? det.Participants : mem.All;
                         for (int ni = 0; ni < nameSrc.Count; ni++)
-                            if (nameSrc[ni] != selfName && !remotes.Contains(nameSrc[ni])) remotes.Add(nameSrc[ni]);
+                            if (!SameName(nameSrc[ni], selfName) && !ContainsName(remotes, nameSrc[ni])) remotes.Add(nameSrc[ni]);
                         for (int ni = 0; ni < det.RemoteNames.Count; ni++)
-                            if (det.RemoteNames[ni] != selfName && !remotes.Contains(det.RemoteNames[ni]))
+                            if (!SameName(det.RemoteNames[ni], selfName) && !ContainsName(remotes, det.RemoteNames[ni]))
                                 remotes.Add(det.RemoteNames[ni]);
 
                         EmitPulse(det, w.Platform, w.Title, ts);
@@ -1111,6 +1399,15 @@ namespace MeetingSpeakerEngine
                             }
                         }
 
+                        // Self-heal a stale/wrong cached Document: a browser tree
+                        // that came back with NO meeting content (no tiles, roster,
+                        // name or mic button) is usually a Document element cached
+                        // from an earlier layout — Chromium swaps the render document
+                        // on view changes, leaving a handle that still returns nodes
+                        // but not the current tiles. Drop it so the next poll
+                        // re-derives the live Document instead of logging "Someone".
+                        if (!treeOk && w.IsBrowser) DocCache.Remove(w.Hwnd);
+
                         // Record for the per-platform fallback pass below.
                         WinResult wr = new WinResult();
                         wr.Platform = w.Platform;
@@ -1122,7 +1419,7 @@ namespace MeetingSpeakerEngine
                         wr.Remotes = remotes;
                         wr.NamedSpeakers = det.Speakers.Count;
                         for (int s = 0; s < det.Speakers.Count; s++)
-                            if (selfName.Length > 0 && det.Speakers[s] == selfName) wr.SelfNamedInDet = true;
+                            if (selfName.Length > 0 && SameName(det.Speakers[s], selfName)) wr.SelfNamedInDet = true;
                         winResults.Add(wr);
                     }
 
@@ -1164,10 +1461,18 @@ namespace MeetingSpeakerEngine
 
                         if (bestSelf != null && !selfNamedInDet)
                         {
-                            Detection self = new Detection();
-                            self.Source = "mic-audio";
-                            self.Speakers.Add(bestSelf.SelfName.Length > 0 ? bestSelf.SelfName : "You");
-                            EmitPulse(self, plat, bestSelf.Title, ts);
+                            // Meet: never log the placeholder "You". The tile/kssMZb
+                            // path already names the real speaker (including you), so
+                            // emitting "You" here would double-log you under two
+                            // names. Match macOS: resolved self name, or nothing.
+                            bool suppress = plat == "meet" && bestSelf.SelfName.Length == 0;
+                            if (!suppress)
+                            {
+                                Detection self = new Detection();
+                                self.Source = "mic-audio";
+                                self.Speakers.Add(bestSelf.SelfName.Length > 0 ? bestSelf.SelfName : "You");
+                                EmitPulse(self, plat, bestSelf.Title, ts);
+                            }
                         }
 
                         // REMOTE: playback audio with no per-speaker name from the
@@ -1179,6 +1484,37 @@ namespace MeetingSpeakerEngine
                             fallback.Speakers.Add(bestRemote.Remotes.Count == 1 ? bestRemote.Remotes[0] : "Someone");
                             EmitPulse(fallback, plat, bestRemote.Title, ts);
                         }
+                    }
+
+                    // Zoom Picture-in-Picture (minimised floating thumbnail): a
+                    // separate window the meeting classifier misses. Zoom names
+                    // the active speaker in it with "Talking: <name>" — its OWN
+                    // VAD — so read it DIRECTLY (no audio gate, like macOS
+                    // zoom.pip). The pulse also keeps the one native-Zoom meeting
+                    // (id "zoom::meeting") alive while minimised to the thumbnail.
+                    if (tops.ZoomPips.Count > 0) hasZoomDesktop = true;
+                    foreach (AutomationElement pipWin in tops.ZoomPips)
+                    {
+                        try
+                        {
+                            List<UiNode> pnodes = ScanNodes(pipWin, 800);
+                            ZoomPip pip = ParseZoomPip(pnodes);
+                            Detection det = new Detection();
+                            det.Source = "zoom-pip";
+                            if (pip.Speaker.Length > 0) AddSpeaker(det, pip.Speaker);
+                            for (int i = 0; i < pip.Names.Count; i++) AddParticipant(det, pip.Names[i]);
+                            EmitPulse(det, "zoom", "Zoom PIP", ts);
+
+                            Dictionary<string, object> wi = new Dictionary<string, object>();
+                            wi["platform"] = "zoom";
+                            wi["title"] = "Zoom PIP";
+                            wi["nodeCount"] = pnodes.Count;
+                            wi["treeOk"] = true;
+                            wi["audioPeak"] = Math.Round(
+                                (double)Math.Max(GetRenderPeak("zoom"), GetCapturePeak("zoom")), 3);
+                            windowInfos.Add(wi);
+                        }
+                        catch (Exception) { }
                     }
 
                     // Zoom popped-out participants panel contributes the roster.
@@ -1367,6 +1703,11 @@ namespace MeetingSpeakerEngine
 
         public static void Dump(int maxNodes)
         {
+            Dump(maxNodes, false);
+        }
+
+        public static void Dump(int maxNodes, bool deep)
+        {
             TopWindows tops = FindTopWindows();
             List<KeyValuePair<string, AutomationElement>> targets =
                 new List<KeyValuePair<string, AutomationElement>>();
@@ -1394,6 +1735,8 @@ namespace MeetingSpeakerEngine
                 targets.Add(new KeyValuePair<string, AutomationElement>("zoom-participants-panel", p));
             foreach (AutomationElement b in tops.ZoomBubbles)
                 targets.Add(new KeyValuePair<string, AutomationElement>("zoom-bubble", b));
+            foreach (AutomationElement pip in tops.ZoomPips)
+                targets.Add(new KeyValuePair<string, AutomationElement>("zoom-pip", pip));
 
             // Always list every titled top-level window: this is how you spot a
             // meeting tab the classifier missed (wrong title pattern etc.).
@@ -1433,13 +1776,13 @@ namespace MeetingSpeakerEngine
                 List<UiNode> nodes;
                 try
                 {
-                    nodes = ScanNodes(target.Value, maxNodes);
+                    nodes = ScanNodes(target.Value, maxNodes, deep);
                     // Chromium first-contact warm-up: tiny tree means a11y was
                     // just switched on by our query; rescan once after a pause.
                     if (nodes.Count < 50)
                     {
                         Thread.Sleep(800);
-                        nodes = ScanNodes(target.Value, maxNodes);
+                        nodes = ScanNodes(target.Value, maxNodes, deep);
                     }
                 }
                 catch (Exception ex)
@@ -1462,12 +1805,98 @@ namespace MeetingSpeakerEngine
                         row["t"] = n.ControlType;
                         row["c"] = n.ClassName;
                         row["a"] = n.AutomationId;
+                        if (n.W > 0 && n.H > 0)
+                        {
+                            row["w"] = Math.Round(n.W);
+                            row["h"] = Math.Round(n.H);
+                            row["area"] = Math.Round(n.W * n.H);
+                        }
                         sw.WriteLine(Json.Serialize(row));
                     }
                 }
                 EmitStatus("info", string.Format("Dumped {0} nodes for {1} to {2}",
                     nodes.Count, target.Key, fileName));
             }
+        }
+
+        // ---------------------------------------------------------------
+        // Watch mode: sample Meet tiles (name + area + subtree class tokens +
+        // tile accessible name) alongside audio peaks, once per ~300ms for N
+        // seconds, so a speaking-correlated signal (rotated CSS class or an
+        // aria-label change on the active tile) can be spotted. Run it during a
+        // live back-and-forth. Emits NDJSON "watch" rows on stdout.
+        // ---------------------------------------------------------------
+        public static void Watch(int seconds, int maxNodes)
+        {
+            Directory.CreateDirectory("logs");
+            string fileName = Path.Combine("logs", string.Format(
+                "watch-{0:yyyyMMdd-HHmmss}.ndjson", DateTime.Now));
+            EmitStatus("info", string.Format(
+                "Watch: sampling Meet tiles + audio for {0}s -> {1}. Have a REMOTE person TALK during " +
+                "this window (that is the case we need). Each row = one tile at one tick.",
+                seconds, fileName));
+            long endT = NowMs() + (long)seconds * 1000;
+            int tick = 0;
+            using (StreamWriter sw = new StreamWriter(fileName, false, new UTF8Encoding(false)))
+            {
+                while (NowMs() < endT)
+                {
+                    tick++;
+                    try
+                    {
+                        TopWindows tops = FindTopWindows();
+                        SampleAudio();
+                        foreach (MeetingWindow w in tops.Meetings)
+                        {
+                            if (w.Platform != "meet") continue;
+                            if (w.IsBrowser) PokeChromiumAccessibility(new IntPtr(w.Hwnd));
+                            List<UiNode> nodes;
+                            try { nodes = ScanMeetingWindow(w, maxNodes); }
+                            catch (Exception) { continue; }
+                            float rp = GetRenderPeak(w.ProcName);
+                            float cp = GetCapturePeak(w.ProcName);
+
+                            for (int i = 0; i < nodes.Count; i++)
+                            {
+                                UiNode c = nodes[i];
+                                if (!ClassNameHasToken(c.ClassName, "oZRSLe")) continue;
+                                if (c.Area() <= 0) continue;
+
+                                string name = "";
+                                SortedDictionary<string, bool> toks = new SortedDictionary<string, bool>();
+                                for (int j = 0; j < nodes.Count; j++)
+                                {
+                                    UiNode m = nodes[j];
+                                    if (!c.Contains(m)) continue;
+                                    if (name.Length == 0 && m.ControlType == "Text")
+                                    {
+                                        string cn = CleanName(m.Name);
+                                        if (cn.Length > 0 && IsLikelyPersonName(cn)) name = cn;
+                                    }
+                                    if (m.ClassName.Length > 0)
+                                        foreach (string tk in m.ClassName.Split(
+                                            new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                                            toks[tk] = true;
+                                }
+                                List<string> tokList = new List<string>(toks.Keys);
+                                Dictionary<string, object> row = new Dictionary<string, object>();
+                                row["type"] = "watch";
+                                row["tick"] = tick;
+                                row["name"] = name;
+                                row["tileName"] = c.Name;        // tile aria-label (may carry speaking state)
+                                row["area"] = Math.Round(c.Area());
+                                row["render"] = Math.Round(rp, 3);
+                                row["capture"] = Math.Round(cp, 3);
+                                row["cls"] = string.Join(" ", tokList.ToArray());
+                                sw.WriteLine(Json.Serialize(row));
+                            }
+                        }
+                    }
+                    catch (Exception ex) { EmitStatus("warn", "watch: " + ex.Message); }
+                    Thread.Sleep(300);
+                }
+            }
+            EmitStatus("info", "Watch complete: " + fileName);
         }
 
         // ---------------------------------------------------------------
@@ -1493,6 +1922,15 @@ namespace MeetingSpeakerEngine
             string a = string.Join("|", actual.ToArray());
             string w = string.Join("|", expected);
             Check(testName, a == w, string.Format("expected [{0}] got [{1}]", w, a));
+        }
+
+        /// Test helper: a UiNode with on-screen geometry (for geometry-based tests).
+        static UiNode GeoNode(string name, string controlType, string className,
+                              double x, double y, double w, double h)
+        {
+            UiNode n = new UiNode(name, controlType, className);
+            n.X = x; n.Y = y; n.W = w; n.H = h;
+            return n;
         }
 
         public static int SelfTest()
@@ -1592,6 +2030,64 @@ namespace MeetingSpeakerEngine
             Check("teams captions: block extracted", teamsBlocks.Count == 1 && teamsBlocks[0][0] == "Carol Nguyen",
                 teamsBlocks.Count > 0 ? teamsBlocks[0][0] + " / " + teamsBlocks[0][1] : "(none)");
 
+            // --- Teams video tiles (exact strings from a live native-client dump:
+            //     logs\uia-dump-1-20260701-163822.ndjson) ---
+            List<UiNode> teamsTiles = new List<UiNode>();
+            teamsTiles.Add(new UiNode("Leave", "Button"));
+            teamsTiles.Add(new UiNode("Myself video, BIDHEYAK THAPA, Unmuted, video is on, Fit to frame, Has context menu", "MenuItem"));
+            teamsTiles.Add(new UiNode("Bibek Thapa External unfamiliar, video is on, Context menu is available", "MenuItem"));
+            teamsTiles.Add(new UiNode("Biheyak Thapa External unfamiliar, muted, Context menu is available", "MenuItem"));
+            List<TeamsTile> tt = ParseTeamsTiles(teamsTiles);
+            Check("teams tiles: three tiles parsed", tt.Count == 3, string.Format("{0}", tt.Count));
+            Check("teams tiles: self name from token[1], self+unmuted",
+                tt.Count == 3 && tt[0].Name == "BIDHEYAK THAPA" && tt[0].IsSelf && tt[0].Unmuted,
+                tt.Count > 0 ? tt[0].Name + "/self=" + tt[0].IsSelf + "/unmuted=" + tt[0].Unmuted : "(none)");
+            Check("teams tiles: unmuted remote (no mute word) named, badge stripped",
+                tt.Count == 3 && tt[1].Name == "Bibek Thapa" && !tt[1].IsSelf && tt[1].Unmuted,
+                tt.Count > 1 ? tt[1].Name + "/unmuted=" + tt[1].Unmuted : "(none)");
+            Check("teams tiles: muted remote named, badge stripped",
+                tt.Count == 3 && tt[2].Name == "Biheyak Thapa" && !tt[2].IsSelf && !tt[2].Unmuted,
+                tt.Count > 2 ? tt[2].Name + "/unmuted=" + tt[2].Unmuted : "(none)");
+
+            // Mute-gate: remote playback + exactly one unmuted remote -> that
+            // remote is named (not "Someone"); self resolved; source tagged.
+            Detection teamsGate = Detect("teams", teamsTiles, "tg1", true, false);
+            CheckList("teams mute-gate: lone unmuted remote named by playback",
+                teamsGate.Speakers, new string[] { "Bibek Thapa" });
+            Check("teams mute-gate: source tagged", teamsGate.Source == "teams-mute-gate", teamsGate.Source);
+            Check("teams mute-gate: self name captured (all-caps)", teamsGate.SelfName == "BIDHEYAK THAPA", teamsGate.SelfName);
+            CheckList("teams mute-gate: remotes listed", teamsGate.RemoteNames,
+                new string[] { "Bibek Thapa", "Biheyak Thapa" });
+
+            // No remote audio -> no speaker (the mute-gate is audio-gated, so a
+            // lingering unmuted tile during silence never invents a speaker).
+            Detection teamsQuiet = Detect("teams", teamsTiles, "tg2", false, false);
+            Check("teams mute-gate: no playback -> no speaker", teamsQuiet.Speakers.Count == 0,
+                string.Format("{0}", teamsQuiet.Speakers.Count));
+
+            // 2+ unmuted remotes -> ambiguous (mixed audio can't be split) -> no
+            // name here, so the audio layer logs "Someone".
+            List<UiNode> teamsTwo = new List<UiNode>();
+            teamsTwo.Add(new UiNode("Leave", "Button"));
+            teamsTwo.Add(new UiNode("Myself video, BIDHEYAK THAPA, Muted, video is on, Has context menu", "MenuItem"));
+            teamsTwo.Add(new UiNode("Bibek Thapa External unfamiliar, Context menu is available", "MenuItem"));
+            teamsTwo.Add(new UiNode("Sabitri Thapa, Unmuted, Context menu is available", "MenuItem"));
+            Detection teamsAmbig = Detect("teams", teamsTwo, "tg3", true, false);
+            Check("teams mute-gate: 2+ unmuted remotes -> no name (ambiguous)",
+                teamsAmbig.Speakers.Count == 0, string.Join(",", teamsAmbig.Speakers.ToArray()));
+
+            // --- Name-case identity: the same person in different cases is ONE
+            // identity (Teams uppercases the self tile). ---
+            Check("samename: case-insensitive equal", SameName("BIDHEYAK THAPA", "Bidheyak Thapa"), "");
+            Check("samename: distinct names not equal", !SameName("Bibek Thapa", "Biheyak Thapa"), "");
+            RosterMem rm = new RosterMem();
+            Check("canon: first-seen spelling wins", rm.Canonical("BIDHEYAK THAPA") == "BIDHEYAK THAPA",
+                rm.Canonical("BIDHEYAK THAPA"));
+            Check("canon: later case variant maps to first-seen",
+                rm.Canonical("Bidheyak Thapa") == "BIDHEYAK THAPA", rm.Canonical("Bidheyak Thapa"));
+            Check("canon: unrelated name unchanged", rm.Canonical("Bibek Thapa") == "Bibek Thapa",
+                rm.Canonical("Bibek Thapa"));
+
             // --- Zoom roster parsing ---
             List<UiNode> zoomList = new List<UiNode>();
             zoomList.Add(new UiNode("In the Meeting (3), expanded", "ListItem"));
@@ -1637,6 +2133,37 @@ namespace MeetingSpeakerEngine
             Detection zoomRemoteNoAudio = Detect("zoom", zoomRemoteTiles, "zg2b", false, false);
             Check("zoom: lingering remote badge without audio -> no speaker",
                 zoomRemoteNoAudio.Speakers.Count == 0, string.Format("{0}", zoomRemoteNoAudio.Speakers.Count));
+
+            // --- Zoom Picture-in-Picture (minimised floating thumbnail) ---
+            // Zoom names the active speaker in the PIP with "Talking: <name>"
+            // (its OWN VAD) — read directly, no audio gate (macOS zoom.pip parity).
+            List<UiNode> zoomPipTalk = new List<UiNode>();
+            zoomPipTalk.Add(new UiNode("Talking: Sabitri Thapa", "Text"));
+            zoomPipTalk.Add(new UiNode("Show video render", "Button"));
+            Check("zoom pip: window recognised by content", LooksLikeZoomPip(zoomPipTalk), "not recognised");
+            ZoomPip pipTalk = ParseZoomPip(zoomPipTalk);
+            Check("zoom pip: 'Talking:' -> speaker", pipTalk.Speaker == "Sabitri Thapa", "'" + pipTalk.Speaker + "'");
+            CheckList("zoom pip: speaker is also a participant", pipTalk.Names,
+                new string[] { "Sabitri Thapa" });
+
+            // A tile-style ", Active speaker" line inside the PIP also names the speaker.
+            List<UiNode> zoomPipTile = new List<UiNode>();
+            zoomPipTile.Add(new UiNode("Video content Sabitri, Computer audio unmuted,Video off, Active speaker", "Pane"));
+            Check("zoom pip: tile badge -> speaker", ParseZoomPip(zoomPipTile).Speaker == "Sabitri",
+                "'" + ParseZoomPip(zoomPipTile).Speaker + "'");
+
+            // Nobody talking: no speaker, but still recognisably the PIP (keep-alive).
+            List<UiNode> zoomPipIdle = new List<UiNode>();
+            zoomPipIdle.Add(new UiNode("Show video render", "Button"));
+            Check("zoom pip: idle window still recognised", LooksLikeZoomPip(zoomPipIdle), "not recognised");
+            Check("zoom pip: idle -> no speaker", ParseZoomPip(zoomPipIdle).Speaker.Length == 0,
+                "'" + ParseZoomPip(zoomPipIdle).Speaker + "'");
+
+            // The Zoom Workplace HOME window must NOT be mistaken for a PIP.
+            List<UiNode> zoomHome = new List<UiNode>();
+            zoomHome.Add(new UiNode("Team Chat", "Text"));
+            zoomHome.Add(new UiNode("Meetings", "Text"));
+            Check("zoom pip: home window not misread as pip", !LooksLikeZoomPip(zoomHome), "false positive");
 
             // --- zoom web classification (exact title from a live dump) ---
             Check("classify zoom web tab",
@@ -1711,6 +2238,103 @@ namespace MeetingSpeakerEngine
             Detection meetQuietDet = Detect("meet", meetQuietTiles, "mt2", false, false);
             Check("meet quiet tile -> no speaker", meetQuietDet.Speakers.Count == 0,
                 string.Format("{0}", meetQuietDet.Speakers.Count));
+
+            // --- Meet GEOMETRY active speaker (macOS parity) ---
+            // Spotlight/speaker view: the active remote's tile is far larger. With
+            // remote audio flowing, geometry names them (no rotating CSS class),
+            // self is resolved from "(You)" and never named as a remote.
+            List<UiNode> meetGeo = new List<UiNode>();
+            meetGeo.Add(new UiNode("Leave call", "Button"));
+            meetGeo.Add(GeoNode("", "Group", "oZRSLe", 0, 0, 800, 600));      // big remote tile
+            meetGeo.Add(GeoNode("Ram Kumar", "Text", "notranslate", 10, 560, 120, 20));
+            meetGeo.Add(GeoNode("", "Group", "oZRSLe", 810, 0, 200, 150));    // small self tile
+            meetGeo.Add(GeoNode("Bidheyak Thapa (You)", "Text", "notranslate", 815, 130, 150, 18));
+            Detection meetGeoDet = Detect("meet", meetGeo, "mg1", true, false); // remote audio active
+            CheckList("meet geometry: spotlit remote named (no CSS class)",
+                meetGeoDet.Speakers, new string[] { "Ram Kumar" });
+            Check("meet geometry: self resolved from (You)",
+                meetGeoDet.SelfName == "Bidheyak Thapa", meetGeoDet.SelfName);
+            Check("meet geometry: self never named as remote",
+                !meetGeoDet.Speakers.Contains("Bidheyak Thapa") && !meetGeoDet.Speakers.Contains("You"),
+                string.Join(",", meetGeoDet.Speakers.ToArray()));
+
+            // Gallery view: roughly equal tiles + no speaking class -> geometry
+            // must NOT guess (mac someone-floor); Detect names nobody (the audio
+            // layer logs "Someone").
+            List<UiNode> meetGallery = new List<UiNode>();
+            meetGallery.Add(new UiNode("Leave call", "Button"));
+            meetGallery.Add(GeoNode("", "Group", "oZRSLe", 0, 0, 320, 240));
+            meetGallery.Add(GeoNode("Alice Johnson", "Text", "notranslate", 5, 210, 100, 18));
+            meetGallery.Add(GeoNode("", "Group", "oZRSLe", 330, 0, 320, 240));
+            meetGallery.Add(GeoNode("Bob Martinez", "Text", "notranslate", 335, 210, 100, 18));
+            Detection meetGalleryDet = Detect("meet", meetGallery, "mg2", true, false);
+            Check("meet geometry: equal gallery tiles -> no guess",
+                meetGalleryDet.Speakers.Count == 0,
+                string.Join(",", meetGalleryDet.Speakers.ToArray()));
+
+            // Gallery view where geometry CAN'T decide, but the macOS-parity
+            // speaking class (kssMZb) is present on one tile -> name that tile.
+            List<UiNode> meetKss = new List<UiNode>();
+            meetKss.Add(new UiNode("Leave call", "Button"));
+            meetKss.Add(GeoNode("", "Group", "oZRSLe", 0, 0, 320, 240));            // Janga tile
+            meetKss.Add(GeoNode("", "Group", "oZRSLe kssMZb", 5, 5, 300, 200));     // speaking marker inside it
+            meetKss.Add(GeoNode("Janga Thapa", "Text", "notranslate", 5, 210, 100, 18));
+            meetKss.Add(GeoNode("", "Group", "oZRSLe", 330, 0, 320, 240));          // Wedding tile (silent)
+            meetKss.Add(GeoNode("Wedding Thapas", "Text", "notranslate", 335, 210, 100, 18));
+            Detection meetKssDet = Detect("meet", meetKss, "mk1", true, false);
+            CheckList("meet class: kssMZb names the speaking tile in gallery view",
+                meetKssDet.Speakers, new string[] { "Janga Thapa" });
+
+            // Raw-view speaking box (kssMZb pruned from the control view) matched to
+            // a named tile by geometry — the real Windows path proven by -Dump -Deep.
+            List<UiNode> meetBox = new List<UiNode>();
+            meetBox.Add(new UiNode("Leave call", "Button"));
+            meetBox.Add(GeoNode("", "Group", "oZRSLe", 0, 0, 320, 240));       // Janga tile (silent)
+            meetBox.Add(GeoNode("Janga Thapa", "Text", "notranslate", 5, 210, 100, 18));
+            meetBox.Add(GeoNode("", "Group", "oZRSLe", 330, 0, 320, 240));     // Wedding tile
+            meetBox.Add(GeoNode("Wedding Thapas", "Text", "notranslate", 335, 210, 100, 18));
+            List<double[]> meetBoxes = new List<double[]>();
+            meetBoxes.Add(new double[] { 340, 10, 300, 200 });   // centre (490,110) inside Wedding tile
+            Detection meetBoxDet = Detect("meet", meetBox, "mb1", true, false, meetBoxes);
+            CheckList("meet raw-box: speaking box names the matching tile in gallery",
+                meetBoxDet.Speakers, new string[] { "Wedding Thapas" });
+
+            // meet-rules.json override parsing (macOS meet-rules parity).
+            string[] rules = ParseMeetSpeakingClasses(
+                "{\"speakingClasses\":[\"NEWTOK\",\"kssMZb\"],\"silentClasses\":[],\"version\":\"x\"}");
+            Check("meet rules: parse speakingClasses",
+                rules != null && rules.Length == 2 && rules[0] == "NEWTOK",
+                rules == null ? "null" : string.Join(",", rules));
+            Check("meet rules: missing key -> null (keep built-in)",
+                ParseMeetSpeakingClasses("{\"version\":\"x\"}") == null, "");
+            Check("meet rules: bad json -> null (keep built-in)",
+                ParseMeetSpeakingClasses("not json at all") == null, "");
+
+            // Self spotlighted while you talk: promoted tile is self -> not named as
+            // a remote (the mic path names self elsewhere); Detect emits no speaker.
+            List<UiNode> meetSelfBig = new List<UiNode>();
+            meetSelfBig.Add(new UiNode("Leave call", "Button"));
+            meetSelfBig.Add(GeoNode("", "Group", "oZRSLe", 0, 0, 800, 600));   // big SELF tile
+            meetSelfBig.Add(GeoNode("Bidheyak Thapa (You)", "Text", "notranslate", 10, 560, 150, 20));
+            meetSelfBig.Add(GeoNode("", "Group", "oZRSLe", 810, 0, 200, 150));  // small remote
+            meetSelfBig.Add(GeoNode("Ram Kumar", "Text", "notranslate", 815, 130, 120, 18));
+            Detection meetSelfBigDet = Detect("meet", meetSelfBig, "mg3", false, true); // mic active
+            Check("meet geometry: self spotlight not named as remote",
+                meetSelfBigDet.Speakers.Count == 0,
+                string.Join(",", meetSelfBigDet.Speakers.ToArray()));
+            Check("meet geometry: self spotlight still resolves SelfName",
+                meetSelfBigDet.SelfName == "Bidheyak Thapa", meetSelfBigDet.SelfName);
+
+            // "(You)" resolves self even when NOT host (both roster rows are
+            // host-mutable, so the old non-mutable heuristic can't decide).
+            List<UiNode> meetNotHost = new List<UiNode>();
+            meetNotHost.Add(new UiNode("Leave call", "Button"));
+            meetNotHost.Add(new UiNode("Janga Thapa", "ListItem", "cxdMu KV1GEc"));
+            meetNotHost.Add(new UiNode("Bidheyak Thapa (You)", "ListItem", "cxdMu KV1GEc"));
+            meetNotHost.Add(new UiNode("Mute Janga Thapa's microphone", "Button", ""));
+            meetNotHost.Add(new UiNode("Mute Bidheyak Thapa's microphone", "Button", ""));
+            MeetRoster mrNH = ParseMeetRoster(meetNotHost);
+            Check("meet roster: self from (You) when not host", mrNH.Self == "Bidheyak Thapa", mrNH.Self);
 
             // --- Meet mic state + roster + self/remote (exact dump strings) ---
             List<UiNode> meetFull = new List<UiNode>();

@@ -208,6 +208,88 @@ namespace MeetingSpeakerEngine
             return z;
         }
 
+        // ---------------------------------------------------------------
+        // Zoom Picture-in-Picture (the floating thumbnail you get when the
+        // meeting is minimised). This is a SEPARATE top-level window whose main
+        // window's title-based classifier misses (its title is empty when
+        // collapsed, "Zoom" when expanded), so speaker tracking used to stop the
+        // moment you minimised to PIP.
+        //
+        // Like macOS (zoomPipContent), Zoom names the active speaker in the PIP
+        // itself with a "Talking: <name>" label — Zoom's OWN VAD. That is a
+        // DIRECT active-speaker read (no audio gating needed), and reading it
+        // also keeps the call alive while you are minimised to the thumbnail.
+        // ---------------------------------------------------------------
+
+        public class ZoomPip
+        {
+            public string Speaker = "";               // from "Talking: <name>"
+            public List<string> Names = new List<string>();
+        }
+
+        // "Talking: Alice Smith" (Zoom's PIP active-speaker label). Tolerates a
+        // leading glyph/space and an optional trailing state clause.
+        static readonly Regex ZoomTalkingPattern = new Regex(
+            "talking:\\s*(.+?)\\s*$", RegexOptions.IgnoreCase);
+
+        /// Parse a Zoom PIP/floating-thumbnail window's nodes: the active speaker
+        /// from its "Talking: <name>" label plus any participant-name labels.
+        /// Speaker is "" when nobody is talking. Mirrors macOS zoomPipContent.
+        public static ZoomPip ParseZoomPip(List<UiNode> nodes)
+        {
+            ZoomPip pip = new ZoomPip();
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                UiNode n = nodes[i];
+                if (n.Name.Length == 0 || n.Name.Length > 200) continue;
+                Match m = ZoomTalkingPattern.Match(n.Name);
+                if (m.Success)
+                {
+                    string sp = CleanName(m.Groups[1].Value);
+                    if (sp.Length > 0 && IsLikelyPersonName(sp)) pip.Speaker = sp;
+                    continue;
+                }
+                // A tile in the PIP can also carry the same ", Active speaker"
+                // suffix as the main grid — accept that as the speaker too.
+                Match t = ZoomTilePattern.Match(n.Name);
+                if (t.Success && t.Groups[5].Value.IndexOf(
+                        "Active speaker", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    string sp = CleanName(t.Groups[1].Value);
+                    if (sp.Length > 0 && pip.Speaker.Length == 0) pip.Speaker = sp;
+                }
+            }
+            // Person-like labels = the PIP's (tiny) roster; best-effort.
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                UiNode n = nodes[i];
+                if (n.ControlType != "Text" && n.ControlType != "Pane") continue;
+                if (ZoomTalkingPattern.IsMatch(n.Name)) continue;
+                string nm = CleanName(n.Name);
+                if (nm.Length > 0 && IsLikelyPersonName(nm) && !pip.Names.Contains(nm)) pip.Names.Add(nm);
+            }
+            if (pip.Speaker.Length > 0 && !pip.Names.Contains(pip.Speaker)) pip.Names.Insert(0, pip.Speaker);
+            return pip;
+        }
+
+        /// Content test: does this window's nodes look like the Zoom PIP/floating
+        /// thumbnail? Keys on Zoom's OWN markers ("Talking:", "video render",
+        /// "Show video"), not a title/class, mirroring macOS zoomIsPipWindow —
+        /// so it survives Zoom version changes that rename the window class.
+        public static bool LooksLikeZoomPip(List<UiNode> nodes)
+        {
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                string s = nodes[i].Name;
+                if (s.Length == 0) continue;
+                string low = s.ToLowerInvariant();
+                if (low.IndexOf("talking:", StringComparison.Ordinal) >= 0) return true;
+                if (low.IndexOf("video render", StringComparison.Ordinal) >= 0) return true;
+                if (low.IndexOf("show video", StringComparison.Ordinal) >= 0) return true;
+            }
+            return false;
+        }
+
         // Alert texts Zoom pushes through zBubbleBaseClass that are NOT the
         // active speaker (patterns from NVDA's zoom-enhancements add-on).
         static readonly Regex[] ZoomAlertPatterns = new Regex[] {
@@ -273,6 +355,229 @@ namespace MeetingSpeakerEngine
             keybd_event(VK_2, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
             keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
             return true;
+        }
+
+        // ---------------------------------------------------------------
+        // Zoom active-speaker PROBE — the Windows analog of the macOS
+        // ZoomProbe command. Samples every Zoom meeting window ~4x/second for
+        // N seconds and prints, per tick, WHO is the active speaker:
+        //
+        //   • badge  = the raw ", Active speaker" UIA marker on the video tile
+        //              (native Zoom exposes name + mute + this suffix on each
+        //              tile's Name — verified in logs\uia-dump-*.ndjson). The
+        //              badge LINGERS on the last speaker during silence.
+        //   • gated  = the badge CONFIRMED by audio — the local mic-capture peak
+        //              for the self tile, the app playback peak for a remote —
+        //              which is exactly what the live engine (Detect) logs. This
+        //              is what disambiguates the lingering badge from real speech.
+        //
+        // Also writes an NDJSON timeline to logs\ and prints a per-speaker
+        // talk-window summary at the end, so you can line up "who spoke when"
+        // against a narrated back-and-forth ("me 0-10s, Bibek 10-20s, silent…").
+        //
+        // The WEB client (app.zoom.us in a browser) has NO per-tile badge, so
+        // there the probe falls back to roster + audio, same as the engine.
+        // ---------------------------------------------------------------
+        public static void ZoomWatch(int seconds, int maxNodes, float remoteThr, float micThr)
+        {
+            Directory.CreateDirectory("logs");
+            string fileName = Path.Combine("logs", string.Format(
+                "zoom-watch-{0:yyyyMMdd-HHmmss}.ndjson", DateTime.Now));
+
+            Console.WriteLine("Zoom active-speaker probe - sampling ~4x/s for " + seconds + "s");
+            Console.WriteLine("  gated  = badge confirmed by audio (mic=self, playback=remote) = what the engine logs");
+            Console.WriteLine("  badge  = raw \", Active speaker\" UIA marker (lingers during silence)");
+            Console.WriteLine("  roster mic:  [on]=unmuted  [off]=muted   * = holds the active-speaker badge");
+            Console.WriteLine("  thresholds: remote(playback) > " + remoteThr + "   mic(capture) > " + micThr);
+            Console.WriteLine("  timeline -> " + fileName);
+
+            // One-shot inventory so it is obvious whether we are looking at the
+            // NATIVE desktop client or the WEB client (very different trees).
+            TopWindows inv = FindTopWindows();
+            int zoomWins = 0;
+            foreach (MeetingWindow w in inv.Meetings)
+            {
+                if (w.Platform != "zoom") continue;
+                zoomWins++;
+                Console.WriteLine(string.Format("  window: '{0}'  {1}  proc={2}",
+                    w.Title, w.IsBrowser ? "WEB (browser, no per-tile badge)" : "NATIVE", w.ProcName));
+            }
+            if (zoomWins == 0)
+                Console.WriteLine("  (no Zoom meeting window found yet — JOIN a meeting; the probe keeps polling)");
+            Console.WriteLine("");
+
+            // Per-name talk windows (on the audio-gated verdict), for the summary.
+            Dictionary<string, List<double>> onset = new Dictionary<string, List<double>>();
+            Dictionary<string, List<double>> offset = new Dictionary<string, List<double>>();
+            HashSet<string> speakingPrev = new HashSet<string>();
+
+            long startT = NowMs();
+            long endT = startT + (long)seconds * 1000;
+            int tick = 0;
+            using (StreamWriter sw = new StreamWriter(fileName, false, new UTF8Encoding(false)))
+            {
+                while (NowMs() < endT)
+                {
+                    tick++;
+                    long ts = NowMs();
+                    double elapsed = (ts - startT) / 1000.0;
+                    HashSet<string> tickSpeaking = new HashSet<string>();
+                    try
+                    {
+                        TopWindows tops = FindTopWindows();
+                        SampleAudio();
+                        // Same hangover the engine uses, so "gated" here matches
+                        // what Run would actually log (bridges word gaps).
+                        Bump(RenderActiveUntil, RenderPeaks, remoteThr, ts);
+                        Bump(CaptureActiveUntil, CapturePeaks, micThr, ts);
+
+                        bool sawZoom = false;
+                        foreach (MeetingWindow w in tops.Meetings)
+                        {
+                            if (w.Platform != "zoom") continue;
+                            sawZoom = true;
+                            if (w.IsBrowser) PokeChromiumAccessibility(new IntPtr(w.Hwnd));
+                            List<UiNode> nodes;
+                            try { nodes = ScanMeetingWindow(w, maxNodes); }
+                            catch (Exception) { continue; }
+
+                            bool remoteActive = ActiveWithin(RenderActiveUntil, w.ProcName, ts);
+                            bool selfActive = ActiveWithin(CaptureActiveUntil, w.ProcName, ts);
+                            float rp = GetRenderPeak(w.ProcName);
+                            float cp = GetCapturePeak(w.ProcName);
+
+                            List<ZoomTile> tiles = ParseZoomVideoTiles(nodes);
+                            List<string> badge = new List<string>();
+                            List<string> gated = new List<string>();
+                            List<string> rosterParts = new List<string>();
+                            for (int i = 0; i < tiles.Count; i++)
+                            {
+                                ZoomTile t = tiles[i];
+                                string mic = t.Unmuted ? "[on]" : "[off]";
+                                string me = t.IsSelf ? "(me)" : "";
+                                string mark = t.ActiveSpeaker ? "*" : "";
+                                rosterParts.Add(t.Name + me + mic + mark);
+                                if (!t.ActiveSpeaker) continue;
+                                if (!badge.Contains(t.Name)) badge.Add(t.Name);
+                                bool ok = t.IsSelf ? selfActive : remoteActive;
+                                if (ok && !gated.Contains(t.Name)) gated.Add(t.Name);
+                            }
+
+                            // WEB client: no per-tile badge — show roster + the
+                            // audio-only verdict (single remote is named, else "Someone").
+                            if (tiles.Count == 0)
+                            {
+                                ZoomWeb web = ParseZoomWeb(nodes);
+                                for (int i = 0; i < web.Names.Count; i++) rosterParts.Add(web.Names[i]);
+                                if (remoteActive)
+                                    gated.Add(web.Names.Count == 1 ? web.Names[0] : "Someone");
+                            }
+
+                            for (int i = 0; i < gated.Count; i++) tickSpeaking.Add(gated[i]);
+
+                            string badgeStr = badge.Count > 0 ? string.Join(", ", badge.ToArray()) : "-";
+                            string gatedStr = gated.Count > 0 ? string.Join(", ", gated.ToArray()) : "-";
+                            string roster = rosterParts.Count > 0 ? string.Join("  ", rosterParts.ToArray()) : "(no tiles)";
+                            Console.WriteLine(string.Format(
+                                "t={0,6:0.0}s  gated: {1,-22} badge: {2,-22} render={3:0.000} mic={4:0.000}  | {5}",
+                                elapsed, gatedStr, badgeStr, rp, cp, roster));
+
+                            Dictionary<string, object> row = new Dictionary<string, object>();
+                            row["type"] = "zoomwatch";
+                            row["tick"] = tick;
+                            row["t"] = Math.Round(elapsed, 2);
+                            row["window"] = w.Title;
+                            row["native"] = !w.IsBrowser;
+                            row["badge"] = badge;
+                            row["speaking"] = gated;
+                            row["render"] = Math.Round(rp, 3);
+                            row["mic"] = Math.Round(cp, 3);
+                            List<Dictionary<string, object>> rr = new List<Dictionary<string, object>>();
+                            for (int i = 0; i < tiles.Count; i++)
+                            {
+                                Dictionary<string, object> tr = new Dictionary<string, object>();
+                                tr["name"] = tiles[i].Name;
+                                tr["self"] = tiles[i].IsSelf;
+                                tr["unmuted"] = tiles[i].Unmuted;
+                                tr["badge"] = tiles[i].ActiveSpeaker;
+                                rr.Add(tr);
+                            }
+                            row["roster"] = rr;
+                            sw.WriteLine(Json.Serialize(row));
+                        }
+
+                        // PIP / floating thumbnail: Zoom's "Talking: <name>" VAD
+                        // is a DIRECT active-speaker read (no audio gate needed).
+                        foreach (AutomationElement pipWin in tops.ZoomPips)
+                        {
+                            sawZoom = true;
+                            List<UiNode> pnodes;
+                            try { pnodes = ScanNodes(pipWin, 800); }
+                            catch (Exception) { continue; }
+                            ZoomPip pip = ParseZoomPip(pnodes);
+                            if (pip.Speaker.Length > 0) tickSpeaking.Add(pip.Speaker);
+                            string sp = pip.Speaker.Length > 0 ? pip.Speaker : "-";
+                            string names = pip.Names.Count > 0 ? string.Join(", ", pip.Names.ToArray()) : "(none)";
+                            Console.WriteLine(string.Format(
+                                "t={0,6:0.0}s  PIP  talking: {1,-22} names: {2}", elapsed, sp, names));
+
+                            Dictionary<string, object> prow = new Dictionary<string, object>();
+                            prow["type"] = "zoomwatch";
+                            prow["tick"] = tick;
+                            prow["t"] = Math.Round(elapsed, 2);
+                            prow["window"] = "Zoom PIP";
+                            prow["pip"] = true;
+                            prow["speaking"] = pip.Speaker.Length > 0 ? new List<string> { pip.Speaker } : new List<string>();
+                            prow["names"] = pip.Names;
+                            sw.WriteLine(Json.Serialize(prow));
+                        }
+
+                        if (!sawZoom)
+                            Console.WriteLine(string.Format("t={0,6:0.0}s  (no Zoom meeting window)", elapsed));
+                    }
+                    catch (Exception ex) { Console.WriteLine("  probe error: " + ex.Message); }
+
+                    // Talk-window bookkeeping on the tick-aggregated gated set.
+                    foreach (string nm in tickSpeaking)
+                    {
+                        if (!speakingPrev.Contains(nm))
+                        {
+                            if (!onset.ContainsKey(nm))
+                            {
+                                onset[nm] = new List<double>();
+                                offset[nm] = new List<double>();
+                            }
+                            onset[nm].Add(elapsed);
+                            offset[nm].Add(elapsed);
+                        }
+                        else
+                        {
+                            offset[nm][offset[nm].Count - 1] = elapsed;
+                        }
+                    }
+                    speakingPrev = tickSpeaking;
+                    Thread.Sleep(250);
+                }
+            }
+
+            Console.WriteLine("");
+            Console.WriteLine("==== talk windows (audio-gated active speaker) ====");
+            if (onset.Count == 0)
+            {
+                Console.WriteLine("  (no audio-confirmed speaker seen — narrate a back-and-forth and keep the");
+                Console.WriteLine("   meeting audible; a badge with no matching audio is the lingering-badge case)");
+            }
+            foreach (KeyValuePair<string, List<double>> kv in onset)
+            {
+                StringBuilder wins = new StringBuilder();
+                for (int i = 0; i < kv.Value.Count; i++)
+                {
+                    if (i > 0) wins.Append(", ");
+                    wins.AppendFormat("{0:0.0}-{1:0.0}s", kv.Value[i], offset[kv.Key][i]);
+                }
+                Console.WriteLine(string.Format("  {0,-24} {1}", kv.Key, wins.ToString()));
+            }
+            Console.WriteLine("timeline: " + fileName);
         }
     }
 }
