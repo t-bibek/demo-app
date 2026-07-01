@@ -987,6 +987,15 @@ namespace MeetingSpeakerEngine
             TreeHintPolls.Clear();
             Rosters.Clear();
         }
+        // Teams active-speaker className ("for now"): `vdi-frame-occlusion` is the
+        // video-frame occlusion token that tracked the speaking remote in camera-on
+        // runs. OLD obfuscated speaking-ring tokens tried previously (from the
+        // `MeetProbe teams` oracle-diff set; they ROTATE every Teams build, so
+        // re-derive with the probe before use):
+        //   ___1vvhwjq, fn8mz29, f1ky4vpe, frwhdur, ftevtku, f1qyaz97, f14rmoke,
+        //   fm03cl5, f3ve9t9
+        // Also seen but rejected — "vdi-occlusion" / "vdi-dynamic-occlusion" sit on
+        // EVERY video tile (not speaker-specific), so they'd mark everyone speaking.
         const string TeamsSpeakingClass = "vdi-frame-occlusion";
 
         static bool ClassNameHasToken(string className, string token)

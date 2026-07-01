@@ -74,11 +74,21 @@ public struct TeamsSpeakerRules: Codable, Sendable, Equatable {
     /// All config-overridable (`teams-rules.json`).
     public static let builtin = TeamsSpeakerRules(
         speakingTextMarkers: ["is active speaker", "active speaker", "is speaking", ", speaking"],
-        speakingClasses: [],
+        // Active-speaker className. `vdi-frame-occlusion` is the video-frame
+        // occlusion token that tracked the speaking remote in camera-on runs —
+        // enabled here as the "for now" class signal (mirrors the Windows engine's
+        // TeamsSpeakingClass). The OLD obfuscated speaking-ring tokens tried
+        // previously (from the `swift run MeetProbe teams` oracle-diff token set;
+        // they ROTATE every Teams build, so re-derive with the probe before use):
+        //   ___1vvhwjq, fn8mz29, f1ky4vpe, frwhdur, ftevtku, f1qyaz97, f14rmoke,
+        //   fm03cl5, f3ve9t9
+        // Also seen but rejected — `vdi-occlusion` / `vdi-dynamic-occlusion` sit on
+        // EVERY video tile (not speaker-specific), so they'd mark everyone speaking.
+        speakingClasses: ["vdi-frame-occlusion"],
         selfTokens: ["calling_is_me_video", "myself video", "(you)"],
         mutedTokens: ["aria_calling_roster_muted", ", muted"],
         unmutedTokens: ["aria_calling_roster_unmuted", ", unmuted"],
-        version: "2026-06-22-conservative"
+        version: "2026-07-01-vdi-frame-occlusion"
     )
 }
 

@@ -999,17 +999,35 @@ final class AccessibilityScanner {
     /// its tiles surface in AX like Meet's: name → tile-sized ancestor, with the
     /// is-speaking / self / mute flags derived from `TeamsSpeakerRules` (verified
     /// via a Teams probe run). See docs/teams-active-speaker-detection.md.
+    /// True when an AXMenuItem description is a real Teams participant tile:
+    /// "<Name>, video is on/off[, muted], Context menu is available" (remote) or
+    /// "Myself video, <Name>, Unmuted, Has context menu" (self). Requires BOTH the
+    /// context-menu affordance (every tile has it; chrome doesn't) AND a video/self
+    /// marker, so lobby/pre-join controls and status toasts never pass.
+    private static func isTeamsParticipantTile(_ desc: String) -> Bool {
+        let l = desc.lowercased()
+        guard l.contains("context menu") || l.contains("has context") else { return false }
+        return l.contains("video is") || l.contains("video on") || l.contains("video off")
+            || l.contains("myself video")
+    }
+
     private func teamsTileObservations(in window: AXUIElement) -> (tiles: [TeamsTileObservation], participants: [String]) {
         var nameNodes: [(AXUIElement, String)] = []
         var scanned = 0
         func collect(_ el: AXUIElement, _ depth: Int) {
             if scanned >= maxNodesPerWindow || depth > maxDepth { return }
             scanned += 1
-            for attr in ["AXValue", "AXTitle", "AXDescription"] {
-                if let raw = axString(el, attr), let name = cleanParticipantName(raw) {
-                    nameNodes.append((el, name))
-                    break
-                }
+            // Only REAL participant tiles: Teams renders each as an AXMenuItem whose
+            // AXDescription is "<Name>, video is on/off[, muted], Context menu is
+            // available" (self: "Myself video, <Name>, Unmuted, Has context menu").
+            // Anchoring on that STRUCTURE — not any text node — drops lobby chrome
+            // ("Join now", "Computer audio"), status strings ("On hold", "Your camera
+            // is turned on"), and the progressive name-fragment AXStaticTexts
+            // ("Bib" → "Bibe" → "Bibek" …) that were leaking in as participants.
+            if axString(el, "AXRole") == "AXMenuItem",
+               let desc = axString(el, "AXDescription"), Self.isTeamsParticipantTile(desc),
+               let name = cleanParticipantName(desc) {
+                nameNodes.append((el, name))
             }
             for c in axArray(el, "AXChildren") { collect(c, depth + 1) }
         }
@@ -1024,7 +1042,13 @@ final class AccessibilityScanner {
             let (blob, classes) = tileTextAndClasses(tile)
             let speaking = teamsRules.tileIsSpeaking(textBlob: blob, classTokens: classes)
             let isMe = teamsRules.tileIsSelf(textBlob: blob, classTokens: classes)
-            let unmuted = teamsRules.muteState(textBlob: blob, classTokens: classes)
+            // Teams writes an explicit "muted" token on a muted tile but NOTHING
+            // when a remote is unmuted (only the self tile says "Unmuted"). So a
+            // real participant tile with no muted token is unmuted — otherwise
+            // remote unmute never surfaces (is_muted stays unknown for everyone
+            // who isn't muted). A tile always has a name here, so treat unknown as
+            // unmuted rather than dropping the state.
+            let unmuted = teamsRules.muteState(textBlob: blob, classTokens: classes) ?? true
             if let ex = byName[name], ex.area >= area { continue }
             byName[name] = Acc(area: area, speaking: speaking, isMe: isMe, unmuted: unmuted, minY: frame.minY, minX: frame.minX)
         }
@@ -1079,6 +1103,22 @@ final class AccessibilityScanner {
             for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
         }
         rec(tile, 0)
+        // Teams packs each participant's mute / self / video state into an
+        // AXMenuItem ANCESTOR's AXDescription ("<Name>, video is on, muted, Context
+        // menu is available") that sits ABOVE the video-frame tile — OUTSIDE the
+        // subtree scanned above. Climb up and fold in ancestor descriptions (+ their
+        // classes) up to that menu-item row, else remote mute / self are never read.
+        var cur = axParent(tile)
+        var up = 0
+        while let el = cur, up < 8 {
+            if let d = axString(el, "AXDescription"), !d.isEmpty {
+                parts.append(d)
+                for t in axClassList(el) { classes.insert(t) }
+                if d.lowercased().contains("context menu") { break } // the tile's menu-item row
+            }
+            cur = axParent(el)
+            up += 1
+        }
         return (parts.joined(separator: " ").lowercased(), classes)
     }
 }
