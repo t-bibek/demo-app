@@ -1,0 +1,33 @@
+{
+  "name": "meeting-speaker-logger",
+  "version": "0.1.0",
+  "description": "Live active-speaker logger for Google Meet, Zoom and Microsoft Teams on Windows, using UI Automation (the Windows equivalent of the macOS AX approach used by Recall.ai's desktop SDK).",
+  "main": "out/main/main.js",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "start": "npm run build && electron .",
+    "simulate": "npm run build && electron . --simulate",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "engine:selftest": "powershell -NoProfile -ExecutionPolicy Bypass -File engine/uia-engine.ps1 -SelfTest",
+    "engine:once": "powershell -NoProfile -ExecutionPolicy Bypass -File engine/uia-engine.ps1 -Once",
+    "dump": "powershell -NoProfile -ExecutionPolicy Bypass -File engine/uia-engine.ps1 -Dump"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^42.4.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
