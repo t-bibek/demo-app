@@ -182,15 +182,16 @@ final class DetectionEngine {
                 let vad = audioReliable ? (micActive || remoteActive) : true
                 let r = meetActiveSpeaker(tiles: w.meetTiles, prevAreas: meetPrevAreas,
                                           vadSpeechActive: vad, presentationActive: w.presentationActive)
-                // Resolve ONE canonical self identity for this window so the local
-                // user is never logged twice (once as their real tile name via
-                // geometry/class, once as the generic "You" via the mic). Prefer the
-                // "(You)"-tagged tile; if that detection missed but there's a single
-                // tile and the mic is live+unmuted, that lone tile is self.
+                // Resolve the local user's REAL name — never the generic "You". Prefer
+                // the "(You)"-tagged tile; if that missed but there's a single tile and
+                // the mic is live, that lone tile is self. If it can't be resolved yet
+                // (e.g. the very first tick, before tiles parse), we DON'T name self
+                // this tick rather than logging a throwaway "You" that then splits into
+                // two speakers ("You" + the real name).
                 let selfTile = w.meetTiles.first(where: { $0.isMe })
-                let meetSelfName: String = selfTile?.name
+                let meetSelfName: String? = selfTile?.name
                     ?? (micActive && (w.localUserUnmuted ?? false) && w.meetTiles.count == 1
-                        ? w.meetTiles[0].name : config.localUserName)
+                        ? w.meetTiles[0].name : nil)
 
                 if r.via != .none && r.via != .someoneFloor {
                     let src = r.via == .cssClass ? "meet.kssMZb" : "meet.geometry"
@@ -199,10 +200,12 @@ final class DetectionEngine {
                     meetNamed += 1
                 }
 
-                // SELF via mic only — name the local user (resolved above) when the
-                // mic is active and you're unmuted (your tile gets no speaking ring).
-                if audioReliable && micActive && (w.localUserUnmuted ?? false) {
-                    add(meetSelfName, "meet.self_mic")
+                // SELF via mic only — name the local user (resolved above) when the mic
+                // is active and you're unmuted (your tile gets no speaking ring). Skip
+                // when the real name isn't known yet.
+                if audioReliable && micActive && (w.localUserUnmuted ?? false),
+                   let selfName = meetSelfName {
+                    add(selfName, "meet.self_mic")
                 }
 
                 // Confirmed speech but AX attributed nobody and self wasn't added →

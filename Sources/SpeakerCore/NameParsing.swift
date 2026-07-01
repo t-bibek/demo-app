@@ -76,6 +76,9 @@ public func isLikelyPersonName(_ s: String) -> Bool {
     // rejects JSON blobs, API responses, and marketing/toast rows that leak in
     // (e.g. {"message":"Missing Authentication Token"}, "… · recurring monthly").
     if t.rangeOfCharacter(from: CharacterSet(charactersIn: "{}[]<>\"=|•·–—")) != nil { return false }
+    // Display names don't contain digits — rejects countdown/UI chrome like
+    // "55 seconds left", "2 others", "Contributors 2", "Elapsed time 05:13".
+    if t.rangeOfCharacter(from: .decimalDigits) != nil { return false }
     // A display name is at most a few words; long runs are sentences / toasts.
     let words = t.split(whereSeparator: { $0.isWhitespace })
     if words.count > 6 { return false }

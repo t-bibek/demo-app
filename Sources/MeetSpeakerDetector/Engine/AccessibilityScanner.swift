@@ -151,9 +151,16 @@ final class AccessibilityScanner {
                     // Meet's active speaker is fused (geometry + class + VAD) in the
                     // engine — the scanner supplies per-tile observations + presentation.
                     let m = meetTileObservations(in: window)
-                    // Accept on browser evidence OR a "(You)" self tile (a PWA meeting
-                    // with no URL/code still has your own tile).
-                    guard browserMeeting || m.tiles.contains(where: { $0.isMe }) else { continue }
+                    // ACTIVE-CALL gate (product parity): the "Leave call" button /
+                    // "Call controls" landmark — with the mic control as a secondary
+                    // in-call signal. The URL/title CODE is deliberately NOT sufficient:
+                    // it persists on meet.google.com/landing, the pre-join screen, AND
+                    // the post-call screen, so gating on it would (a) start a meeting on
+                    // the landing page and (b) never emit meeting_ended. All these
+                    // signals vanish when the call ends → the window is dropped →
+                    // MeetingStateTracker ages it out to meeting_ended.
+                    guard meetCallActive(in: window)
+                            || collector.localUserUnmuted != nil else { continue }
                     meetTiles = m.tiles
                     presentationActive = meetPresentationActive(in: window)
                     speakers = []   // engine resolves Meet speakers from meetTiles (kssMZb)
@@ -470,6 +477,36 @@ final class AccessibilityScanner {
                                 classSpeaking: kv.value.speaking, isMe: kv.value.isMe)
         }
         return (tiles, ordered.map { $0.key })
+    }
+
+    /// Is this Meet tab actually IN a call — not the landing / "Ready to join" /
+    /// post-call screen, which all share the same meet.google.com/<code> URL?
+    /// Ported from the product's `meetCallActive` (bubbles-meet-detector): require a
+    /// "Leave call" button OR the "Call controls" landmark region. Both appear on
+    /// join and disappear the instant the call ends — so this is what starts a
+    /// meeting and (by absence) ends it. See MeetExtractor.swift:20-40.
+    private func meetCallActive(in window: AXUIElement) -> Bool {
+        var active = false
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if active || n >= maxNodesPerWindow || d > maxDepth { return }
+            n += 1
+            if let role = axString(el, "AXRole") {
+                if role == "AXButton",
+                   let desc = axString(el, "AXDescription")?.lowercased(),
+                   desc.contains("leave call") {
+                    active = true; return
+                }
+                if role == "AXGroup", axString(el, "AXSubrole") == "AXLandmarkRegion",
+                   let desc = axString(el, "AXDescription")?.lowercased(),
+                   desc.contains("call controls") {
+                    active = true; return
+                }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if active { return } }
+        }
+        rec(window, 0)
+        return active
     }
 
     /// When the Meet People panel is OPEN, read the roster straight from it — the
