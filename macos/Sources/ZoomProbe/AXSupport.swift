@@ -19,6 +19,22 @@ enum AX {
         copy(el, attr) as? String
     }
 
+    static func role(_ el: AXUIElement) -> String? { string(el, "AXRole") }
+
+    /// Chromium exposes each node's HTML class list via AXDOMClassList (Zoom WEB).
+    static func classList(_ el: AXUIElement) -> [String] {
+        (copy(el, "AXDOMClassList") as? [String]) ?? []
+    }
+
+    /// AXURL as a string (URL / NSURL / String) — address-bar-independent, so it
+    /// works for installed PWAs too.
+    static func url(_ el: AXUIElement) -> String? {
+        guard let v = copy(el, "AXURL") else { return nil }
+        if let u = v as? URL { return u.absoluteString }
+        if let u = v as? NSURL { return u.absoluteString }
+        return v as? String
+    }
+
     static func bool(_ el: AXUIElement, _ attr: String) -> Bool {
         (copy(el, attr) as? NSNumber)?.boolValue ?? (copy(el, attr) as? Bool ?? false)
     }

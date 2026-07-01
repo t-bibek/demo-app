@@ -103,6 +103,10 @@ namespace MeetingSpeakerEngine
             public bool InMeeting;
             public bool SelfMuted;
             public int Count = -1;
+            // Active speaker read from the speaker-bar tile whose class carries the
+            // "speaker-bar-container__video-frame--active" modifier (Zoom's own VAD;
+            // idle tiles keep the base "...__video-frame" class). Empty on silence.
+            public string ActiveSpeaker = "";
         }
 
         static readonly Regex ZoomWebCount = new Regex("([0-9]+)\\s*partic[ip]*ants?", RegexOptions.IgnoreCase);
@@ -128,6 +132,38 @@ namespace MeetingSpeakerEngine
             for (int i = 0; i < nodes.Count; i++)
             {
                 UiNode n = nodes[i];
+
+                // Active speaker: the speaker-bar tile whose class carries the
+                // "--active" modifier is whoever is talking (Zoom's own VAD); idle
+                // tiles keep the base "speaker-bar-container__video-frame" class.
+                // The nodes are a pre-order flatten, so the tile's name node follows
+                // the frame. Anchor extraction on the title structure
+                // (video-avatar__avatar-title / __avatar-img, the <img alt>) ONLY, so
+                // stray text in the tile never yields a false-positive speaker.
+                if (n.ClassName.IndexOf("speaker-bar-container__video-frame--active", StringComparison.Ordinal) >= 0)
+                {
+                    z.InMeeting = true;
+                    for (int k = i + 1; k < nodes.Count && k <= i + 16; k++)
+                    {
+                        UiNode c = nodes[k];
+                        // Reached the next tile's frame -> left this tile's subtree.
+                        if (c.ClassName.IndexOf("speaker-bar-container__video-frame", StringComparison.Ordinal) >= 0)
+                            break;
+                        // Name source: the avatar-img alt (camera OFF) or the footer
+                        // label (camera ON) — a Text leaf inside video-avatar__avatar-
+                        // footer that is always present. Anchored to the tile structure
+                        // so stray text never yields a false-positive speaker.
+                        bool nameNode =
+                            c.ClassName.IndexOf("video-avatar__avatar-img", StringComparison.Ordinal) >= 0 ||
+                            c.ClassName.IndexOf("video-avatar__avatar-title", StringComparison.Ordinal) >= 0 ||
+                            c.ClassName.IndexOf("video-avatar__avatar-footer", StringComparison.Ordinal) >= 0 ||
+                            c.ControlType == "Text";
+                        if (!nameNode) continue;
+                        string sp = CleanName(c.Name);
+                        if (sp.Length > 0 && IsLikelyPersonName(sp)) { z.ActiveSpeaker = sp; break; }
+                    }
+                    continue;
+                }
 
                 if (n.ControlType == "Button")
                 {

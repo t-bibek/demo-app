@@ -85,13 +85,25 @@ func tick() {
     if let data = try? JSONSerialization.data(withJSONObject: ["t": elapsed, "rows": rowsJson]), let jsonl {
         jsonl.write(data); jsonl.write(Data([0x0a]))
     }
-    print(line)
+    if !rows.isEmpty { print(line) }
+
+    // Zoom WEB (Chrome app.zoom.us/wc/…): the active speaker is the speaker-bar
+    // tile carrying the `…__video-frame--active` class; the name is the avatar-img
+    // alt (camera off) or the footer label (camera on). Printed when a web meeting
+    // is visible, so this one probe covers both native and web Zoom.
+    if let web = ZoomWebProbe.probe() {
+        sawAnyRow = true
+        let act = web.active ?? web.big ?? "—"
+        let roster = web.names.isEmpty ? "—" : web.names.joined(separator: ", ")
+        print(String(format: "t=%5.1fs  🌐 ZOOM-WEB 🔊 ACTIVE: %@  · roster: %@", elapsed, act, roster))
+    }
 }
 
-print("ZoomProbe — native Zoom (us.zoom.xos) speaker probe")
+print("ZoomProbe — Zoom speaker probe (native us.zoom.xos + web app.zoom.us)")
 print("duration=\(Int(duration))s interval=\(intervalMs)ms  output=\(outDir.path)")
 print("🎙️on = unmuted (candidate speaker until VAD)   🔇off = muted   🔊SPEAKING = text marker")
-print("OPEN the Participants panel, Gallery view. Narrate turns; KEEP THE MOUSE STILL.\n")
+print("🌐 ZOOM-WEB = active speaker from the speaker-bar `--active` tile class.")
+print("NATIVE: open the Participants panel, Gallery view. Narrate turns; KEEP THE MOUSE STILL.\n")
 
 print("WINDOW INVENTORY (what native Zoom exposes right now):")
 print(ZoomRoster.windowInventory())

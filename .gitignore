@@ -9,3 +9,4 @@ build/
 
 # AXSnapshot output (full AX-tree dumps for analysis)
 /ax-dumps/
+/macos/ax-dumps/

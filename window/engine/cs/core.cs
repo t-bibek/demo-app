@@ -957,6 +957,15 @@ namespace MeetingSpeakerEngine
                         (web.Count <= 1 || web.Count == -1))
                         det.SelfName = web.Names[0];
                     if (det.Source == "zoom-tiles") det.Source = "zoom-web";
+                    // Active speaker from the speaker-bar "--active" tile class.
+                    // Audio-gate it (like the desktop badge): the highlight lingers
+                    // on the last talker during silence, so only trust it while audio
+                    // confirms speech.
+                    if (web.ActiveSpeaker.Length > 0 && (remoteActive || selfActive))
+                    {
+                        AddSpeaker(det, web.ActiveSpeaker);
+                        det.Source = "zoom-web-active";
+                    }
                 }
 
                 // Generic "X is speaking" labels (zoom only — on Meet/Teams these

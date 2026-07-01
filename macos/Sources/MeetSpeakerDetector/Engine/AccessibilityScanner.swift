@@ -47,6 +47,12 @@ struct ScannedWindow {
     /// indicator (Zoom's own VAD). nil unless this is the Zoom PIP and someone is
     /// talking. Lets PIP-only mode name the speaker instead of "Someone".
     var pipSpeaker: String?
+    /// Zoom WEB active speaker, read from the speaker-bar tile whose
+    /// `AXDOMClassList` carries the `speaker-bar-container__video-frame--active`
+    /// modifier (Zoom's own VAD; the highlight moves to whoever is talking, idle
+    /// tiles keep the base `…__video-frame` class). nil off Zoom-web / on silence.
+    /// The engine audio-gates it so a lingering highlight doesn't extend a turn.
+    var zoomWebSpeaker: String?
     /// This window keeps the meeting ALIVE but contributes no speakers/roster — a
     /// secondary view that's call-control chrome, not participant tiles (the Teams
     /// "Meeting compact view" window). The main window supplies the roster; this
@@ -124,17 +130,25 @@ final class AccessibilityScanner {
             let zoomSelfHint: String? = (bundleID == "us.zoom.xos") ? zoomSelfNameHint(axApp) : nil
             for window in axArray(axApp, "AXWindows") {
                 let title = axString(window, "AXTitle") ?? ""
-                // PWA windows often have a short/empty title — fall back to the app
-                // NAME ("Google Meet") so the Meet PWA still resolves a platform.
-                guard var platform = Self.platform(forNative: bundleID, windowTitle: title)
+                // Classify by the AXWebArea's AXURL FIRST (product parity — see
+                // bubbles-meet-detector webAreasFor). The address bar / window title
+                // are unreliable: an installed PWA (…?fromPWA=1) has NO address bar
+                // and often an empty or custom window title, so title-based
+                // classification skipped it entirely. The AXWebArea always carries
+                // AXURL, even in a PWA. Fall back to the title / app name for native
+                // apps and plain browser tabs.
+                let webURL = isBrowser ? webAreaMeetingURL(in: window) : nil
+                guard var platform = platformForURL(webURL)
+                        ?? Self.platform(forNative: bundleID, windowTitle: title)
                         ?? platformForBrowserTitle(app.localizedName ?? "") else { continue }
 
                 var collector = TreeCollector()
+                collector.url = webURL   // authoritative URL for the stable meeting id
                 walk(window, depth: 0, into: &collector)
 
-                // The page URL (from the address bar) is the most reliable
-                // signal; let it override the title-based guess.
-                if let urlPlatform = platformForURL(collector.url) { platform = urlPlatform }
+                // If the AXURL wasn't found (older Chromium / odd tree), the walk's
+                // text-based capture may still fill it — let it refine the platform.
+                if webURL == nil, let urlPlatform = platformForURL(collector.url) { platform = urlPlatform }
 
                 // A browser/WebView tree that came back empty means names are
                 // unavailable (audio detection still works); native Zoom's tiny
@@ -152,6 +166,7 @@ final class AccessibilityScanner {
                 var teamsRoster: [ZoomRosterEntry] = []
                 var presentationActive = false
                 var pipSpeaker: String? = nil
+                var zoomWebSpeaker: String? = nil
                 var keepAliveOnly = false
 
                 if platform == .meet {
@@ -255,7 +270,12 @@ final class AccessibilityScanner {
                     // on web zoom is page chrome (nav, pricing, footer).
                     guard zoomWebCallActive(in: window)
                             || collector.localUserUnmuted != nil else { continue }
-                    participants = dedup(speakers)
+                    // Active speaker + roster from the speaker-bar tiles: the
+                    // `…__video-frame--active` tile is whoever is talking; the plain
+                    // `…__video-frame` tiles are the idle participants.
+                    let bar = zoomWebSpeakerBar(in: window)
+                    zoomWebSpeaker = bar.active
+                    participants = dedup(bar.names + speakers)
                 }
 
                 let directSpeakerRead: Bool
@@ -281,6 +301,7 @@ final class AccessibilityScanner {
                     teamsTiles: teamsTiles,
                     teamsRoster: teamsRoster,
                     pipSpeaker: pipSpeaker,
+                    zoomWebSpeaker: zoomWebSpeaker,
                     keepAliveOnly: keepAliveOnly
                 ))
             }
@@ -311,6 +332,72 @@ final class AccessibilityScanner {
         }
         rec(window, 0)
         return name
+    }
+
+    /// Zoom WEB active-speaker + roster read from the tile structure.
+    ///
+    /// Each participant tile is a `speaker-bar-container__video-frame` (filmstrip)
+    /// or `speaker-active-container__video-frame` (the big speaker view). The tile
+    /// currently talking carries the `…__video-frame--active` modifier — Zoom's own
+    /// VAD; the highlight moves to whoever is speaking.
+    ///
+    /// The display name lives in the tile's title structure: `video-avatar__avatar-
+    /// img`'s AXDescription (the `<img alt>`) when the camera is OFF, else the
+    /// `video-avatar__avatar-footer` label (an AXStaticText value) which is ALWAYS
+    /// present — the only source when the camera is on. Reading only those anchored
+    /// nodes avoids false positives from other tile text ("Unable to play media",
+    /// mute/role badges, counts).
+    private func zoomWebSpeakerBar(in window: AXUIElement) -> (active: String?, names: [String]) {
+        var barActive: String?
+        var bigActive: String?
+        var names: [String] = []
+        var n = 0
+
+        // A tile's name: prefer the avatar image alt (real display name, camera off);
+        // fall back to the footer label (an AXStaticText inside the tile, always
+        // present — the only source when the camera is on).
+        func tileName(_ frame: AXUIElement) -> String? {
+            var imgName: String?
+            var footerName: String?
+            func rec(_ el: AXUIElement, _ d: Int) {
+                if imgName != nil || d > maxDepth { return }
+                let classes = axClassList(el)
+                if classes.contains("video-avatar__avatar-img")
+                    || classes.contains("video-avatar__avatar-title") {
+                    for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                        if let raw = axString(el, attr), let clean = cleanParticipantName(raw) { imgName = clean; break }
+                    }
+                }
+                if footerName == nil, axString(el, "AXRole") == "AXStaticText",
+                   let raw = axString(el, "AXValue"), let clean = cleanParticipantName(raw) {
+                    footerName = clean
+                }
+                for c in axArray(el, "AXChildren") { rec(c, d + 1); if imgName != nil { return } }
+            }
+            rec(frame, 0)
+            return imgName ?? footerName
+        }
+
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if n >= maxNodesPerWindow || d > maxDepth { return }
+            n += 1
+            let classes = axClassList(el)
+            let isBar = classes.contains { $0.hasPrefix("speaker-bar-container__video-frame") }
+            let isBig = classes.contains { $0.hasPrefix("speaker-active-container__video-frame") }
+            if isBar || isBig {
+                if let name = tileName(el) {
+                    names.append(name)
+                    if classes.contains("speaker-bar-container__video-frame--active") { barActive = name }
+                    else if isBig { bigActive = name }
+                }
+                return   // a tile is a leaf for our purposes; don't descend further
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1) }
+        }
+        rec(window, 0)
+        // The filmstrip "--active" tile is the definitive speaker; the big speaker-
+        // view tile is the fallback when the filmstrip isn't shown (few participants).
+        return (barActive ?? bigActive, dedup(names))
     }
 
     /// Is this Teams window/tab actually IN a call — not the chat / home / calendar
@@ -459,6 +546,36 @@ final class AccessibilityScanner {
         var v: CFTypeRef?
         guard AXUIElementCopyAttributeValue(el, "AXDOMClassList" as CFString, &v) == .success else { return [] }
         return (v as? [String]) ?? []
+    }
+
+    /// The AXURL of an element as a string (comes back as URL / NSURL / String).
+    /// Used for meeting-URL classification independent of the address bar.
+    private func axURL(_ el: AXUIElement) -> String? {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, "AXURL" as CFString, &v) == .success, let v else { return nil }
+        if let u = v as? URL { return u.absoluteString }
+        if let u = v as? NSURL { return u.absoluteString }
+        return v as? String
+    }
+
+    /// The meeting URL from the window's AXWebArea AXURL — the address-bar-
+    /// independent source that works for installed PWAs (no address bar) and
+    /// custom-titled tabs. Mirrors the product's `webAreasFor()`: find the
+    /// AXWebArea, read its AXURL. Only AXWebArea nodes are consulted so element
+    /// (link) AXURLs never leak in.
+    private func webAreaMeetingURL(in window: AXUIElement) -> String? {
+        var found: String?
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if found != nil || n >= 4000 || d > maxDepth { return }
+            n += 1
+            if axString(el, "AXRole") == "AXWebArea", let u = axURL(el), platformForURL(u) != nil {
+                found = u; return
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found != nil { return } }
+        }
+        rec(window, 0)
+        return found
     }
 
     private func axParent(_ el: AXUIElement) -> AXUIElement? {

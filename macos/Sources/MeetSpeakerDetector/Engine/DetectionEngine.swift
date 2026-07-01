@@ -286,6 +286,16 @@ final class DetectionEngine {
                 // back to the anonymous "Someone" when the tree itself is
                 // unreadable (e.g. a backgrounded tab). No "You" — your tile is
                 // already named, so adding it would double-log.
+                //
+                // Zoom web names the active speaker via the speaker-bar tile's
+                // `…__video-frame--active` CSS class (read as zoomWebSpeaker). VAD-
+                // gate it: the highlight lingers on the last talker during silence,
+                // so only trust it while audio confirms speech (fall back to trusting
+                // it when system-audio capture isn't available, like Meet's class).
+                if let ws = w.zoomWebSpeaker,
+                   audioReliable ? (micActive || remoteActive) : true {
+                    add(ws, "zoom.web_active")
+                }
                 if remoteActive && who.isEmpty && !w.treeOk {
                     add("Someone", "web.direct")
                 }
