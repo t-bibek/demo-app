@@ -1054,15 +1054,25 @@ namespace MeetingSpeakerEngine
         public static Detection Detect(string platform, List<UiNode> nodes, string stateKey,
                                        bool remoteActive, bool selfActive)
         {
-            return Detect(platform, nodes, stateKey, remoteActive, selfActive, null);
+            return Detect(platform, nodes, stateKey, remoteActive, selfActive, null, null);
+        }
+
+        public static Detection Detect(string platform, List<UiNode> nodes, string stateKey,
+                                       bool remoteActive, bool selfActive, List<double[]> meetSpeakBoxes)
+        {
+            return Detect(platform, nodes, stateKey, remoteActive, selfActive, meetSpeakBoxes, null);
         }
 
         /// `meetSpeakBoxes` = bounding boxes of Meet's raw-view speaking-class nodes
         /// (kssMZb), matched to named tiles by geometry — the active-speaker signal
         /// Chromium hides from the default UIA view. Null/empty off Meet or when the
         /// raw pass found nothing (then geometry / captions carry attribution).
+        /// `zoomWebActive` = the Zoom-web active speaker read from a raw-view scan
+        /// (the speaker-bar "--active" class is likewise pruned from the control
+        /// view); null off Zoom web or when nobody's tile is highlighted.
         public static Detection Detect(string platform, List<UiNode> nodes, string stateKey,
-                                       bool remoteActive, bool selfActive, List<double[]> meetSpeakBoxes)
+                                       bool remoteActive, bool selfActive, List<double[]> meetSpeakBoxes,
+                                       string zoomWebActive)
         {
             Detection det = new Detection();
             if (platform == "meet")
@@ -1234,13 +1244,19 @@ namespace MeetingSpeakerEngine
                         (web.Count <= 1 || web.Count == -1))
                         det.SelfName = web.Names[0];
                     if (det.Source == "zoom-tiles") det.Source = "zoom-web";
-                    // Active speaker from the speaker-bar "--active" tile class.
-                    // Audio-gate it (like the desktop badge): the highlight lingers
-                    // on the last talker during silence, so only trust it while audio
-                    // confirms speech.
-                    if (web.ActiveSpeaker.Length > 0 && (remoteActive || selfActive))
+                    // Active speaker from the speaker-bar "--active" tile (Zoom's own
+                    // VAD). The control view the main scan uses PRUNES that class, so
+                    // the live engine passes the name read from a dedicated RAW scan
+                    // (zoomWebActive); the inline web.ActiveSpeaker still covers the
+                    // synthetic self-tests that feed the class directly. Audio-gate it
+                    // (like the desktop badge): the highlight lingers on the last
+                    // talker during silence, so only trust it while audio confirms
+                    // speech. Naming it also lifts the remote out of the "Someone" floor.
+                    string webActive = web.ActiveSpeaker.Length > 0 ? web.ActiveSpeaker : (zoomWebActive ?? "");
+                    if (webActive.Length > 0 && (remoteActive || selfActive))
                     {
-                        AddSpeaker(det, web.ActiveSpeaker);
+                        AddParticipant(det, webActive);
+                        AddSpeaker(det, webActive);
                         det.Source = "zoom-web-active";
                     }
                 }
@@ -1343,7 +1359,29 @@ namespace MeetingSpeakerEngine
                             catch (Exception) { }
                         }
 
-                        Detection det = Detect(w.Platform, nodes, stateKey, remoteActive, selfActive, meetSpeakBoxes);
+                        // Zoom WEB active speaker (speaker-bar "--active" / big
+                        // spotlight tile). Those classes live only in Chromium's RAW
+                        // view — pruned from the control view the main scan uses — so a
+                        // talking remote otherwise collapses to "Someone". A cheap
+                        // second raw pass reads JUST the highlighted tile's name; doing
+                        // it here (not a full raw main scan) keeps footer button labels
+                        // like "Share"/"End" out of the roster.
+                        string zoomWebActive = null;
+                        if (w.Platform == "zoom" && w.IsBrowser)
+                        {
+                            try
+                            {
+                                AutomationElement zdoc = GetDocument(w);
+                                if (zdoc == null) zdoc = w.Element;
+                                List<UiNode> rawNodes = ScanNodes(zdoc, maxNodes, true);
+                                string sp = ExtractZoomWebActiveSpeaker(rawNodes);
+                                if (sp.Length > 0) zoomWebActive = sp;
+                            }
+                            catch (Exception) { }
+                        }
+
+                        Detection det = Detect(w.Platform, nodes, stateKey, remoteActive, selfActive,
+                                               meetSpeakBoxes, zoomWebActive);
 
                         // Resolve self + roster with sticky memory so a thin
                         // poll doesn't drop a name back to "You"/"Someone".
@@ -2243,6 +2281,66 @@ namespace MeetingSpeakerEngine
             Check("zoom web 2p: count parsed", zw2.Count == 2, string.Format("{0}", zw2.Count));
             CheckList("zoom web 2p: both names, header excluded", zw2.Names,
                 new string[] { "Bidheyak Thapa", "Sabitri" });
+
+            // --- zoom WEB active speaker from the RAW view (the fix for "Someone"
+            // on a talking remote). Node shapes are the exact pre-order flatten from
+            // a live deep dump: an idle filmstrip tile, then the "--active" tile whose
+            // footer Text is the speaker, then more idle tiles.
+            List<UiNode> zwActiveNodes = new List<UiNode>();
+            zwActiveNodes.Add(new UiNode("", "Group", "speaker-bar-container__video-frame"));
+            zwActiveNodes.Add(new UiNode("", "Group", "video-avatar__avatar-footer"));
+            zwActiveNodes.Add(new UiNode("Bidheyak Thapa", "Text", ""));   // idle tile -> NOT the speaker
+            zwActiveNodes.Add(new UiNode("", "Group", "speaker-bar-container__video-frame speaker-bar-container__video-frame--active"));
+            zwActiveNodes.Add(new UiNode("", "Group", "video-avatar__avatar"));
+            zwActiveNodes.Add(new UiNode("", "Group", "video-avatar__avatar-footer"));
+            zwActiveNodes.Add(new UiNode("David thapa", "Text", ""));      // the active tile's name
+            zwActiveNodes.Add(new UiNode("", "Group", "speaker-bar-container__video-frame"));
+            zwActiveNodes.Add(new UiNode("", "Group", "video-avatar__avatar-footer"));
+            zwActiveNodes.Add(new UiNode("bibek", "Text", ""));
+            Check("zoom web raw: --active filmstrip tile names the speaker",
+                ExtractZoomWebActiveSpeaker(zwActiveNodes) == "David thapa",
+                ExtractZoomWebActiveSpeaker(zwActiveNodes));
+
+            // Speaker-view fallback: no filmstrip "--active", so the big
+            // "speaker-active-container__video-frame" spotlight names the speaker.
+            List<UiNode> zwBigNodes = new List<UiNode>();
+            zwBigNodes.Add(new UiNode("", "Group", "speaker-active-container__wrap"));
+            zwBigNodes.Add(new UiNode("", "Group", "speaker-active-container__video-frame"));
+            zwBigNodes.Add(new UiNode("", "Group", "video-avatar__avatar-footer"));
+            zwBigNodes.Add(new UiNode("Sabitri", "Text", ""));
+            Check("zoom web raw: big spotlight tile fallback names the speaker",
+                ExtractZoomWebActiveSpeaker(zwBigNodes) == "Sabitri",
+                ExtractZoomWebActiveSpeaker(zwBigNodes));
+
+            // No highlighted tile at all -> no speaker (idle grid, nobody talking).
+            List<UiNode> zwIdleNodes = new List<UiNode>();
+            zwIdleNodes.Add(new UiNode("", "Group", "speaker-bar-container__video-frame"));
+            zwIdleNodes.Add(new UiNode("", "Group", "video-avatar__avatar-footer"));
+            zwIdleNodes.Add(new UiNode("Bidheyak Thapa", "Text", ""));
+            Check("zoom web raw: no --active/big tile -> no speaker",
+                ExtractZoomWebActiveSpeaker(zwIdleNodes) == "",
+                "'" + ExtractZoomWebActiveSpeaker(zwIdleNodes) + "'");
+
+            // End-to-end: the control-view scan (buttons only, "--active" pruned)
+            // plus the raw-scanned active name -> Detect names the remote and tags
+            // the source, INSTEAD of collapsing to the "Someone" audio floor.
+            List<UiNode> zwCtrl = new List<UiNode>();
+            zwCtrl.Add(new UiNode("mute my microphone", "Button", "footer-button-base__button"));
+            zwCtrl.Add(new UiNode("open the manage participants list pane,2 particpants", "Button", "footer-button__button"));
+            Detection zwActiveDet = Detect("zoom", zwCtrl, "zwa", true, false, null, "David thapa");
+            CheckList("zoom web: raw active speaker named under remote audio",
+                zwActiveDet.Speakers, new string[] { "David thapa" });
+            Check("zoom web: raw active speaker source tagged",
+                zwActiveDet.Source == "zoom-web-active", zwActiveDet.Source);
+            Check("zoom web: raw active speaker becomes a known participant",
+                zwActiveDet.Participants.Contains("David thapa"),
+                string.Join(",", zwActiveDet.Participants.ToArray()));
+
+            // Audio-gated: same raw active name, but no audio this poll -> nobody
+            // named (the "--active" highlight lingers on the last talker in silence).
+            Detection zwQuietDet = Detect("zoom", zwCtrl, "zwaq", false, false, null, "David thapa");
+            Check("zoom web: raw active speaker gated by audio (silence -> no speaker)",
+                zwQuietDet.Speakers.Count == 0, string.Join(",", zwQuietDet.Speakers.ToArray()));
 
             Check("zoom host name from title",
                 ZoomHostName("Bidheyak Thapa's Zoom Meeting - Google Chrome") == "Bidheyak Thapa",

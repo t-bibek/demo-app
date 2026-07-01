@@ -135,33 +135,15 @@ namespace MeetingSpeakerEngine
 
                 // Active speaker: the speaker-bar tile whose class carries the
                 // "--active" modifier is whoever is talking (Zoom's own VAD); idle
-                // tiles keep the base "speaker-bar-container__video-frame" class.
-                // The nodes are a pre-order flatten, so the tile's name node follows
-                // the frame. Anchor extraction on the title structure
-                // (video-avatar__avatar-title / __avatar-img, the <img alt>) ONLY, so
-                // stray text in the tile never yields a false-positive speaker.
+                // tiles keep the base "speaker-bar-container__video-frame" class. The
+                // name leaf follows the frame in the pre-order flatten — read it with
+                // the shared ZoomWebTileName scan so this inline path and the raw-scan
+                // ExtractZoomWebActiveSpeaker stay identical.
                 if (n.ClassName.IndexOf("speaker-bar-container__video-frame--active", StringComparison.Ordinal) >= 0)
                 {
                     z.InMeeting = true;
-                    for (int k = i + 1; k < nodes.Count && k <= i + 16; k++)
-                    {
-                        UiNode c = nodes[k];
-                        // Reached the next tile's frame -> left this tile's subtree.
-                        if (c.ClassName.IndexOf("speaker-bar-container__video-frame", StringComparison.Ordinal) >= 0)
-                            break;
-                        // Name source: the avatar-img alt (camera OFF) or the footer
-                        // label (camera ON) — a Text leaf inside video-avatar__avatar-
-                        // footer that is always present. Anchored to the tile structure
-                        // so stray text never yields a false-positive speaker.
-                        bool nameNode =
-                            c.ClassName.IndexOf("video-avatar__avatar-img", StringComparison.Ordinal) >= 0 ||
-                            c.ClassName.IndexOf("video-avatar__avatar-title", StringComparison.Ordinal) >= 0 ||
-                            c.ClassName.IndexOf("video-avatar__avatar-footer", StringComparison.Ordinal) >= 0 ||
-                            c.ControlType == "Text";
-                        if (!nameNode) continue;
-                        string sp = CleanName(c.Name);
-                        if (sp.Length > 0 && IsLikelyPersonName(sp)) { z.ActiveSpeaker = sp; break; }
-                    }
+                    if (z.ActiveSpeaker.Length == 0)
+                        z.ActiveSpeaker = ZoomWebTileName(nodes, i, "speaker-bar-container__video-frame");
                     continue;
                 }
 
@@ -206,6 +188,59 @@ namespace MeetingSpeakerEngine
                 if (nm.Length > 0 && IsLikelyPersonName(nm) && !z.Names.Contains(nm)) z.Names.Add(nm);
             }
             return z;
+        }
+
+        // The display name inside a Zoom-web video tile, read off the pre-order
+        // flatten: scan forward from the tile's frame node until the next sibling
+        // frame (boundaryToken) or a short look-ahead, and return the first
+        // person-like leaf. The name is the avatar-img alt (camera OFF) or the
+        // footer Text leaf (camera ON, always present). Anchored to the tile
+        // structure so stray text never yields a false-positive speaker.
+        static string ZoomWebTileName(List<UiNode> nodes, int frameIndex, string boundaryToken)
+        {
+            for (int k = frameIndex + 1; k < nodes.Count && k <= frameIndex + 16; k++)
+            {
+                UiNode c = nodes[k];
+                // Reached the next tile's frame -> left this tile's subtree.
+                if (c.ClassName.IndexOf(boundaryToken, StringComparison.Ordinal) >= 0) break;
+                bool nameNode =
+                    c.ClassName.IndexOf("video-avatar__avatar-img", StringComparison.Ordinal) >= 0 ||
+                    c.ClassName.IndexOf("video-avatar__avatar-title", StringComparison.Ordinal) >= 0 ||
+                    c.ClassName.IndexOf("video-avatar__avatar-footer", StringComparison.Ordinal) >= 0 ||
+                    c.ControlType == "Text";
+                if (!nameNode) continue;
+                string sp = CleanName(c.Name);
+                if (sp.Length > 0 && IsLikelyPersonName(sp)) return sp;
+            }
+            return "";
+        }
+
+        /// Active speaker on Zoom WEB, from the speaker-bar tile carrying the
+        /// "--active" modifier (Zoom's own VAD); falls back to the big
+        /// "speaker-active-container__video-frame" spotlight when the filmstrip has
+        /// no active tile. Both classes exist ONLY in Chromium's RAW UIA view — the
+        /// control view the main scan uses PRUNES them (verified: they vanish from a
+        /// non-deep dump), which is why a talking remote used to collapse to
+        /// "Someone". The live engine therefore reads them with a dedicated raw scan.
+        /// Mirrors macOS ZoomWebProbe (active ?? big). Returns "" when nobody's tile
+        /// is highlighted.
+        public static string ExtractZoomWebActiveSpeaker(List<UiNode> nodes)
+        {
+            for (int i = 0; i < nodes.Count; i++)
+                if (nodes[i].ClassName.IndexOf(
+                        "speaker-bar-container__video-frame--active", StringComparison.Ordinal) >= 0)
+                {
+                    string sp = ZoomWebTileName(nodes, i, "speaker-bar-container__video-frame");
+                    if (sp.Length > 0) return sp;
+                }
+            for (int i = 0; i < nodes.Count; i++)
+                if (nodes[i].ClassName.IndexOf(
+                        "speaker-active-container__video-frame", StringComparison.Ordinal) >= 0)
+                {
+                    string sp = ZoomWebTileName(nodes, i, "speaker-active-container__video-frame");
+                    if (sp.Length > 0) return sp;
+                }
+            return "";
         }
 
         // ---------------------------------------------------------------
@@ -463,14 +498,31 @@ namespace MeetingSpeakerEngine
                                 if (ok && !gated.Contains(t.Name)) gated.Add(t.Name);
                             }
 
-                            // WEB client: no per-tile badge — show roster + the
-                            // audio-only verdict (single remote is named, else "Someone").
+                            // WEB client: the active speaker is the speaker-bar
+                            // "--active" tile, which lives ONLY in the RAW view (the
+                            // control-view scan above prunes it) — read it the same way
+                            // the engine now does. It acts as the badge (Zoom's VAD,
+                            // lingers on silence); audio confirms it into "gated". Falls
+                            // back to the single-remote / "Someone" audio-only verdict.
                             if (tiles.Count == 0)
                             {
                                 ZoomWeb web = ParseZoomWeb(nodes);
                                 for (int i = 0; i < web.Names.Count; i++) rosterParts.Add(web.Names[i]);
-                                if (remoteActive)
-                                    gated.Add(web.Names.Count == 1 ? web.Names[0] : "Someone");
+                                string webActive = "";
+                                try
+                                {
+                                    AutomationElement zdoc = GetDocument(w);
+                                    if (zdoc == null) zdoc = w.Element;
+                                    webActive = ExtractZoomWebActiveSpeaker(ScanNodes(zdoc, maxNodes, true));
+                                }
+                                catch (Exception) { }
+                                if (webActive.Length > 0) badge.Add(webActive);
+                                if (remoteActive || selfActive)
+                                {
+                                    if (webActive.Length > 0) gated.Add(webActive);
+                                    else if (web.Names.Count == 1) gated.Add(web.Names[0]);
+                                    else gated.Add("Someone");
+                                }
                             }
 
                             for (int i = 0; i < gated.Count; i++) tickSpeaking.Add(gated[i]);
