@@ -139,6 +139,146 @@
             "target": "AXObserve",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release AXObserve"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug ZoomProbe (macos)",
+            "target": "ZoomProbe",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ZoomProbe (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release ZoomProbe (macos)",
+            "target": "ZoomProbe",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ZoomProbe (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug SpeakerCoreSelfTest (macos)",
+            "target": "SpeakerCoreSelfTest",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SpeakerCoreSelfTest (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release SpeakerCoreSelfTest (macos)",
+            "target": "SpeakerCoreSelfTest",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SpeakerCoreSelfTest (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug MeetSpeakerDetector (macos)",
+            "target": "MeetSpeakerDetector",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MeetSpeakerDetector (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release MeetSpeakerDetector (macos)",
+            "target": "MeetSpeakerDetector",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MeetSpeakerDetector (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug MeetProbe (macos)",
+            "target": "MeetProbe",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MeetProbe (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release MeetProbe (macos)",
+            "target": "MeetProbe",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MeetProbe (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug AXSnapshot (macos)",
+            "target": "AXSnapshot",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXSnapshot (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release AXSnapshot (macos)",
+            "target": "AXSnapshot",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXSnapshot (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug AXObserve (macos)",
+            "target": "AXObserve",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXObserve (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release AXObserve (macos)",
+            "target": "AXObserve",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXObserve (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug AXDump (macos)",
+            "target": "AXDump",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXDump (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release AXDump (macos)",
+            "target": "AXDump",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXDump (macos)"
         }
     ]
 }

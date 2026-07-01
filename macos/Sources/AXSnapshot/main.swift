@@ -143,32 +143,42 @@ var roots: [Root] = []
 for t in targetApps {
     switch t.kind {
     case "chrome":
-        // Root each dump at the meeting tab's AXWebArea (the "Chrome tab" tree),
-        // not the whole browser window — skips the browser chrome.
-        var meetingAreas: [(AXUIElement, String, String)] = []   // (el, label, url)
-        var allAreas: [(AXUIElement, String)] = []               // (el, url) fallback
+        // Root each dump at a web area (the "Chrome tab" tree), not the whole
+        // browser window — skips the browser chrome. Capture EVERY web area in
+        // EVERY window, with its owning window title, so the document-PIP window
+        // (a separate top-level window whose web area carries NO meet URL) is
+        // dumped too — that's where a popped-out meeting's tiles live.
+        struct WebRoot { let el: AXUIElement; let url: String; let winTitle: String }
+        var found: [WebRoot] = []
         for win in AX.windows(t.ax) {
+            let wt = AX.string(win, "AXTitle") ?? ""
             var budget = 8000
             for area in findWebAreas(win, 0, &budget) {
                 let url = AX.urlString(area, "AXURL") ?? AX.string(area, "AXValue") ?? ""
-                allAreas.append((area, url))
-                if let ml = meetingLabel(url) { meetingAreas.append((area, ml, url)) }
+                found.append(WebRoot(el: area, url: url, winTitle: wt))
             }
         }
-        if !meetingAreas.isEmpty {
-            for (i, m) in meetingAreas.enumerated() {
-                let suffix = meetingAreas.count > 1 ? "-\(i + 1)" : ""
-                roots.append(Root(label: "chrome-\(m.1)\(suffix)", note: m.2, el: m.0))
+        let meeting = found.filter { meetingLabel($0.url) != nil }
+        for (i, m) in meeting.enumerated() {
+            let suffix = meeting.count > 1 ? "-\(i + 1)" : ""
+            roots.append(Root(label: "chrome-\(meetingLabel(m.url)!)\(suffix)", note: m.url, el: m.el))
+        }
+        // Non-meeting web areas (incl. the URL-less document-PIP window) when chrome
+        // is the explicit target — so the PIP mini-window is captured for diagnosis.
+        if target == "chrome" {
+            let others = found.filter { meetingLabel($0.url) == nil }
+            for (i, a) in others.prefix(8).enumerated() {
+                let note = a.url.isEmpty
+                    ? "window: \(a.winTitle.isEmpty ? "(untitled — PIP?)" : a.winTitle)"
+                    : a.url
+                roots.append(Root(label: "chrome-other\(i + 1)", note: note, el: a.el))
             }
-        } else if target == "chrome" && !allAreas.isEmpty {
-            // Explicit chrome target but no meeting tab — dump whatever tabs exist
-            // so the user isn't stuck (e.g. to inspect a non-meeting page).
-            for (i, a) in allAreas.prefix(5).enumerated() {
-                roots.append(Root(label: "chrome-tab\(i + 1)", note: a.1, el: a.0))
+            if meeting.isEmpty {
+                print("⚠️  No meeting tab found — dumping \(min(others.count, 8)) other web area(s), incl. any PIP window.")
             }
-            print("⚠️  No meeting tab (meet/zoom/teams) found — dumping \(min(allAreas.count, 5)) open web tab(s) instead.")
-        } else {
-            print("⚠️  \(t.name): no meeting AXWebArea found. Open Meet/Zoom-web/Teams-web in a tab.")
+        }
+        if found.isEmpty {
+            print("⚠️  \(t.name): no web area found. Open Meet/Zoom-web/Teams-web in a tab.")
         }
 
     case "zoom", "teams":

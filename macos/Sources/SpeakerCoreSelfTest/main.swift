@@ -267,10 +267,10 @@ check(tr.tileIsSpeaking(textBlob: "wedding thapas is active speaker", classToken
       "is-active-speaker text marker -> speaking")
 check(!tr.tileIsSpeaking(textBlob: "wedding thapas", classTokens: []),
       "plain name -> not speaking")
-check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-frame-occlusion", "fui-Flex"]),
-      "vdi-frame-occlusion NOT shipped as speaking (unconfirmed video-placement token, pending R4)")
+check(tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-frame-occlusion", "fui-Flex"]),
+      "vdi-frame-occlusion class -> speaking (shipped Teams active-speaker anchor)")
 check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-occlusion", "fui-Flex"]),
-      "no built-in speaking class (conservative until R1/R3/R4 probe)")
+      "vdi-occlusion (bare, on every tile) -> NOT speaking")
 check(tr.tileIsSelf(textBlob: "bibek thapa (you)", classTokens: []),
       "(you) suffix -> self")
 check(tr.tileIsSelf(textBlob: "", classTokens: ["calling_is_me_video"]),

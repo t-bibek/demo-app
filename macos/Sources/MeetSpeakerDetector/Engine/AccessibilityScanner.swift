@@ -690,8 +690,28 @@ final class AccessibilityScanner {
     /// geometry (AXFrame area, the durable signal) + DOM order + whether the
     /// rotating CSS class matched (fallback signal). The engine then fuses these
     /// with audio VAD — see docs/meet-active-speaker-no-hardcoded-css.md.
+    /// Per-tile observations for Meet, extracted STRUCTURALLY (see
+    /// `docs/research-ax.md`) — no dependency on obfuscated CSS classes:
+    ///   1. Scope to the page's `<main>` landmark (`AXLandmarkMain`) inside the
+    ///      meet.google.com web area. Everything outside it — the address bar,
+    ///      other tabs, an open DevTools panel — is excluded, so browser chrome
+    ///      ("DevTools is docked to right") can no longer be harvested as a fake
+    ///      tile that wins the geometry contest and masks the real speaker.
+    ///   2. Within it, resolve each tile by GEOMETRY (a tile-sized ancestor of the
+    ///      name), NOT by a rotating tile class — a Griffel-hash rotation can't
+    ///      break tile detection this way. (`kssMZb` is still read per tile for the
+    ///      speaking flag, but only as the engine's last-resort corroboration.)
     private func meetTileObservations(in window: AXUIElement) -> (tiles: [MeetTileObservation], participants: [String]) {
-        var nameNodes: [(AXUIElement, String)] = []
+        let root = meetStageRoot(in: window)
+
+        // Two name sources per tile: the visible CAPTION (an AXStaticText, the real
+        // display name) and, as a FALLBACK, the per-tile control label ("Pin <Name>
+        // to your main screen" / "More options for <Name>"). Normal tiles carry a
+        // caption; small / PIP tiles drop it, leaving the control label as the only
+        // place the name survives. Captions win — control labels are only consulted
+        // for a tile that produced NO caption.
+        var captionNodes: [(AXUIElement, String)] = []
+        var controlNodes: [(AXUIElement, String)] = []
         var scanned = 0
         func collect(_ el: AXUIElement, _ depth: Int) {
             if scanned >= maxNodesPerWindow || depth > maxDepth { return }
@@ -699,24 +719,42 @@ final class AccessibilityScanner {
             if axString(el, "AXRole") == "AXStaticText",
                let raw = axString(el, "AXValue") ?? axString(el, "AXTitle"),
                let name = cleanParticipantName(raw) {
-                nameNodes.append((el, name))
+                captionNodes.append((el, name))
+            } else if let raw = axString(el, "AXDescription") ?? axString(el, "AXTitle"),
+                      let name = meetNameFromControlLabel(raw) {
+                controlNodes.append((el, name))
             }
             for c in axArray(el, "AXChildren") { collect(c, depth + 1) }
         }
-        collect(window, 0)
+        collect(root, 0)
 
         // One entry per name; keep the largest tile (the real video tile, not a
         // tiny duplicate label). Track frame for geometry + reading order.
         struct Acc { var area: Double; var speaking: Bool; var isMe: Bool; var minY: CGFloat; var minX: CGFloat }
         var byName: [String: Acc] = [:]
-        for (node, name) in nameNodes {
-            guard let tile = meetTileAncestor(of: node) else { continue }
+        var captionFrames: [CGRect] = []
+        func consider(_ tile: AXUIElement, _ name: String) {
             let frame = axFrame(tile) ?? .zero
             let area = Double(frame.width * frame.height)
             let speaking = meetTileIsSpeaking(classTokens: tileClassTokens(tile), rules: meetRules)
             let isMe = meetTileIsSelf(tile)
-            if let ex = byName[name], ex.area >= area { continue }
+            if let ex = byName[name], ex.area >= area { return }
             byName[name] = Acc(area: area, speaking: speaking, isMe: isMe, minY: frame.minY, minX: frame.minX)
+        }
+
+        // Captions first — the authoritative display name.
+        for (node, name) in captionNodes {
+            guard let tile = meetTileAncestor(of: node) else { continue }
+            captionFrames.append(axFrame(tile) ?? .zero)
+            consider(tile, name)
+        }
+        // Control labels ONLY for a tile that produced no caption (the nameless PIP
+        // tile — the reported "Wedding Thapas speaking shows Bibek" case).
+        for (node, name) in controlNodes {
+            guard let tile = meetTileAncestor(of: node) else { continue }
+            let frame = axFrame(tile) ?? .zero
+            if captionFrames.contains(where: { $0 == frame }) { continue }
+            consider(tile, name)
         }
 
         let ordered = byName.sorted { ($0.value.minY, $0.value.minX) < ($1.value.minY, $1.value.minX) }
@@ -725,6 +763,68 @@ final class AccessibilityScanner {
                                 classSpeaking: kv.value.speaking, isMe: kv.value.isMe)
         }
         return (tiles, ordered.map { $0.key })
+    }
+
+    /// Extract a participant name from a per-tile control's accessible label. Meet
+    /// labels each tile's Pin / More-options button with the participant name, and
+    /// in the PIP / small-tile layouts (no visible caption) that label is the ONLY
+    /// place the name survives:
+    ///   "Pin Wedding Thapas to your main screen"  -> "Wedding Thapas"
+    ///   "More options for david Thapa"            -> "david Thapa"
+    /// English/localized wording — a structural anchor, not a rotating class.
+    private func meetNameFromControlLabel(_ raw: String) -> String? {
+        let d = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let low = d.lowercased()
+        // "Pin <Name> to your main screen" / "Pin <Name>'s presentation to …"
+        if low.hasPrefix("pin ") {
+            var rest = String(d.dropFirst(4))
+            for tail in [" to your main screen", " to your main", "’s presentation",
+                         "'s presentation", " to your", " to the main screen"] {
+                if let t = rest.range(of: tail, options: .caseInsensitive) {
+                    rest = String(rest[..<t.lowerBound]); break
+                }
+            }
+            return cleanParticipantName(rest)
+        }
+        // "More options for <Name>"
+        if low.hasPrefix("more options for ") {
+            return cleanParticipantName(String(d.dropFirst("more options for ".count)))
+        }
+        return nil
+    }
+
+    /// The Meet video-stage scan root: the page's `<main>` landmark
+    /// (`AXLandmarkMain`) INSIDE the meet.google.com `AXWebArea`. Scoping here is
+    /// the structural fix for browser-chrome pollution — the address bar, other
+    /// tabs, and an open DevTools panel (its own `AXWebArea` + a "DOM tree
+    /// explorer" `AXLandmarkMain`) all sit OUTSIDE this node, so their text can no
+    /// longer be harvested as fake participants. The URL match on the web area is
+    /// what distinguishes the Meet `<main>` from DevTools' `<main>`. Falls back to
+    /// the meet web area, then the window, for older layouts.
+    private func meetStageRoot(in window: AXUIElement) -> AXUIElement {
+        var webArea: AXUIElement?
+        var n = 0
+        func findWeb(_ el: AXUIElement, _ d: Int) {
+            if webArea != nil || n >= 4000 || d > maxDepth { return }
+            n += 1
+            if axString(el, "AXRole") == "AXWebArea", let u = axURL(el), platformForURL(u) == .meet {
+                webArea = el; return
+            }
+            for c in axArray(el, "AXChildren") { findWeb(c, d + 1); if webArea != nil { return } }
+        }
+        findWeb(window, 0)
+        let base = webArea ?? window
+
+        var main: AXUIElement?
+        var m = 0
+        func findMain(_ el: AXUIElement, _ d: Int) {
+            if main != nil || m >= 4000 || d > maxDepth { return }
+            m += 1
+            if axString(el, "AXSubrole") == "AXLandmarkMain" { main = el; return }
+            for c in axArray(el, "AXChildren") { findMain(c, d + 1); if main != nil { return } }
+        }
+        findMain(base, 0)
+        return main ?? base
     }
 
     /// Is this Meet tab actually IN a call — not the landing / "Ready to join" /

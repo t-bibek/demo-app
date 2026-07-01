@@ -171,11 +171,16 @@ public final class MeetingStateTracker {
         )
     }
 
-    /// A `participantUpdated` only fires on a *definite* identity/mute flip —
-    /// NOT on `isSpeaking` (that's covered by speech_on/off) and NOT on
-    /// transitions to/from `nil` (unknown is sticky, never a "change").
+    /// A `participantUpdated` only fires on a *definite* is-local / mute flip.
+    /// NOT on `name`: both sides share the participant id, and the id IS the
+    /// normalized name, so any name difference here is purely cosmetic — the same
+    /// person surfacing as "bibek thapa" (tile caption) one tick and "Bibek Thapa"
+    /// (panel) the next. Emitting on that churns endless participant_updated /
+    /// meeting_updated (seen live in Meet PIP). A genuine rename changes the id and
+    /// so reads as leave+join. Also NOT on `isSpeaking` (speech_on/off covers it)
+    /// or nil transitions (unknown is sticky, never a "change").
     private static func flagsChanged(_ a: MeetingParticipant, _ b: MeetingParticipant) -> Bool {
-        a.name != b.name || a.isLocal != b.isLocal || a.isMuted != b.isMuted
+        a.isLocal != b.isLocal || a.isMuted != b.isMuted
     }
 
     /// Merge snapshots that share a meeting id within one tick (e.g. the same

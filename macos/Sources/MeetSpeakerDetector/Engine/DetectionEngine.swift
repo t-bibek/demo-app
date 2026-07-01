@@ -199,10 +199,16 @@ final class DetectionEngine {
                 // LOCAL user, whose own tile never carries the speaking ring.
                 if w.meetTiles.contains(where: { $0.classSpeaking }) { meetClassFired += 1 }
 
-                // Soft VAD gate (trustworthy only when system-audio capture runs).
-                let vad = audioReliable ? (micActive || remoteActive) : true
+                // Remote attribution (ring/geometry) is gated on SYSTEM audio ONLY —
+                // NOT the local mic. The mic meter moves for the USER'S OWN voice, and
+                // a MUTED meeting mic still moves the physical meter, so folding
+                // micActive in here pinned your own (muted) speech onto the remote
+                // tile. Remotes come only from system-audio speech; self is
+                // mic-attributed separately below. Soft-open when capture is
+                // unavailable (accessibility-only mode leans on the ring/geometry).
+                let remoteVad = audioReliable ? remoteActive : true
                 let r = meetActiveSpeaker(tiles: w.meetTiles, prevAreas: meetPrevAreas,
-                                          vadSpeechActive: vad, presentationActive: w.presentationActive)
+                                          vadSpeechActive: remoteVad, presentationActive: w.presentationActive)
                 // Resolve the local user's REAL name — never the generic "You". Prefer
                 // the "(You)"-tagged tile; if that missed but there's a single tile and
                 // the mic is live, that lone tile is self. If it can't be resolved yet

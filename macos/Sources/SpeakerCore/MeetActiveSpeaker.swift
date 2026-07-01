@@ -54,11 +54,14 @@ public struct MeetSpeakerResult: Equatable, Sendable {
 /// Order:
 ///  1. **VAD gate** — no speech ⇒ no speaker. (Soft when audio capture is
 ///     unavailable, so Meet still works Accessibility-only.)
-///  2. **Geometry** — a clearly dominant tile (auto speaker/spotlight/sidebar),
-///     class-free. SUPPRESSED when `presentationActive`: a shared screen fills the
-///     same stage and would be mistaken for the speaker's promoted tile.
-///  3. **CSS class** — strict `kssMZb`; remote-only corroboration (≈14% recall on
-///     self, so never the self source), used when geometry can't decide (gallery).
+///  2. **CSS ring** — strict `kssMZb`, the active-speaker ring Meet draws on the
+///     SPEAKING remote's tile (never self). A direct who-is-speaking read, so it
+///     leads: geometry only knows tile SIZE and picks the wrong tile when the
+///     biggest one isn't the speaker (you pin yourself while a remote talks).
+///  3. **Geometry** — a clearly dominant NON-SELF tile (auto speaker/spotlight),
+///     class-free, used when no ring is exposed. SUPPRESSED when
+///     `presentationActive`: a shared screen fills the same stage and would be
+///     mistaken for the speaker's promoted tile.
 ///  4. **Someone floor** — speech but nobody attributable.
 ///
 /// NOTE: a structural AX indicator was hunted for and PROVEN ABSENT on Meet
@@ -75,19 +78,26 @@ public func meetActiveSpeaker(
 ) -> MeetSpeakerResult {
     guard vadSpeechActive else { return MeetSpeakerResult(names: [], via: .none) }
 
-    // 2) Geometry — a clearly dominant tile (speaker/spotlight view), BUT only when
-    //    no presentation dominates: a shared screen ALSO fills the main stage, so
-    //    the largest tile would be the screen, not the speaker. The caller passes
-    //    `presentationActive` when a screen-share is detected.
-    if !presentationActive, let promoted = meetPromotedTile(tiles) {
-        return MeetSpeakerResult(names: [promoted], via: .geometry)
+    // 2) Active-speaker ring (`kssMZb`) — Meet draws it on the SPEAKING remote's
+    //    tile; your own tile never gets it (confirmed live: the ring node is only
+    //    ever in the remote's subtree), so a class hit is a DIRECT who-is-speaking
+    //    read needing no self-detection. Checked BEFORE geometry because geometry
+    //    only guesses from tile SIZE, which is wrong whenever the biggest tile
+    //    isn't the speaker — e.g. you pin yourself (large, camera off) while a
+    //    remote talks in a small corner tile (the reported spotlight-self layout).
+    let ringNames = tiles.filter { $0.classSpeaking }.map { $0.name }
+    if !ringNames.isEmpty {
+        return MeetSpeakerResult(names: ringNames, via: .cssClass)
     }
 
-    // 3) Strict `kssMZb` class — remote-only corroboration, used when geometry can't
-    //    decide (gallery). Low recall, so it's a fallback, not the primary path.
-    let classNames = tiles.filter { $0.classSpeaking }.map { $0.name }
-    if !classNames.isEmpty {
-        return MeetSpeakerResult(names: classNames, via: .cssClass)
+    // 3) Geometry — a clearly dominant tile (spotlight/speaker view) when NO ring is
+    //    exposed (the ring's recall isn't 100%). Suppressed under a presentation (a
+    //    shared screen ALSO fills the stage, so the largest tile is the screen, not
+    //    the speaker), and never returns the SELF tile: a big pinned self tile is
+    //    not evidence you're speaking — self is mic-attributed separately.
+    if !presentationActive, let promoted = meetPromotedTile(tiles),
+       tiles.first(where: { $0.name == promoted })?.isMe != true {
+        return MeetSpeakerResult(names: [promoted], via: .geometry)
     }
 
     // 4) VAD floor — speech, but nobody attributable (gallery / class gap).
