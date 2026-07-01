@@ -79,6 +79,10 @@ public func meetingCode(platform: Platform, url: String?) -> String? {
 public func normalizedMeetingTitle(_ title: String) -> String {
     var s = title.replacingOccurrences(of: #"^\(\d+\)\s*"#, with: "",
                                         options: .regularExpression)
+    // Teams' compact/PIP window prepends "Meeting compact view | " to the same call
+    // title — strip it so the compact window and the main window are ONE meeting.
+    s = s.replacingOccurrences(of: #"^Meeting compact view\s*\|\s*"#, with: "",
+                               options: [.regularExpression, .caseInsensitive])
     s = cutAtFirst(s, markers: [
         " - Camera and microphone recording",
         " - Microphone recording",
@@ -87,6 +91,7 @@ public func normalizedMeetingTitle(_ title: String) -> String {
         " - Microsoft Edge", " - Microsoft\u{00A0}Edge",
         " - Brave", " - Vivaldi", " - Opera", " - Safari",
         " - Mozilla Firefox", " - Firefox",
+        " | Microsoft Teams",   // Teams window-title suffix
     ])
     // Zoom's native window title gains a free-tier "NN-minutes" suffix near the
     // 40-min limit ("Zoom Meeting  40-minutes"). Strip it and collapse whitespace

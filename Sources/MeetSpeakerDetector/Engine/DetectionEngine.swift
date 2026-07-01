@@ -152,7 +152,23 @@ final class DetectionEngine {
 
         var windowInfos: [EngineWindowInfo] = []
         var snapshots: [MeetingSnapshot] = []
+        // One status chip per MEETING, not per window — a call can span several
+        // windows (Teams main + compact, Zoom main + PIP) that share one meeting id.
+        var chipMeetings = Set<String>()
         for w in scanned {
+            let wMid = meetingId(platform: w.platform, url: w.url, title: w.title)
+            // Keep-alive-only windows (the Teams compact / PIP view) hold the meeting
+            // open but contribute no speakers or roster — snapshot them (empty) so the
+            // meeting doesn't end, then skip attribution.
+            if w.keepAliveOnly {
+                snapshots.append(meetingSnapshot(for: w, meetingId: wMid, speaking: [], now: now))
+                if chipMeetings.insert(wMid).inserted {
+                    windowInfos.append(EngineWindowInfo(
+                        platform: w.platform, title: w.title, nodeCount: w.nodeCount,
+                        treeOk: w.treeOk, audioPeak: Double(systemPeak)))
+                }
+                continue
+            }
             // WHO is speaking — resolved per platform from the right signal. `who`
             // is the speaker set; `sourceOf` records the attribution that FIRST
             // named each speaker (first-writer-wins, so it can never drop a name
@@ -169,7 +185,12 @@ final class DetectionEngine {
             // the window — empty for Meet / Teams / native Zoom.
             for name in w.speakers { add(name, "web.direct") }
 
-            if w.platform == .meet {
+            if let pip = w.pipSpeaker {
+                // Direct active-speaker read off a PIP / compact thumbnail — the app's
+                // OWN VAD (Zoom "Talking: <name>", Teams "<name> is speaking"). Trust
+                // it over the mute-gate / anonymous floor.
+                add(pip, w.platform == .zoom ? "zoom.pip" : "teams.pip")
+            } else if w.platform == .meet {
                 // Remote/active naming comes ONLY from the AX tree now (structural →
                 // geometry → strict kssMZb), VAD-gated. Corrected understanding:
                 // kssMZb IS a real per-tile active-speaker class — the self-CLUSTER
@@ -246,8 +267,15 @@ final class DetectionEngine {
                     let names = zoomMuteGateSpeakers(
                         micActive: micActive, localUnmuted: localUnmuted, localName: localName,
                         remoteActive: remoteActive, remoteUnmutedNames: remotes)
-                    for n in names { add(n, n == "Someone" ? "teams.someone" : "teams.mute_gate") }
-                    if names.contains("Someone") { teamsSomeone += 1 } else if !names.isEmpty { teamsNamed += 1 }
+                    // Drop the ambiguous remote floor ("Someone") for Teams entirely:
+                    // Teams' own "<name> is speaking" note (read as pipSpeaker above) is
+                    // the authoritative active-speaker signal — it just lags the audio
+                    // by a beat. Emitting "Someone" in that gap flashes a spurious
+                    // speaker right before the real name resolves. Keep only NAMED
+                    // mute-gate results (when the roster is readable).
+                    for n in names where n != "Someone" {
+                        add(n, "teams.mute_gate"); teamsNamed += 1
+                    }
                 }
                 // else: no audio capture and no class → emit nothing (don't spam
                 // "Someone" when we can't even confirm there's speech).
@@ -277,11 +305,6 @@ final class DetectionEngine {
                 ) {
                     add(name, name == "Someone" ? "audio.someone" : "zoom.mute_gate")
                 }
-            } else if let pip = w.pipSpeaker {
-                // Zoom PIP thumbnail: Zoom names the active speaker directly in its
-                // "Talking: <name>" indicator (its own VAD) — trust it over the
-                // anonymous audio floor.
-                add(pip, "zoom.pip")
             } else {
                 // B2 — Teams, or native Zoom with the panel closed / unreadable:
                 // audio-only. Without this branch native Zoom logged NOTHING
@@ -297,7 +320,7 @@ final class DetectionEngine {
                 }
             }
 
-            let mid = meetingId(platform: w.platform, url: w.url, title: w.title)
+            let mid = wMid
             for name in who {
                 let pid = participantId(meetingId: mid, name: name)
                 tracker.pulse(w.platform, name, now,
@@ -305,13 +328,15 @@ final class DetectionEngine {
             }
             snapshots.append(meetingSnapshot(for: w, meetingId: mid, speaking: who, now: now))
 
-            windowInfos.append(EngineWindowInfo(
-                platform: w.platform,
-                title: w.title,
-                nodeCount: w.nodeCount,
-                treeOk: w.treeOk,
-                audioPeak: Double(systemPeak)
-            ))
+            if chipMeetings.insert(mid).inserted {
+                windowInfos.append(EngineWindowInfo(
+                    platform: w.platform,
+                    title: w.title,
+                    nodeCount: w.nodeCount,
+                    treeOk: w.treeOk,
+                    audioPeak: Double(systemPeak)
+                ))
+            }
         }
 
         tracker.update(now)

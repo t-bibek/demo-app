@@ -13,6 +13,7 @@ private let nameCutSeparators = [
     "’s video", "'s video",  // Google Meet tiles
     ", muted", ", unmuted",
     ", video on", ", video off",
+    ", video is on", ", video is off", ", video is",   // Teams roster status
     ", more options", ", pinned",
     ", context menu",        // Teams: "<Name> (Guest), Context menu is available"
 ]
@@ -75,7 +76,7 @@ public func isLikelyPersonName(_ s: String) -> Bool {
     // contain braces/brackets/quotes/markup, pipes, bullets or dash separators —
     // rejects JSON blobs, API responses, and marketing/toast rows that leak in
     // (e.g. {"message":"Missing Authentication Token"}, "… · recurring monthly").
-    if t.rangeOfCharacter(from: CharacterSet(charactersIn: "{}[]<>\"=|•·–—")) != nil { return false }
+    if t.rangeOfCharacter(from: CharacterSet(charactersIn: "{}[]<>\"=|•·–—:")) != nil { return false }
     // Display names don't contain digits — rejects countdown/UI chrome like
     // "55 seconds left", "2 others", "Contributors 2", "Elapsed time 05:13".
     if t.rangeOfCharacter(from: .decimalDigits) != nil { return false }
@@ -99,7 +100,7 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         // Google Meet panel / chrome labels that leak in as fake tiles:
         "people", "contributors", "in call",
         // Teams meeting-stage chrome that leaks in as fake tiles:
-        "cancel",
+        "cancel", "nobody",
         // Browser/PWA chrome + Meet call-control buttons that leak as fake people
         // (seen as participant rows on the Meet PWA): "Reload", "Back", "Extensions"…
         "reload", "back", "forward", "refresh", "extensions", "extension",
@@ -119,6 +120,11 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         // Meet/browser call-control button phrases (leak as fake participant rows):
         "turn on", "turn off", "leave call", "leave now", "leave meeting",
         "raise hand", "lower hand", "more options", "show everyone",
+        // Teams meeting-stage / pre-join chrome buttons & labels:
+        "turn camera", "camera on", "camera off", "raise your", "your hand",
+        "calling control", "join info", "copy join", "learn more", "passcode",
+        "meeting compact", "meeting options", "people invited", "waiting in",
+        "resize", "gallery", "top gallery", "pin ", "spotlight", "reframe",
         // Browser/PWA chrome phrases (seen leaking from non-meeting popups/tabs):
         "incognito", "new tab", "this tab", "site information", "cookies",
         "pretty-print", "bookmark", "address bar", "missing authentication",

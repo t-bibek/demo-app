@@ -47,6 +47,11 @@ struct ScannedWindow {
     /// indicator (Zoom's own VAD). nil unless this is the Zoom PIP and someone is
     /// talking. Lets PIP-only mode name the speaker instead of "Someone".
     var pipSpeaker: String?
+    /// This window keeps the meeting ALIVE but contributes no speakers/roster — a
+    /// secondary view that's call-control chrome, not participant tiles (the Teams
+    /// "Meeting compact view" window). The main window supplies the roster; this
+    /// just prevents meeting_ended while you're minimised to it.
+    var keepAliveOnly: Bool = false
 }
 
 /// The macOS equivalent of the original's Windows UI Automation engine.
@@ -147,14 +152,7 @@ final class AccessibilityScanner {
                 var teamsRoster: [ZoomRosterEntry] = []
                 var presentationActive = false
                 var pipSpeaker: String? = nil
-
-                // A browser tab / PWA window merely CONTAINING "meet"/"zoom"/"teams"
-                // in its title or URL is NOT a meeting — marketing pages
-                // (ai.zoom.us), OAuth callbacks, note apps. Require positive evidence
-                // before scanning it, so page text never becomes fake participants.
-                let browserMeeting = browserWindowIsMeeting(platform, title: title,
-                                                            url: collector.url,
-                                                            unmuted: collector.localUserUnmuted)
+                var keepAliveOnly = false
 
                 if platform == .meet {
                     // Meet's active speaker is fused (geometry + class + VAD) in the
@@ -178,21 +176,50 @@ final class AccessibilityScanner {
                     let panel = meetPanelRoster(in: window)
                     participants = panel.isEmpty ? dedup(m.participants) : dedup(panel)
                 } else if platform == .teams {
-                    // Teams (new client) is a Chromium WebView, so its tiles surface
-                    // in AX like Meet's — supply per-tile observations for the engine's
-                    // VAD-gated resolver. See docs/teams-active-speaker-detection.md.
-                    let t = teamsTileObservations(in: window)
-                    // Remote mute is read from the People-panel roster rows (the one
-                    // dependable source; requires the panel open). Mark the row that
-                    // matches the self tile as isMe. See docs/teams-probe.md.
-                    let selfName = t.tiles.first(where: { $0.isMe })?.name
-                    teamsRoster = teamsRosterEntries(in: window, selfName: selfName)
-                    // Accept on browser evidence OR a real roster / "(You)" tile.
-                    guard browserMeeting || !teamsRoster.isEmpty
-                            || t.tiles.contains(where: { $0.isMe }) else { continue }
-                    teamsTiles = t.tiles
-                    speakers = []   // engine resolves Teams speakers from teamsTiles + audio
-                    participants = dedup(t.tiles.map { $0.name } + teamsRoster.map { $0.name })
+                    // The Teams "Meeting compact view" window is a secondary PIP-like
+                    // view — call-control chrome, not participant tiles. Keep the call
+                    // alive from it (so minimising to it doesn't end the meeting) but
+                    // DON'T harvest tiles/roster; the main window (same meeting id)
+                    // supplies those. This is what stops "Turn camera on" / "Calling
+                    // controls" / "Nobody" leaking as participants and speakers.
+                    if title.lowercased().contains("meeting compact view") {
+                        // Compact/PIP window: no participant tiles, but Teams names the
+                        // active speaker in an "<name> is speaking" note. Read it
+                        // directly (like the Zoom PIP). When nobody's speaking, just
+                        // keep the call alive (the main window supplies the roster).
+                        speakers = []
+                        if let sp = teamsSpeakingNote(in: window) {
+                            pipSpeaker = sp
+                            participants = [sp]
+                        } else {
+                            participants = []
+                            keepAliveOnly = true
+                        }
+                    } else {
+                        // Teams (new client) is a Chromium WebView, so its tiles surface
+                        // in AX like Meet's — supply per-tile observations for the engine's
+                        // VAD-gated resolver. See docs/teams-active-speaker-detection.md.
+                        let t = teamsTileObservations(in: window)
+                        // Remote mute is read from the People-panel roster rows (the one
+                        // dependable source; requires the panel open). Mark the row that
+                        // matches the self tile as isMe. See docs/teams-probe.md.
+                        let selfName = t.tiles.first(where: { $0.isMe })?.name
+                        teamsRoster = teamsRosterEntries(in: window, selfName: selfName)
+                        // ACTIVE-CALL gate (product parity): a "Leave" button, a "Shared
+                        // content" main landmark, or an "Attendees" outline — covers native
+                        // AND web Teams. The meeting URL alone is NOT enough (…/light-
+                        // meetings/launch is the launcher page before joining); the chat /
+                        // home window lacks these too. Roster / self tile corroborate.
+                        guard teamsCallActive(in: window) || !teamsRoster.isEmpty
+                                || t.tiles.contains(where: { $0.isMe }) else { continue }
+                        teamsTiles = t.tiles
+                        speakers = []   // engine resolves Teams speakers from teamsTiles + audio
+                        participants = dedup(t.tiles.map { $0.name } + teamsRoster.map { $0.name })
+                        // Prefer Teams' OWN active-speaker note ("<name> is speaking")
+                        // over the audio mute-gate — it's the same VAD signal shown in
+                        // the compact window, and avoids the ambiguous "Someone".
+                        pipSpeaker = teamsSpeakingNote(in: window)
+                    }
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +
                     // per-participant mute instead (see zoomNativeRoster). ACTIVE call =
@@ -253,37 +280,69 @@ final class AccessibilityScanner {
                     presentationActive: presentationActive,
                     teamsTiles: teamsTiles,
                     teamsRoster: teamsRoster,
-                    pipSpeaker: pipSpeaker
+                    pipSpeaker: pipSpeaker,
+                    keepAliveOnly: keepAliveOnly
                 ))
             }
         }
         return results
     }
 
-    /// Positive-evidence gate for a BROWSER meeting window. A tab whose title/URL
-    /// merely contains "meet"/"zoom"/"teams" (marketing sites, OAuth callbacks,
-    /// note apps) is NOT a meeting — require a mic/camera control, a meeting-join
-    /// URL, or a meeting code/marker in the title. This is what stops page text
-    /// from being harvested as fake participants.
-    private func browserWindowIsMeeting(_ platform: Platform, title: String,
-                                        url: String?, unmuted: Bool?) -> Bool {
-        // A detected mic/camera control means we're in a call on any platform.
-        if unmuted != nil { return true }
-        let u = (url ?? "").lowercased()
-        let t = title.lowercased()
-        switch platform {
-        case .meet:
-            return u.contains("meet.google.com/")
-                || t.range(of: #"[a-z]{3}-[a-z]{3,4}-[a-z]{3}"#, options: .regularExpression) != nil
-                || t.contains("meet - ") || t.contains("meet \u{2013} ")
-        case .zoom:
-            // Meeting-join paths only — NOT ai.zoom.us / zoom.us marketing or /callback.
-            return u.contains("zoom.us/j/") || u.contains("zoom.us/wc/") || u.contains("/wc/")
-                || t.contains("zoom meeting")
-        case .teams:
-            return u.contains("meetup-join") || u.contains("teams.microsoft.com/l/meetup")
-                || u.contains("/meet/")
+    /// The active speaker on a Teams window, read from its
+    /// `AXDocumentNote desc="<name> is speaking"` indicator — Teams' OWN VAD
+    /// (verified via AXDump; present in both the main and compact/PIP windows).
+    /// Returns nil for "Nobody is speaking". This is far more reliable than the
+    /// audio-direction mute-gate, so the engine prefers it.
+    private func teamsSpeakingNote(in window: AXUIElement) -> String? {
+        var name: String?
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if name != nil || n >= 2000 || d > maxDepth { return }
+            n += 1
+            if let desc = axString(el, "AXDescription") {
+                let low = desc.lowercased()
+                if low.hasSuffix("is speaking"), !low.hasPrefix("nobody") {
+                    let base = String(desc.dropLast("is speaking".count))
+                        .trimmingCharacters(in: CharacterSet(charactersIn: " ,"))
+                    if let clean = cleanParticipantName(base) { name = clean; return }
+                }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if name != nil { return } }
         }
+        rec(window, 0)
+        return name
+    }
+
+    /// Is this Teams window/tab actually IN a call — not the chat / home / calendar
+    /// view or the "…/light-meetings/launch" launcher page (which shares the meeting
+    /// URL)? Ported from the product's teamsCallActive/teamsCallWindowOpen: a
+    /// "Leave" button, a "Shared content" main landmark, or an "Attendees" outline.
+    /// Covers native AND web Teams; all vanish when the call ends.
+    private func teamsCallActive(in window: AXUIElement) -> Bool {
+        var active = false
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if active || n >= maxNodesPerWindow || d > maxDepth { return }
+            n += 1
+            if let role = axString(el, "AXRole") {
+                if role == "AXButton" {
+                    let label = ((axString(el, "AXTitle") ?? "") + " "
+                        + (axString(el, "AXDescription") ?? "")).lowercased()
+                    if label.contains("leave") { active = true; return }
+                }
+                if role == "AXGroup", axString(el, "AXSubrole") == "AXLandmarkMain",
+                   let d = axString(el, "AXDescription")?.lowercased(), d.contains("shared content") {
+                    active = true; return
+                }
+                if role == "AXOutline", let d = axString(el, "AXDescription")?.lowercased(),
+                   d.contains("attendees") {
+                    active = true; return
+                }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if active { return } }
+        }
+        rec(window, 0)
+        return active
     }
 
     // MARK: Platform resolution
