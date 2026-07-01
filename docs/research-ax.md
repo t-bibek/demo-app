@@ -7,15 +7,15 @@
 
 ## Summary — what macOS AX exposes per platform
 
-| Platform | Participant name | is-speaking | Mute / unmute |
-|---|---|---|---|
-| **Meet** (web) | ✅ | ✅ `kssMZb` class on tile (`AXDOMClassList`) | ✅ local · ⚠️ remote (needs panel) |
-| **Zoom native** (`us.zoom.xos`) | ✅ | ✅ `", active speaker"` text on tile `AXDescription` | ✅ per-participant (tile + roster) |
-| **Zoom web** (`app.zoom.us`) | ✅ | ✅ `speaker-bar-container__video-frame--active` class on tile (`AXDOMClassList`) | ❌ (not on tiles) |
-| **Teams native** (`com.microsoft.teams2`) | ✅ | ✅ per-tile speaking-class set in `AXDOMClassList` (anchor `vdi-frame-occlusion`; rotating hashes → remote-config) + VAD | ✅ local · ✅ remote (tile `AXMenuItem` desc — `, muted` present/absent) |
-| **Teams web** (`teams.microsoft.com`) | ✅ | ✅ same class set as native | ✅ local · ✅ remote (tile `AXMenuItem` desc — `, muted` present/absent) |
+| Platform | Participant name | is-speaking | Mute / unmute | PIP / compact layout |
+|---|---|---|---|---|
+| **Meet** (web) | ✅ tile caption; compact tile → `"Pin <Name>"` button † | ✅ `kssMZb` class on tile (`AXDOMClassList`) | ✅ local · ⚠️ remote (needs panel) | document-PIP = **separate window** (its `AXWebArea` has no `meet.google.com` URL); compact/spotlight drops the caption → name only via the `"Pin <Name>"` button (forced-tree †), but `kssMZb` ring still readable |
+| **Zoom native** (`us.zoom.xos`) | ✅ | ✅ `", active speaker"` text on tile `AXDescription` | ✅ per-participant (tile + roster) | PIP thumbnail (subrole `AXSystemDialog`) names the speaker — `"Talking: <name>"` (Zoom's own VAD) → `pipSpeaker` |
+| **Zoom web** (`app.zoom.us`) | ✅ | ✅ `speaker-bar-container__video-frame--active` class on tile (`AXDOMClassList`) | ❌ (not on tiles) | no separate PIP surface — filmstrip `--active` covers the dominant speaker inline |
+| **Teams native** (`com.microsoft.teams2`) | ✅ | ✅ per-tile speaking-class set in `AXDOMClassList` (anchor `vdi-frame-occlusion`; rotating hashes → remote-config) + VAD | ✅ local · ✅ remote (tile `AXMenuItem` desc — `, muted` present/absent) | compact / pop-out view names the speaker — `"<name> is speaking"` `AXDocumentNote` → `teamsSpeakingNote` |
+| **Teams web** (`teams.microsoft.com`) | ✅ | ✅ same class set as native | ✅ local · ✅ remote (tile `AXMenuItem` desc — `, muted` present/absent) | same as native (compact `"<name> is speaking"` note) |
 
-✅ = readable from the macOS AX tree · ❌ = not in AX (DOM/visual only) · ⚠️ = conditional / unconfirmed.
+✅ = readable from the macOS AX tree · ❌ = not in AX (DOM/visual only) / not needed · ⚠️ = conditional / unconfirmed. (†  forced-tree caveat at the bottom.)
 
 **Names are always readable, and EVERY platform now exposes who-is-speaking directly in AX** (2026-07-01 — Zoom web was the last holdout). Two mechanisms: a **per-tile CSS class in `AXDOMClassList`** (Meet `kssMZb`; Teams native+web `vdi-frame-occlusion` + rotating Griffel hashes → remote-config; Zoom **web** `speaker-bar-container__video-frame--active`), or a **`", active speaker"` text marker** in `AXDescription` (Zoom native). No platform now requires audio VAD for attribution — VAD is fused only for precise on/off timing. The **self/local user is always the mic**, never a tile — the speaking ring is drawn only on *remote* tiles. Per-platform detail below.
 
@@ -126,6 +126,12 @@ description="Turn on microphone"    → mic is OFF (muted)
 
 **Consequence** — Meet exposes **who-is-speaking (`kssMZb`) AND local mic on/off** straight from macOS AX (fuse with VAD). Only the stable participant-id and remote-mute-while-panel-closed need DOM access. This is exactly why Meet is AX-trackable and Teams (which hides speaking behind `data-*`) is not.
 
+**Compact / PIP layouts & the forced-tree caveat (2026-07-01).** In the normal grid/gallery every tile carries a visible caption, so names read straight off the UNFORCED foreground tree alongside the `kssMZb` ring. Two Meet-specific layouts change that:
+- **Compact / spotlight-self** — the small remote tile **drops its caption**; the name then lives ONLY in the per-tile `"Pin <Name> to your main screen"` button, which is absent from the unforced tree, so a caption-less remote is detectable (ring) but resolves to **"Someone"** unless the tree is forced. The engine handles it by resolving the `kssMZb` **ring before geometry** (geometry would return the big self tile) and gating remotes on **system audio**, not the local mic.
+- **Document Picture-in-Picture** pops the tiles into a **separate top-level window** whose `AXWebArea` carries no `meet.google.com` URL.
+
+Tile extraction is scoped to the page's `AXLandmarkMain` so DevTools / browser chrome can't leak in as fake tiles. Full detail in "Browser window & the degraded vs forced AX tree" and "Picture-in-Picture & compact layouts" at the bottom.
+
 ---
 
 ## Zoom native (`us.zoom.xos`) — active speaker IS in AX (2026-06-25)
@@ -202,3 +208,89 @@ It toggles **per tile, following the dominant speaker** (verified live), and `--
 **Consequence** — Zoom web: who-is-speaking IS in AX (tile `--active` class, name from avatar-desc/footer-value), fuse VAD for on/off timing; **self → mic + mute**. Implemented in both the engine (`AccessibilityScanner.zoomWebSpeakerBar` → `DetectionEngine` source `zoom.web_active`) and the command probe (`ZoomWebProbe`, printed by `swift run ZoomProbe` as `🌐 ZOOM-WEB 🔊 ACTIVE`). Note Recall's binary has no browser-Zoom detector — this is a capability we have that its SDK does not.
 
 > The old "for Zoom, native is AX-rich and web is blind" framing is **retired**: both Zoom clients now expose the active speaker in AX — native via the `", active speaker"` *text* marker, web via the `--active` *class*. The web/Chromium surface carries the signal here too, consistent with Meet/Teams.
+
+---
+
+† **Forced-tree caveat.** The per-tile **control buttons** (`"Pin <Name> to your main screen"`, `"More options for <Name>"`) — the only name source for a *compact tile that has dropped its caption* — appear ONLY when the Chromium tree is forced (`AXManualAccessibility`/`AXEnhancedUserInterface`). Production does **not** force it (memory + irreversibility), so a caption-less compact/PIP remote resolves to **"Someone"**. Tiles, the `kssMZb`/`--active`/`vdi-frame-occlusion` **ring**, and normal captions are all readable **unforced** on the foreground tab. Full detail in "Browser window & the degraded vs forced AX tree" below.
+
+## Browser window & the degraded vs forced AX tree (all Chromium platforms) (2026-07-01)
+
+Chromium (Chrome, Edge, the new Teams / WebView2, Electron) serves assistive tech
+a **degraded, passive-reader tree** until a client sets `AXManualAccessibility`
+and/or `AXEnhancedUserInterface` on the app element — the "an AT is here" flag
+VoiceOver and Recall's recorder set. What that means for detection:
+
+**Visible on the FOREGROUND tab UNFORCED** (verified live — the production scanner
+reads this and does NOT force):
+- Participant **tiles** (`oZRSLe` / `dkjMxf`) and their geometry.
+- The **speaking-ring class** (`kssMZb`, Teams `vdi-frame-occlusion`, Zoom-web
+  `--active`) in `AXDOMClassList`.
+- Tile **captions** (`AXStaticText`) — self, and remotes in normal grid/gallery.
+
+**Only present once the tree is FORCED** (the unforced tree's only `AXButton`s are
+browser chrome — "View site information", "Back to tab"):
+- Per-tile **control buttons** (`"Pin <Name> to your main screen"`, `"More
+  options for <Name>"`). These carry a participant's name in **compact / PIP
+  layouts that drop the visible caption** — so a caption-less speaking remote is
+  detectable (ring) but **not nameable** without forcing.
+
+**Decision — production does NOT force the tree.** Forcing makes Chromium build the
+full tree (~18k nodes vs ~425 for a collapsed Meet window) — a real memory cost —
+and it is **irreversible** (no way to clear it; the browser stays in accessibility
+mode until it restarts, same footprint as VoiceOver). So the app reads the
+already-sufficient unforced foreground tree; the trade-off is that a caption-less
+compact/PIP remote resolves to **"Someone"**, not a name. The probe tools
+(`MeetProbe`, `AXSnapshot`, `AXObserve`) DO force it — which is why a probe dump
+shows the full tree (control buttons, every name) while a plain scan does not.
+Historic flakiness ("sometimes named, sometimes not") traced to exactly this:
+detection only saw the full tree while a probe or VoiceOver had *already* flipped
+the flag.
+
+## Structural scoping — the meeting `<main>` landmark (Meet) (2026-07-01)
+
+The Meet video stage is the page's `<main>` region → `AXGroup [AXLandmarkMain]`,
+found INSIDE the `meet.google.com` `AXWebArea`. Scope tile/name extraction to that
+node, **not** the whole window: the address bar, other tabs, and an open
+**DevTools panel** (its own `AXWebArea` + a `desc="DOM tree explorer"`
+`AXLandmarkMain`) all sit OUTSIDE it. Scanning the whole window instead let
+DevTools chrome (`"DevTools is docked to right"`) pass `isLikelyPersonName`,
+become a fake tile, win the geometry contest, and get logged as the speaker. The
+URL match on the web area distinguishes the Meet `<main>` from DevTools'. Within
+the landmark, tiles are resolved by **geometry** — no dependency on the rotating
+`oZRSLe`/`kssMZb` class for *tile* detection.
+
+## Picture-in-Picture & compact layouts — per platform (2026-07-01)
+
+**Meet — document-PIP is a SEPARATE top-level window.** Popping a call out
+(document Picture-in-Picture) moves the tiles into a new always-on-top window
+whose `AXWebArea` carries **no `meet.google.com` URL** (its own document), so
+URL/title classification skips it — a tab-rooted scan (and `AXSnapshot chrome`,
+which roots at a meeting *tab*) misses it. `AXSnapshot` now also dumps non-tab /
+PIP windows for diagnosis.
+
+**Meet — the compact / spotlight-self layout drops captions.** When you pin
+yourself (large tile, camera off) a talking remote sits in a small tile that
+**omits its caption** — the name survives ONLY in the `"Pin <Name> to your main
+screen"` button (needs the forced tree; see above). The `kssMZb` ring is still on
+that small tile, so who-is-speaking is known even when the name is not. Two engine
+consequences:
+- Resolve the **ring BEFORE geometry** — geometry only knows tile *size* and
+  returns the big self tile (wrong). The ring only ever marks the speaking remote
+  (never self), so it is the direct read; geometry is the no-ring fallback and
+  never returns the self tile.
+- Gate remote attribution on **system audio**, not the local mic — a muted
+  meeting mic still moves the physical mic meter, so mixing it in pinned your own
+  muted speech onto the remote tile.
+
+**Zoom native — PIP thumbnail names the speaker.** The minimized Zoom PIP is a
+floating window (subrole `AXSystemDialog`) with a `"Talking: <name>"` indicator
+(Zoom's own VAD) — read directly (`ScannedWindow.pipSpeaker` via
+`zoomPipContent`), so PIP-only mode names the speaker instead of "Someone".
+
+**Teams — compact / pop-out view names the speaker.** The Teams "Meeting compact
+view" is a secondary PIP-like window with no participant tiles, but Teams writes
+`"<name> is speaking"` as an `AXDocumentNote` there — read directly
+(`teamsSpeakingNote`), the same role as the Zoom PIP indicator.
+
+**Zoom web** has no separate PIP surface on this build — the filmstrip `--active`
+class covers the dominant speaker inline.
