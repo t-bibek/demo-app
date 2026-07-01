@@ -4,9 +4,8 @@ build/
 .swiftpm/
 .DS_Store
 
-# Probe run captures (scratch — e.g. `swift run ZoomProbe … | tee logzoom.md`)
-/log*.md
-/zoom-native*.md
+# Probe run captures (scratch — e.g. `swift run ZoomProbe … | tee logs/logzoom.md`)
+/macos/logs/
 
 # AXSnapshot output (full AX-tree dumps for analysis)
 /ax-dumps/

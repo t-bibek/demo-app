@@ -15,13 +15,13 @@ focus required. Built with **Swift + SwiftUI**.
 
 | Concern | Windows original | macOS port |
 | --- | --- | --- |
-| "Is anyone speaking?" — remote audio | WASAPI playback peak | **ScreenCaptureKit** system-audio capture ([`SystemAudioMeter`](Sources/MeetSpeakerDetector/Engine/SystemAudioMeter.swift)) |
-| "Is anyone speaking?" — your mic | WASAPI capture peak | **AVAudioEngine** input tap ([`MicMeter`](Sources/MeetSpeakerDetector/Engine/MicMeter.swift)) |
-| "Who is speaking?" — names | Windows UI Automation tree | **Accessibility API / AXUIElement** ([`AccessibilityScanner`](Sources/MeetSpeakerDetector/Engine/AccessibilityScanner.swift)) |
-| Merge loop (500 ms) + thresholds | PowerShell engine | [`DetectionEngine`](Sources/MeetSpeakerDetector/Engine/DetectionEngine.swift) |
-| Pulses → sessions | `SessionTracker` (TS) | [`SessionTracker`](Sources/SpeakerCore/SessionTracker.swift) (ported 1:1) |
-| Types / formatting / NDJSON | `src/shared/*.ts` | [`Sources/SpeakerCore`](Sources/SpeakerCore) (ported 1:1) |
-| UI (React) | `src/renderer/App.tsx` | SwiftUI [`Views/`](Sources/MeetSpeakerDetector/Views) |
+| "Is anyone speaking?" — remote audio | WASAPI playback peak | **ScreenCaptureKit** system-audio capture ([`SystemAudioMeter`](macos/Sources/MeetSpeakerDetector/Engine/SystemAudioMeter.swift)) |
+| "Is anyone speaking?" — your mic | WASAPI capture peak | **AVAudioEngine** input tap ([`MicMeter`](macos/Sources/MeetSpeakerDetector/Engine/MicMeter.swift)) |
+| "Who is speaking?" — names | Windows UI Automation tree | **Accessibility API / AXUIElement** ([`AccessibilityScanner`](macos/Sources/MeetSpeakerDetector/Engine/AccessibilityScanner.swift)) |
+| Merge loop (500 ms) + thresholds | PowerShell engine | [`DetectionEngine`](macos/Sources/MeetSpeakerDetector/Engine/DetectionEngine.swift) |
+| Pulses → sessions | `SessionTracker` (TS) | [`SessionTracker`](macos/Sources/SpeakerCore/SessionTracker.swift) (ported 1:1) |
+| Types / formatting / NDJSON | `src/shared/*.ts` | [`Sources/SpeakerCore`](macos/Sources/SpeakerCore) (ported 1:1) |
+| UI (React) | `src/renderer/App.tsx` | SwiftUI [`Views/`](macos/Sources/MeetSpeakerDetector/Views) |
 
 The two signals are merged every poll exactly as before: **audio decides *whether*
 someone is speaking; the accessibility scan decides *who***. When a name can't be
@@ -36,7 +36,12 @@ of **2000 ms** so indicator flicker doesn't split one utterance.
 
 Requires macOS 13+ and the Swift toolchain (Xcode or Command Line Tools).
 
+> The Swift package lives in [`macos/`](macos) — run all `swift` / `./scripts`
+> commands from there (`cd macos`).
+
 ```bash
+cd macos
+
 # Build a runnable, ad-hoc-signed .app bundle
 ./scripts/build-app.sh
 open build/MeetSpeakerDetector.app
@@ -158,21 +163,24 @@ URL (falling back to a normalized title); `participant_id` is `<meeting_id>::<na
 ## Project layout
 
 ```
-Sources/
-  SpeakerCore/            Pure, UI-free logic ported from src/shared/* (unit-tested)
-    Types.swift           Platform, EnginePulse/Windows/Status, TrackerEvent, AppEvent
-    SessionTracker.swift  Pulses -> speaking sessions (1:1 port)
-    Formatting.swift      formatDuration / formatClock (1:1 port)
-    Ndjson.swift          Incremental NDJSON parser + session log writer
-  MeetSpeakerDetector/    The macOS app
-    App.swift             SwiftUI @main entry
-    Engine/               MicMeter, SystemAudioMeter, AccessibilityScanner, DetectionEngine
-    ViewModel/AppModel.swift   Observable state (mirrors App.tsx)
-    Views/                Header, Now speaking, Speaking log, Talk time, Status footer
-  SpeakerCoreSelfTest/    XCTest-free check runner
-Tests/SpeakerCoreTests/   XCTest suite
-Resources/Info.plist      Bundle metadata + microphone usage string
-scripts/build-app.sh      Assembles + signs the .app
+macos/                    The Swift package (app + core + AX probe tools)
+  Sources/
+    SpeakerCore/          Pure, UI-free logic ported from src/shared/* (unit-tested)
+      Types.swift         Platform, EnginePulse/Windows/Status, TrackerEvent, AppEvent
+      SessionTracker.swift  Pulses -> speaking sessions (1:1 port)
+      Formatting.swift    formatDuration / formatClock (1:1 port)
+      Ndjson.swift        Incremental NDJSON parser + session log writer
+    MeetSpeakerDetector/  The macOS app
+      App.swift           SwiftUI @main entry
+      Engine/             MicMeter, SystemAudioMeter, AccessibilityScanner, DetectionEngine
+      ViewModel/AppModel.swift   Observable state (mirrors App.tsx)
+      Views/              Header, Now speaking, Speaking log, Talk time, Status footer
+    SpeakerCoreSelfTest/  XCTest-free check runner
+  Tests/SpeakerCoreTests/ XCTest suite
+  Resources/Info.plist    Bundle metadata + microphone usage string
+  scripts/build-app.sh    Assembles + signs the .app
+  logs/                   Probe run captures (scratch, gitignored)
+docs/                     Research notes (cross-platform AX findings)
 ```
 
 ## Known limitations

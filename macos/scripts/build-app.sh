@@ -13,6 +13,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="MeetSpeakerDetector"
 BUNDLE="${ROOT}/build/${APP_NAME}.app"
 
+# The Swift package lives here (macos/), so build from ROOT regardless of the
+# caller's working directory.
+cd "${ROOT}"
+
 echo "==> Building (${CONFIG})"
 swift build -c "${CONFIG}" --product "${APP_NAME}"
 
