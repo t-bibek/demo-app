@@ -277,6 +277,11 @@ final class DetectionEngine {
                 ) {
                     add(name, name == "Someone" ? "audio.someone" : "zoom.mute_gate")
                 }
+            } else if let pip = w.pipSpeaker {
+                // Zoom PIP thumbnail: Zoom names the active speaker directly in its
+                // "Talking: <name>" indicator (its own VAD) — trust it over the
+                // anonymous audio floor.
+                add(pip, "zoom.pip")
             } else {
                 // B2 — Teams, or native Zoom with the panel closed / unreadable:
                 // audio-only. Without this branch native Zoom logged NOTHING

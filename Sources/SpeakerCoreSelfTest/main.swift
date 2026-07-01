@@ -371,7 +371,10 @@ check(meetingId(platform: .meet, url: "https://meet.google.com/aaa-bbbb-ccc", ti
       != meetingId(platform: .meet, url: "https://meet.google.com/ddd-eeee-fff", title: ""),
       "distinct meet codes -> distinct ids (no collapse)")
 equal(participantId(meetingId: "meet::abc", name: "Wedding Thapas"),
-      "meet::abc::wedding thapas", "participant id is meeting-namespaced + name-normalized")
+      "meet::abc::weddingthapas", "participant id is meeting-namespaced + alphanumeric-normalized")
+equal(participantId(meetingId: "z::m", name: "David's Iphone"),
+      participantId(meetingId: "z::m", name: "David'sIphone"),
+      "participant id stable across spacing/apostrophe variance")
 
 // MARK: MeetingStateTracker (lifecycle diff + grace + sticky flags)
 print("MeetingStateTracker:")

@@ -33,7 +33,7 @@ final class MeetingIdentityTests: XCTestCase {
 
     func testParticipantIdNamespacedAndNormalized() {
         XCTAssertEqual(participantId(meetingId: "meet::abc", name: "Wedding Thapas"),
-                       "meet::abc::wedding thapas")
+                       "meet::abc::weddingthapas")
     }
 }
 

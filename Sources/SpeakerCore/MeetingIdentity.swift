@@ -19,6 +19,13 @@ public func meetingId(platform: Platform, url: String?, title: String) -> String
        let r = title.lowercased().range(of: #"[a-z]{3}-[a-z]{3,4}-[a-z]{3}"#, options: .regularExpression) {
         return "meet::\(String(title.lowercased()[r]))"
     }
+    // Native Zoom (no URL): the "Zoom Meeting" window AND the "Zoom"
+    // Picture-in-Picture thumbnail are the SAME call. Key on a constant so PIP
+    // doesn't spawn a second meeting or churn the id — you're in one native Zoom
+    // call at a time.
+    if platform == .zoom, (url ?? "").isEmpty {
+        return "zoom::meeting"
+    }
     return "\(platform.rawValue)::\(normalizedMeetingTitle(title))"
 }
 
@@ -28,7 +35,13 @@ public func meetingId(platform: Platform, url: String?, title: String) -> String
 public func participantId(meetingId: String, name: String) -> String {
     let clean = cleanParticipantName(name)
         ?? name.trimmingCharacters(in: .whitespacesAndNewlines)
-    return "\(meetingId)::\(clean.lowercased())"
+    // Reduce to lowercased alphanumerics so trivial AX spelling variance across
+    // scans (curly vs straight apostrophe, spacing — "David's Iphone" vs
+    // "David'sIphone") maps to ONE stable id; otherwise the same person churns
+    // leave/join. The readable display name is kept separately on the participant.
+    let key = String(clean.lowercased().unicodeScalars
+        .filter { CharacterSet.alphanumerics.contains($0) })
+    return "\(meetingId)::\(key.isEmpty ? clean.lowercased() : key)"
 }
 
 /// Extracts the platform's meeting code from a page URL, e.g.
@@ -75,6 +88,12 @@ public func normalizedMeetingTitle(_ title: String) -> String {
         " - Brave", " - Vivaldi", " - Opera", " - Safari",
         " - Mozilla Firefox", " - Firefox",
     ])
+    // Zoom's native window title gains a free-tier "NN-minutes" suffix near the
+    // 40-min limit ("Zoom Meeting  40-minutes"). Strip it and collapse whitespace
+    // so it maps to the same id as "Zoom Meeting" instead of churning the meeting.
+    s = s.replacingOccurrences(of: #"\s+\d+[\s-]min(?:ute)?s?\b.*$"#, with: "",
+                               options: [.regularExpression, .caseInsensitive])
+    s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     return s.trimmingCharacters(in: .whitespaces)
 }
 
