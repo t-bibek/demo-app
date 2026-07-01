@@ -29,7 +29,37 @@ struct HeaderView: View {
             }
 
             statusChips
+            meetingSummary
             permissionsBar
+        }
+    }
+
+    /// Current meeting title, URL, and live participant count (Recall-style),
+    /// shown in the existing header rather than a new panel.
+    @ViewBuilder
+    private var meetingSummary: some View {
+        if let m = model.meetings.first {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Theme.color(m.platform))
+                    .frame(width: 7, height: 7)
+                Text(m.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let url = m.url, !url.isEmpty {
+                    Text(url)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Text("· \(m.participants.count) participant\(m.participants.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .layoutPriority(1)
+                Spacer()
+            }
         }
     }
 

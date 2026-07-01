@@ -12,8 +12,10 @@ struct ContentView: View {
             HStack(alignment: .top, spacing: 14) {
                 LogTableView()
                     .frame(maxWidth: .infinity)
+                EventLogView()
+                    .frame(maxWidth: .infinity)
                 TalkTimeView()
-                    .frame(width: 300)
+                    .frame(width: 260)
             }
             .frame(maxHeight: .infinity)
             StatusFooterView()

@@ -49,8 +49,10 @@ public final class NdjsonParser {
     }
 }
 
-/// Appends completed speaking sessions to an NDJSON log file (one JSON object
-/// per line), matching the spirit of the original's session log output.
+/// Appends a Recall-style event stream to an NDJSON log file (one JSON object per
+/// line): `meeting_initialized` / `meeting_updated` / `meeting_ended`,
+/// `participant_joined` / `participant_updated` / `participant_left`, and
+/// `speech_on` / `speech_off`.
 public final class NdjsonSessionLogger {
     public let url: URL
     private let queue = DispatchQueue(label: "msd.ndjson.logger")
@@ -69,15 +71,12 @@ public final class NdjsonSessionLogger {
         self.handle = h
     }
 
-    public func logEnd(platform: Platform, name: String, startTs: Int, endTs: Int, durationMs: Int) {
-        let obj: [String: Any] = [
-            "type": "speaker-end",
-            "platform": platform.rawValue,
-            "name": name,
-            "startTs": startTs,
-            "endTs": endTs,
-            "durationMs": durationMs,
-        ]
+    /// Append one event line `{"type": …, "ts": …, <fields>}`. `fields` must hold
+    /// only JSON-serializable values (String / Int / Bool / etc.).
+    public func logEvent(_ type: String, _ fields: [String: Any], ts: Int) {
+        var obj = fields
+        obj["type"] = type
+        obj["ts"] = ts
         queue.async { [weak self] in
             guard let self, let h = self.handle else { return }
             guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else { return }

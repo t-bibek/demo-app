@@ -71,6 +71,19 @@ public func isSpeakingMarker(_ text: String) -> Bool {
 public func isLikelyPersonName(_ s: String) -> Bool {
     let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
     guard t.count >= 2, t.count <= 50 else { return false }
+    // Structural junk (mirrors the product's isPlausibleName): real names never
+    // contain braces/brackets/quotes/markup, pipes, bullets or dash separators —
+    // rejects JSON blobs, API responses, and marketing/toast rows that leak in
+    // (e.g. {"message":"Missing Authentication Token"}, "… · recurring monthly").
+    if t.rangeOfCharacter(from: CharacterSet(charactersIn: "{}[]<>\"=|•·–—")) != nil { return false }
+    // A display name is at most a few words; long runs are sentences / toasts.
+    let words = t.split(whereSeparator: { $0.isWhitespace })
+    if words.count > 6 { return false }
+    // Reject ALL-CAPS tokens of 3+ letters (USD, FAQ, OFF, VOIP…): labels, not names.
+    for w in words {
+        let letters = String(w.filter { $0.isLetter })
+        if letters.count >= 3, letters == letters.uppercased() { return false }
+    }
     let lower = t.lowercased()
 
     let rejectExact: Set<String> = [
@@ -84,6 +97,10 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "people", "contributors", "in call",
         // Teams meeting-stage chrome that leaks in as fake tiles:
         "cancel",
+        // Browser/PWA chrome + Meet call-control buttons that leak as fake people
+        // (seen as participant rows on the Meet PWA): "Reload", "Back", "Extensions"…
+        "reload", "back", "forward", "refresh", "extensions", "extension",
+        "lock", "bookmark", "bookmarks", "downloads", "history", "profile",
     ]
     if rejectExact.contains(lower) { return false }
 
@@ -96,6 +113,19 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "share screen", "screen share", "sharing", "present", "everyone",
         "view all", "add people", "host control", "call control", "more option",
         "activities", "settings", "captions", "reaction",
+        // Meet/browser call-control button phrases (leak as fake participant rows):
+        "turn on", "turn off", "leave call", "leave now", "leave meeting",
+        "raise hand", "lower hand", "more options", "show everyone",
+        // Browser/PWA chrome phrases (seen leaking from non-meeting popups/tabs):
+        "incognito", "new tab", "this tab", "site information", "cookies",
+        "pretty-print", "bookmark", "address bar", "missing authentication",
+        "reload", "extensions",
+        // Meet toast / announcement banners (climb to a tile-sized ancestor and get
+        // fabricated into fake speakers): "Background is now replaced",
+        // "You're presenting", "… is no longer …", "… pinned". These words never
+        // occur in a human display name, so a plain substring match is safe.
+        "background", "replaced", "no longer", "presenting", "pinned",
+        "is now on", "is now off", "recording", "transcription",
         // Zoom web control phrases:
         "companion", "my video", "you are", "permission", "ellipsis", "panel",
         // Zoom NATIVE toolbar / banner labels (leak in as fake participant rows):

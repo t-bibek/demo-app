@@ -29,6 +29,7 @@ public final class SessionTracker {
         var name: String
         var startTs: Int
         var lastSeenTs: Int
+        var ctx: SpeechContext
     }
 
     private var sessions: [String: ActiveSession] = [:]
@@ -42,20 +43,28 @@ public final class SessionTracker {
     }
 
     /// Report that `name` was observed speaking on `platform` at time `ts`.
-    public func pulse(_ platform: Platform, _ name: String, _ ts: Int) {
+    ///
+    /// `meetingId`/`participantId`/`source` carry the Recall-style identity. They
+    /// default empty so existing callers/tests compile unchanged; when omitted the
+    /// session key falls back to the legacy `platform::name`.
+    public func pulse(_ platform: Platform, _ name: String, _ ts: Int,
+                      meetingId: String = "", participantId: String = "", source: String? = nil) {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleaned.isEmpty { return }
 
-        let key = "\(platform.rawValue)::\(cleaned)"
+        let pid = participantId.isEmpty ? "\(platform.rawValue)::\(cleaned)" : participantId
+        let ctx = SpeechContext(meetingId: meetingId, participantId: pid, source: source)
+        let key = pid
         if var existing = sessions[key] {
             // Guard against clock weirdness; never move lastSeen backwards.
             existing.lastSeenTs = max(existing.lastSeenTs, ts)
+            existing.ctx = ctx   // last-seen-wins for the source attribution
             sessions[key] = existing
             return
         }
 
-        sessions[key] = ActiveSession(platform: platform, name: cleaned, startTs: ts, lastSeenTs: ts)
-        emit(.start(platform: platform, name: cleaned, startTs: ts))
+        sessions[key] = ActiveSession(platform: platform, name: cleaned, startTs: ts, lastSeenTs: ts, ctx: ctx)
+        emit(.start(platform: platform, name: cleaned, startTs: ts, ctx: ctx))
     }
 
     /// Advance the clock: close sessions that have been silent for longer than
@@ -66,7 +75,7 @@ public final class SessionTracker {
                 sessions.removeValue(forKey: key)
                 emit(endEvent(s))
             } else {
-                emit(.tick(platform: s.platform, name: s.name, startTs: s.startTs, durationMs: durationOf(s)))
+                emit(.tick(platform: s.platform, name: s.name, startTs: s.startTs, durationMs: durationOf(s), ctx: s.ctx))
             }
         }
     }
@@ -91,6 +100,7 @@ public final class SessionTracker {
                     name: s.name,
                     startTs: s.startTs,
                     endTs: s.startTs + durationMs,
-                    durationMs: durationMs)
+                    durationMs: durationMs,
+                    ctx: s.ctx)
     }
 }

@@ -134,13 +134,26 @@ covers `formatDuration`, `SessionTracker`, and the NDJSON parser.
 
 ## Output
 
-Completed speaking sessions stream into the UI and are appended as NDJSON to:
+A Recall.ai-style event stream drives the UI and is appended as NDJSON to:
 
 ```
 ~/Library/Application Support/MeetSpeakerDetector/sessions.ndjson
 ```
 
-Each line is one `speaker-end` record: `{platform, name, startTs, endTs, durationMs}`.
+Each line is one event `{"type": …, "ts": …, …}`. Types:
+
+| type | key fields |
+| --- | --- |
+| `meeting_initialized` / `meeting_updated` | `meeting_id, platform, title, participant_count` |
+| `meeting_ended` | `meeting_id` |
+| `participant_joined` / `participant_updated` | `meeting_id, participant_id, name, is_local?, is_muted?` |
+| `participant_left` | `meeting_id, participant_id, name` |
+| `speech_on` | `meeting_id, participant_id, name, platform, source, start_ts` |
+| `speech_off` | `… , start_ts, end_ts, duration_ms` |
+
+`source` records how the speaker was attributed (e.g. `meet.geometry`, `meet.kssMZb`,
+`zoom.mute_gate`, `audio.someone`). `meeting_id` is the meeting code parsed from the
+URL (falling back to a normalized title); `participant_id` is `<meeting_id>::<name>`.
 
 ## Project layout
 

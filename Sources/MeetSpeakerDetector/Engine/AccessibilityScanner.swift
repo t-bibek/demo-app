@@ -8,6 +8,10 @@ import SpeakerCore
 struct ScannedWindow {
     var platform: Platform
     var title: String
+    /// Page URL from the browser address bar when available (nil for native
+    /// apps / unreadable trees). Used to derive a STABLE meeting id from the
+    /// meeting code rather than the volatile window title.
+    var url: String?
     var nodeCount: Int
     var treeOk: Bool
     /// Names whose tile/element carried a "speaking" marker this scan.
@@ -135,31 +139,44 @@ final class AccessibilityScanner {
                 var teamsRoster: [ZoomRosterEntry] = []
                 var presentationActive = false
 
+                // A browser tab / PWA window merely CONTAINING "meet"/"zoom"/"teams"
+                // in its title or URL is NOT a meeting — marketing pages
+                // (ai.zoom.us), OAuth callbacks, note apps. Require positive evidence
+                // before scanning it, so page text never becomes fake participants.
+                let browserMeeting = browserWindowIsMeeting(platform, title: title,
+                                                            url: collector.url,
+                                                            unmuted: collector.localUserUnmuted)
+
                 if platform == .meet {
-                    // Meet's active speaker is fused (structural + geometry + class +
-                    // VAD) in the engine — the scanner supplies the per-tile
-                    // observations and whether a presentation dominates the stage.
+                    // Meet's active speaker is fused (geometry + class + VAD) in the
+                    // engine — the scanner supplies per-tile observations + presentation.
                     let m = meetTileObservations(in: window)
+                    // Accept on browser evidence OR a "(You)" self tile (a PWA meeting
+                    // with no URL/code still has your own tile).
+                    guard browserMeeting || m.tiles.contains(where: { $0.isMe }) else { continue }
                     meetTiles = m.tiles
                     presentationActive = meetPresentationActive(in: window)
-                    speakers = []   // engine resolves Meet speakers from meetTiles
-                    participants = dedup(participants + m.participants)
+                    speakers = []   // engine resolves Meet speakers from meetTiles (kssMZb)
+                    // Roster: the People panel when it's open (authoritative), else the
+                    // tile-anchored names. Speaking detection is unchanged.
+                    let panel = meetPanelRoster(in: window)
+                    participants = panel.isEmpty ? dedup(m.participants) : dedup(panel)
                 } else if platform == .teams {
                     // Teams (new client) is a Chromium WebView, so its tiles surface
-                    // in AX like Meet's — supply per-tile observations (structural
-                    // is-speaking via stable aria_*/calling_* tokens + geometry +
-                    // mute) for the engine's VAD-gated resolver. See
-                    // docs/teams-active-speaker-detection.md.
+                    // in AX like Meet's — supply per-tile observations for the engine's
+                    // VAD-gated resolver. See docs/teams-active-speaker-detection.md.
                     let t = teamsTileObservations(in: window)
-                    teamsTiles = t.tiles
-                    // Remote mute is NOT reliable on the video tiles — read it from
-                    // the People-panel roster rows ("<Name>, …, Muted/Unmuted"),
-                    // the one dependable source (requires the panel open). Mark the
-                    // row matching the self tile as isMe. See docs/teams-probe.md.
+                    // Remote mute is read from the People-panel roster rows (the one
+                    // dependable source; requires the panel open). Mark the row that
+                    // matches the self tile as isMe. See docs/teams-probe.md.
                     let selfName = t.tiles.first(where: { $0.isMe })?.name
                     teamsRoster = teamsRosterEntries(in: window, selfName: selfName)
+                    // Accept on browser evidence OR a real roster / "(You)" tile.
+                    guard browserMeeting || !teamsRoster.isEmpty
+                            || t.tiles.contains(where: { $0.isMe }) else { continue }
+                    teamsTiles = t.tiles
                     speakers = []   // engine resolves Teams speakers from teamsTiles + audio
-                    participants = dedup(participants + t.participants + teamsRoster.map { $0.name })
+                    participants = dedup(t.tiles.map { $0.name } + teamsRoster.map { $0.name })
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +
                     // per-participant mute instead (see zoomNativeRoster), and
@@ -171,7 +188,14 @@ final class AccessibilityScanner {
                         || title.lowercased().contains("meeting")
                     if !isMeeting { continue }
                     speakers = []   // no direct speaking read on native Zoom
-                    participants = dedup(participants + zoomRoster.map { $0.name })
+                    participants = dedup(zoomRoster.map { $0.name })
+                } else if platform == .zoom {
+                    // Zoom WEB (app.zoom.us/wc). Gate out ai.zoom.us marketing pages and
+                    // OAuth callbacks that merely have "zoom" in the title/URL. The
+                    // roster is the active-speaker-marked video tiles only — the generic
+                    // walk on web zoom is page chrome (nav, pricing, footer).
+                    guard browserMeeting else { continue }
+                    participants = dedup(speakers)
                 }
 
                 let directSpeakerRead: Bool
@@ -184,6 +208,7 @@ final class AccessibilityScanner {
                 results.append(ScannedWindow(
                     platform: platform,
                     title: title.isEmpty ? platform.label : title,
+                    url: collector.url,
                     nodeCount: collector.nodeCount,
                     treeOk: treeOk,
                     speakers: speakers,
@@ -199,6 +224,32 @@ final class AccessibilityScanner {
             }
         }
         return results
+    }
+
+    /// Positive-evidence gate for a BROWSER meeting window. A tab whose title/URL
+    /// merely contains "meet"/"zoom"/"teams" (marketing sites, OAuth callbacks,
+    /// note apps) is NOT a meeting — require a mic/camera control, a meeting-join
+    /// URL, or a meeting code/marker in the title. This is what stops page text
+    /// from being harvested as fake participants.
+    private func browserWindowIsMeeting(_ platform: Platform, title: String,
+                                        url: String?, unmuted: Bool?) -> Bool {
+        // A detected mic/camera control means we're in a call on any platform.
+        if unmuted != nil { return true }
+        let u = (url ?? "").lowercased()
+        let t = title.lowercased()
+        switch platform {
+        case .meet:
+            return u.contains("meet.google.com/")
+                || t.range(of: #"[a-z]{3}-[a-z]{3,4}-[a-z]{3}"#, options: .regularExpression) != nil
+                || t.contains("meet - ") || t.contains("meet \u{2013} ")
+        case .zoom:
+            // Meeting-join paths only — NOT ai.zoom.us / zoom.us marketing or /callback.
+            return u.contains("zoom.us/j/") || u.contains("zoom.us/wc/") || u.contains("/wc/")
+                || t.contains("zoom meeting")
+        case .teams:
+            return u.contains("meetup-join") || u.contains("teams.microsoft.com/l/meetup")
+                || u.contains("/meet/")
+        }
     }
 
     // MARK: Platform resolution
@@ -419,6 +470,51 @@ final class AccessibilityScanner {
                                 classSpeaking: kv.value.speaking, isMe: kv.value.isMe)
         }
         return (tiles, ordered.map { $0.key })
+    }
+
+    /// When the Meet People panel is OPEN, read the roster straight from it — the
+    /// authoritative source (one row per participant), so we never guess from tiles
+    /// or harvest toasts. Returns [] when the panel isn't found (caller falls back to
+    /// tiles). Modeled on the product's `findPeoplePanel` (bubbles-meet-detector).
+    private func meetPanelRoster(in window: AXUIElement) -> [String] {
+        guard let panel = findPeoplePanel(in: window) else { return [] }
+        var names: [String] = []
+        var seen = Set<String>()
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if n >= 4000 || d > maxDepth { return }
+            n += 1
+            for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                if let raw = axString(el, attr), let name = cleanParticipantName(raw),
+                   seen.insert(name).inserted {
+                    names.append(name); break
+                }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1) }
+        }
+        rec(panel, 0)
+        return names
+    }
+
+    /// Find the People/Participants panel container: an AXList/AXGroup whose label
+    /// says "participant"/"people" and that has children.
+    private func findPeoplePanel(in window: AXUIElement) -> AXUIElement? {
+        var found: AXUIElement?
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if found != nil || n >= maxNodesPerWindow || d > maxDepth { return }
+            n += 1
+            if let role = axString(el, "AXRole"), role == "AXList" || role == "AXGroup" {
+                let label = (axString(el, "AXDescription") ?? axString(el, "AXTitle") ?? "").lowercased()
+                if (label.contains("participant") || label == "people"),
+                   !axArray(el, "AXChildren").isEmpty {
+                    found = el; return
+                }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found != nil { return } }
+        }
+        rec(window, 0)
+        return found
     }
 
     /// True if a tile is the LOCAL user's — Meet puts a "(You)" label in the self

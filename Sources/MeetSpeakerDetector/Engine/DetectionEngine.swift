@@ -8,6 +8,10 @@ struct EngineConfig {
     var remoteThreshold: Float = 0.02
     var micThreshold: Float = 0.04
     var localUserName: String = "You"
+    /// Mirror every emitted event (meeting / participant / speech) to stdout as an
+    /// NDJSON line, in addition to the log file. Handy while developing; visible
+    /// when the app is launched from a terminal (`swift run MeetSpeakerDetector`).
+    var logEventsToTerminal: Bool = true
 }
 
 /// Drives the whole detection pipeline. Every poll it merges two independent
@@ -27,6 +31,7 @@ final class DetectionEngine {
     private let logger: NdjsonSessionLogger?
 
     private var tracker: SessionTracker!
+    private var meetingTracker: MeetingStateTracker!
     private var lastStatusKey = ""
 
     // Meet fused-resolver state: last tick's tile areas (geometry history) and
@@ -58,6 +63,9 @@ final class DetectionEngine {
         self.tracker = SessionTracker(opts: TrackerOptions(endSilenceMs: 2000, pulseWidthMs: 500)) { [weak self] event in
             self?.handleTrackerEvent(event)
         }
+        self.meetingTracker = MeetingStateTracker(opts: .init(graceMs: 4000)) { [weak self] event in
+            self?.handleMeetingEvent(event)
+        }
     }
 
     // MARK: Lifecycle
@@ -83,7 +91,10 @@ final class DetectionEngine {
     func stop() {
         timer?.cancel()
         timer = nil
-        queue.async { [weak self] in self?.tracker.endAll() }
+        queue.async { [weak self] in
+            self?.tracker.endAll()
+            self?.meetingTracker.endAll(nowMs())
+        }
         mic.stop()
         if #available(macOS 13.0, *) {
             (systemMeter as? SystemAudioMeter)?.stop()
@@ -131,17 +142,32 @@ final class DetectionEngine {
         let scanned = scanner.scan()
 
         if scanned.isEmpty {
-            // No meeting visible — just age out any open sessions.
+            // No meeting visible — age out any open sessions AND meetings.
             tracker.update(now)
+            meetingTracker.observe([], now)
             emitWindows([], systemPeak: systemPeak, ts: now)
             maybeStatusForPermissions()
             return
         }
 
         var windowInfos: [EngineWindowInfo] = []
+        var snapshots: [MeetingSnapshot] = []
         for w in scanned {
-            // WHO is speaking — resolved per platform from the right signal.
-            var who = Set(w.speakers)
+            // WHO is speaking — resolved per platform from the right signal. `who`
+            // is the speaker set; `sourceOf` records the attribution that FIRST
+            // named each speaker (first-writer-wins, so it can never drop a name
+            // that `who` holds).
+            var who = Set<String>()
+            var sourceOf: [String: String] = [:]
+            func add(_ name: String, _ src: String) {
+                let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !n.isEmpty else { return }
+                who.insert(n)
+                if sourceOf[n] == nil { sourceOf[n] = src }
+            }
+            // Web direct-read names (Zoom web "active speaker" marker) already on
+            // the window — empty for Meet / Teams / native Zoom.
+            for name in w.speakers { add(name, "web.direct") }
 
             if w.platform == .meet {
                 // Remote/active naming comes ONLY from the AX tree now (structural →
@@ -156,23 +182,34 @@ final class DetectionEngine {
                 let vad = audioReliable ? (micActive || remoteActive) : true
                 let r = meetActiveSpeaker(tiles: w.meetTiles, prevAreas: meetPrevAreas,
                                           vadSpeechActive: vad, presentationActive: w.presentationActive)
+                // Resolve ONE canonical self identity for this window so the local
+                // user is never logged twice (once as their real tile name via
+                // geometry/class, once as the generic "You" via the mic). Prefer the
+                // "(You)"-tagged tile; if that detection missed but there's a single
+                // tile and the mic is live+unmuted, that lone tile is self.
+                let selfTile = w.meetTiles.first(where: { $0.isMe })
+                let meetSelfName: String = selfTile?.name
+                    ?? (micActive && (w.localUserUnmuted ?? false) && w.meetTiles.count == 1
+                        ? w.meetTiles[0].name : config.localUserName)
+
                 if r.via != .none && r.via != .someoneFloor {
-                    who.formUnion(r.names)            // structural / geometry / class
+                    let src = r.via == .cssClass ? "meet.kssMZb" : "meet.geometry"
+                    // Never name the self tile as a remote — self is mic-driven below.
+                    for n in r.names where n != meetSelfName { add(n, src) }
                     meetNamed += 1
                 }
 
-                // SELF via mic only — name the local user when the mic is active and
-                // you're unmuted (your tile gets no speaking ring to read).
+                // SELF via mic only — name the local user (resolved above) when the
+                // mic is active and you're unmuted (your tile gets no speaking ring).
                 if audioReliable && micActive && (w.localUserUnmuted ?? false) {
-                    let me = w.meetTiles.first(where: { $0.isMe })
-                    who.insert(me?.name ?? config.localUserName)
+                    add(meetSelfName, "meet.self_mic")
                 }
 
                 // Confirmed speech but AX attributed nobody and self wasn't added →
                 // anonymous floor. Only when audio confirms speech (no Someone spam
                 // when we can't even tell anyone is talking).
                 if r.via == .someoneFloor && who.isEmpty && audioReliable {
-                    who.insert("Someone")
+                    add("Someone", "meet.someone")
                     meetSomeone += 1
                 }
                 meetPrevAreas = Dictionary(w.meetTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
@@ -190,7 +227,7 @@ final class DetectionEngine {
                 let vad = audioReliable ? (micActive || remoteActive) : true
                 let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: vad)
                 if r.via == .structural {
-                    who.formUnion(r.names)            // only if a config'd class ever matches
+                    for n in r.names { add(n, "teams.structural") }   // only if a config'd class ever matches
                     teamsStructural += 1
                 } else if audioReliable {
                     // Prefer the People-panel ROSTER for mute (reliable per-remote,
@@ -206,7 +243,7 @@ final class DetectionEngine {
                     let names = zoomMuteGateSpeakers(
                         micActive: micActive, localUnmuted: localUnmuted, localName: localName,
                         remoteActive: remoteActive, remoteUnmutedNames: remotes)
-                    who.formUnion(names)
+                    for n in names { add(n, n == "Someone" ? "teams.someone" : "teams.mute_gate") }
                     if names.contains("Someone") { teamsSomeone += 1 } else if !names.isEmpty { teamsNamed += 1 }
                 }
                 // else: no audio capture and no class → emit nothing (don't spam
@@ -219,7 +256,7 @@ final class DetectionEngine {
                 // unreadable (e.g. a backgrounded tab). No "You" — your tile is
                 // already named, so adding it would double-log.
                 if remoteActive && who.isEmpty && !w.treeOk {
-                    who.insert("Someone")
+                    add("Someone", "web.direct")
                 }
             } else if !w.zoomRoster.isEmpty {
                 // B1 — native Zoom has NO AX speaking signal, so mute-gate: fuse
@@ -235,26 +272,30 @@ final class DetectionEngine {
                     micActive: micActive, localUnmuted: localUnmuted, localName: localName,
                     remoteActive: remoteActive, remoteUnmutedNames: remoteUnmuted
                 ) {
-                    who.insert(name)
+                    add(name, name == "Someone" ? "audio.someone" : "zoom.mute_gate")
                 }
             } else {
                 // B2 — Teams, or native Zoom with the panel closed / unreadable:
                 // audio-only. Without this branch native Zoom logged NOTHING
                 // (it was wrongly treated as a direct-read platform).
                 if remoteActive && who.isEmpty {
-                    who.insert("Someone")
+                    add("Someone", "audio.someone")
                 }
                 // YOU: only when the mic is active AND the UI positively confirms
                 // you're unmuted (Zoom's app-mute doesn't silence the macOS mic,
                 // so echo/room noise must not log a muted user).
                 if micActive && w.localUserUnmuted == true {
-                    who.insert(config.localUserName)
+                    add(config.localUserName, "audio.self")
                 }
             }
 
+            let mid = meetingId(platform: w.platform, url: w.url, title: w.title)
             for name in who {
-                tracker.pulse(w.platform, name, now)
+                let pid = participantId(meetingId: mid, name: name)
+                tracker.pulse(w.platform, name, now,
+                              meetingId: mid, participantId: pid, source: sourceOf[name])
             }
+            snapshots.append(meetingSnapshot(for: w, meetingId: mid, speaking: who, now: now))
 
             windowInfos.append(EngineWindowInfo(
                 platform: w.platform,
@@ -266,16 +307,141 @@ final class DetectionEngine {
         }
 
         tracker.update(now)
+        meetingTracker.observe(snapshots, now)
         emitWindows(windowInfos, systemPeak: systemPeak, ts: now)
+    }
+
+    /// Build a roster snapshot for one scanned window. The roster comes ONLY from
+    /// real video tiles / panel rosters — NOT the generic tree-walk list, which
+    /// leaks UI chrome ("Turn on camera", "Leave call", "Reload"…) as fake people.
+    /// Enriched with `isLocal`/`isMuted` from whatever roster the platform exposed
+    /// and `isSpeaking` from this tick's resolved speakers.
+    private func meetingSnapshot(for w: ScannedWindow, meetingId mid: String,
+                                 speaking who: Set<String>, now: Int) -> MeetingSnapshot {
+        var mutedByName: [String: Bool] = [:]
+        var localNames = Set<String>()
+
+        // Zoom + Teams panel rosters: authoritative per-participant mute + isMe.
+        for e in (w.zoomRoster + w.teamsRoster) {
+            mutedByName[e.name] = !e.unmuted
+            if e.isMe { localNames.insert(e.name) }
+        }
+        // Teams per-tile mute (less reliable; only when the panel roster lacks it).
+        for t in w.teamsTiles {
+            if mutedByName[t.name] == nil, let u = t.unmuted { mutedByName[t.name] = !u }
+            if t.isMe { localNames.insert(t.name) }
+        }
+        // Meet self tile (no per-remote mute exposed).
+        for t in w.meetTiles where t.isMe { localNames.insert(t.name) }
+        // Local mute from the window flag when the roster didn't carry it.
+        if let selfName = localNames.first, mutedByName[selfName] == nil,
+           let u = w.localUserUnmuted {
+            mutedByName[selfName] = !u
+        }
+
+        // The scanner already populates `participants` from the clean per-platform
+        // source (Meet: People panel / tiles; Teams: tiles + panel roster; Zoom:
+        // native roster / web active-speaker tiles) — use it directly.
+        var seen = Set<String>()
+        let participants = w.participants
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .map { name -> MeetingParticipant in
+                MeetingParticipant(
+                    id: participantId(meetingId: mid, name: name),
+                    name: name,
+                    isLocal: localNames.isEmpty ? nil : localNames.contains(name),
+                    isMuted: mutedByName[name],
+                    isSpeaking: who.contains(name))
+            }
+        return MeetingSnapshot(id: mid, platform: w.platform, title: w.title, url: w.url,
+                               participants: participants, startedAt: now, updatedAt: now)
     }
 
     // MARK: Emit
 
     private func handleTrackerEvent(_ event: TrackerEvent) {
-        if case let .end(platform, name, startTs, endTs, durationMs) = event {
-            logger?.logEnd(platform: platform, name: name, startTs: startTs, endTs: endTs, durationMs: durationMs)
+        switch event {
+        case let .start(platform, name, startTs, ctx):
+            record("speech_on", speechFields(platform, name, ctx, [
+                "start_ts": startTs,
+            ]), ts: startTs)
+        case .tick:
+            break   // live duration goes to the UI, not the durable log
+        case let .end(platform, name, startTs, endTs, durationMs, ctx):
+            record("speech_off", speechFields(platform, name, ctx, [
+                "start_ts": startTs, "end_ts": endTs, "duration_ms": durationMs,
+            ]), ts: endTs)
         }
         onEvent(.tracker(event))
+    }
+
+    /// Single event sink: append to the NDJSON log file AND (when enabled) mirror
+    /// the same line to stdout for terminal debugging.
+    private func record(_ type: String, _ fields: [String: Any], ts: Int) {
+        logger?.logEvent(type, fields, ts: ts)
+        guard config.logEventsToTerminal else { return }
+        var obj = fields
+        obj["type"] = type
+        obj["ts"] = ts
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let line = String(data: data, encoding: .utf8) {
+            FileHandle.standardOutput.write(Data("[event] \(line)\n".utf8))
+        }
+    }
+
+    private func speechFields(_ platform: Platform, _ name: String,
+                              _ ctx: SpeechContext, _ extra: [String: Any]) -> [String: Any] {
+        var f: [String: Any] = [
+            "platform": platform.rawValue,
+            "name": name,
+            "meeting_id": ctx.meetingId,
+            "participant_id": ctx.participantId,
+        ]
+        if let s = ctx.source { f["source"] = s }
+        for (k, v) in extra { f[k] = v }
+        return f
+    }
+
+    private func handleMeetingEvent(_ event: MeetingEvent) {
+        logMeetingEvent(event)
+        onEvent(.meeting(event))
+    }
+
+    private func logMeetingEvent(_ event: MeetingEvent) {
+        switch event {
+        case let .meetingInitialized(s):
+            record("meeting_initialized", meetingFields(s), ts: s.updatedAt)
+        case let .meetingUpdated(s):
+            record("meeting_updated", meetingFields(s), ts: s.updatedAt)
+        case let .meetingEnded(meetingId, ts):
+            record("meeting_ended", ["meeting_id": meetingId], ts: ts)
+        case let .participantJoined(meetingId, p, ts):
+            record("participant_joined", participantFields(meetingId, p), ts: ts)
+        case let .participantUpdated(meetingId, p, ts):
+            record("participant_updated", participantFields(meetingId, p), ts: ts)
+        case let .participantLeft(meetingId, participantId, name, ts):
+            record("participant_left", [
+                "meeting_id": meetingId, "participant_id": participantId, "name": name,
+            ], ts: ts)
+        }
+    }
+
+    private func meetingFields(_ s: MeetingSnapshot) -> [String: Any] {
+        var f: [String: Any] = [
+            "meeting_id": s.id, "platform": s.platform.rawValue,
+            "title": s.title, "participant_count": s.participants.count,
+        ]
+        if let url = s.url { f["url"] = url }
+        return f
+    }
+
+    private func participantFields(_ meetingId: String, _ p: MeetingParticipant) -> [String: Any] {
+        var f: [String: Any] = [
+            "meeting_id": meetingId, "participant_id": p.id, "name": p.name,
+        ]
+        if let isLocal = p.isLocal { f["is_local"] = isLocal }
+        if let isMuted = p.isMuted { f["is_muted"] = isMuted }
+        return f
     }
 
     private func emitWindows(_ windows: [EngineWindowInfo], systemPeak: Float, ts: Int) {

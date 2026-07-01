@@ -34,11 +34,35 @@ final class AppModel: ObservableObject {
         var id: String { name }
     }
 
+    /// One row in the live Recall-style event stream shown in the app. Rich enough
+    /// to drive both the Speaking log (speech_on/off columns) and the Event log.
+    struct EventRow: Identifiable {
+        enum Kind { case meeting, participant, speech }
+        let id = UUID()
+        var ts: Int
+        var type: String        // "speech_on", "participant_joined", "meeting_initialized"…
+        var kind: Kind
+        var platform: Platform?
+        var name: String?       // speaker / participant name
+        var durationMs: Int?    // set on speech_off
+        var summary: String     // human label for the full Event log
+
+        var isSpeechOn: Bool { type == "speech_on" }
+    }
+
     @Published private(set) var active: [ActiveSpeaker] = []
     @Published private(set) var sessions: [SessionRow] = []
     @Published private(set) var windows: [EngineWindowInfo] = []
     @Published private(set) var statusMessages: [EngineStatus] = []
+    /// Live meetings (Recall-style), kept current from `MeetingEvent`s. The full
+    /// event stream is also written to the NDJSON log.
+    @Published private(set) var meetings: [MeetingSnapshot] = []
+    /// The live event stream shown in the UI (newest first), capped.
+    @Published private(set) var eventLog: [EventRow] = []
     @Published private(set) var running = false
+
+    /// Flat roster across all live meetings (for any roster-aware UI).
+    var participants: [MeetingParticipant] { meetings.flatMap { $0.participants } }
 
     @Published var micAuthorized = MicMeter.isAuthorized
     @Published var axTrusted = AccessibilityScanner.isTrusted
@@ -50,6 +74,7 @@ final class AppModel: ObservableObject {
 
     private static let maxSessions = 500
     private static let maxStatus = 200
+    private static let maxEvents = 300
 
     private var engine: DetectionEngine?
     private var permissionTimer: Timer?
@@ -102,6 +127,8 @@ final class AppModel: ObservableObject {
         engine = nil
         running = false
         active = []
+        meetings = []
+        eventLog = []
     }
 
     // MARK: Permissions
@@ -160,18 +187,22 @@ final class AppModel: ObservableObject {
             if statusMessages.count > Self.maxStatus {
                 statusMessages.removeFirst(statusMessages.count - Self.maxStatus)
             }
+        case .meeting(let m):
+            handleMeeting(m)
         }
     }
 
     private func handleTracker(_ event: TrackerEvent) {
         switch event {
-        case let .start(platform, name, startTs):
+        case let .start(platform, name, startTs, _):
             let key = "\(platform.rawValue)::\(name)"
             if !active.contains(where: { $0.id == key }) {
                 active.append(ActiveSpeaker(platform: platform, name: name, startTs: startTs, durationMs: 0))
             }
+            logEvent(EventRow(ts: startTs, type: "speech_on", kind: .speech,
+                              platform: platform, name: name, summary: name))
 
-        case let .tick(platform, name, startTs, durationMs):
+        case let .tick(platform, name, startTs, durationMs, _):
             let key = "\(platform.rawValue)::\(name)"
             if let i = active.firstIndex(where: { $0.id == key }) {
                 active[i].durationMs = durationMs
@@ -180,7 +211,7 @@ final class AppModel: ObservableObject {
                 active.append(ActiveSpeaker(platform: platform, name: name, startTs: startTs, durationMs: durationMs))
             }
 
-        case let .end(platform, name, startTs, endTs, durationMs):
+        case let .end(platform, name, startTs, endTs, durationMs, _):
             let key = "\(platform.rawValue)::\(name)"
             active.removeAll { $0.id == key }
             sessions.insert(SessionRow(platform: platform, name: name,
@@ -189,6 +220,52 @@ final class AppModel: ObservableObject {
             if sessions.count > Self.maxSessions {
                 sessions.removeLast(sessions.count - Self.maxSessions)
             }
+            logEvent(EventRow(ts: endTs, type: "speech_off", kind: .speech,
+                              platform: platform, name: name, durationMs: durationMs,
+                              summary: "\(name) · \(formatDuration(durationMs))"))
+        }
+    }
+
+    /// Append to the live event stream (newest first), capped.
+    private func logEvent(_ row: EventRow) {
+        eventLog.insert(row, at: 0)
+        if eventLog.count > Self.maxEvents {
+            eventLog.removeLast(eventLog.count - Self.maxEvents)
+        }
+    }
+
+    /// Keep `meetings` current from the lifecycle stream. `meetingInitialized` /
+    /// `meetingUpdated` carry the full roster, so the granular participant events
+    /// need no separate bookkeeping here.
+    private func handleMeeting(_ event: MeetingEvent) {
+        switch event {
+        case let .meetingInitialized(s):
+            upsertMeeting(s)
+            logEvent(EventRow(ts: s.updatedAt, type: "meeting_initialized", kind: .meeting,
+                              platform: s.platform,
+                              summary: "\(s.title) · \(s.participants.count) participant\(s.participants.count == 1 ? "" : "s")"))
+        case let .meetingUpdated(s):
+            upsertMeeting(s)
+        case let .meetingEnded(meetingId, ts):
+            let title = meetings.first { $0.id == meetingId }?.title ?? meetingId
+            meetings.removeAll { $0.id == meetingId }
+            logEvent(EventRow(ts: ts, type: "meeting_ended", kind: .meeting, summary: title))
+        case let .participantJoined(_, p, ts):
+            logEvent(EventRow(ts: ts, type: "participant_joined", kind: .participant, name: p.name, summary: p.name))
+        case let .participantLeft(_, _, name, ts):
+            logEvent(EventRow(ts: ts, type: "participant_left", kind: .participant, name: name, summary: name))
+        case let .participantUpdated(_, p, ts):
+            let mute = p.isMuted == true ? "muted" : (p.isMuted == false ? "unmuted" : "—")
+            logEvent(EventRow(ts: ts, type: "participant_updated", kind: .participant, name: p.name,
+                              summary: "\(p.name) · \(mute)"))
+        }
+    }
+
+    private func upsertMeeting(_ s: MeetingSnapshot) {
+        if let i = meetings.firstIndex(where: { $0.id == s.id }) {
+            meetings[i] = s
+        } else {
+            meetings.append(s)
         }
     }
 }

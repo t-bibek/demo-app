@@ -14,7 +14,7 @@ final class SessionTrackerTests: XCTestCase {
         let (t, events) = collector()
         t.pulse(.meet, "Alice", 1000)
         XCTAssertEqual(events().count, 1)
-        if case let .start(platform, name, startTs) = events()[0] {
+        if case let .start(platform, name, startTs, _) = events()[0] {
             XCTAssertEqual(platform, .meet)
             XCTAssertEqual(name, "Alice")
             XCTAssertEqual(startTs, 1000)
@@ -41,7 +41,7 @@ final class SessionTrackerTests: XCTestCase {
         // Silence longer than endSilenceMs (2000) closes the session.
         t.update(1500 + 2001)
         let end = events().compactMap { evt -> Int? in
-            if case let .end(_, _, _, _, durationMs) = evt { return durationMs }
+            if case let .end(_, _, _, _, durationMs, _) = evt { return durationMs }
             return nil
         }
         // duration = lastSeen - start + pulseWidth = 1500 - 1000 + 500 = 1000
@@ -81,7 +81,7 @@ final class SessionTrackerTests: XCTestCase {
         t.pulse(.meet, "A", 1000)   // out-of-order, ignored for lastSeen
         t.update(2000 + 2001)
         let end = events().compactMap { evt -> Int? in
-            if case let .end(_, _, _, _, durationMs) = evt { return durationMs }
+            if case let .end(_, _, _, _, durationMs, _) = evt { return durationMs }
             return nil
         }
         // lastSeen stayed at 2000, start 2000 => duration = 0 + 500

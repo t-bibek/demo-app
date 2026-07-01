@@ -41,7 +41,7 @@ do {
 
     t.pulse(.meet, "Alice", 1000)
     check(events.count == 1, "first pulse emits one event")
-    if case let .start(p, n, s) = events.first {
+    if case let .start(p, n, s, _) = events.first {
         check(p == .meet && n == "Alice" && s == 1000, "start payload correct")
     } else { check(false, "first event is .start") }
 
@@ -52,7 +52,7 @@ do {
 
     t.update(1500 + 2001)           // silence > endSilenceMs closes it
     let ends = events.compactMap { e -> Int? in
-        if case let .end(_, _, _, _, d) = e { return d }; return nil
+        if case let .end(_, _, _, _, d, _) = e { return d }; return nil
     }
     equal(ends, [1000], "duration = lastSeen - start + pulseWidth")
     equal(t.activeCount, 0, "session closed")
@@ -68,7 +68,7 @@ do {
     t.pulse(.zoom, "A", 1000)       // out of order, must not move lastSeen back
     t.update(2000 + 2001)
     let d = events.compactMap { e -> Int? in
-        if case let .end(_, _, _, _, dd) = e { return dd }; return nil
+        if case let .end(_, _, _, _, dd, _) = e { return dd }; return nil
     }
     equal(d, [500], "lastSeen never moves backwards")
 }
@@ -351,6 +351,116 @@ equal(teamsActiveSpeaker(tiles: ttSpotlight, prevAreas: [:], vadSpeechActive: tr
 // 4) gallery, no token -> Someone floor.
 equal(teamsActiveSpeaker(tiles: ttGallery, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
       "gallery, no token -> via someoneFloor")
+
+// MARK: Meeting identity (stable id from URL code / normalized title)
+print("MeetingIdentity:")
+equal(meetingCode(platform: .meet, url: "https://meet.google.com/xza-ddbx-ebn"),
+      "xza-ddbx-ebn", "meet code from url")
+equal(meetingCode(platform: .zoom, url: "https://app.zoom.us/wc/89012345678/join"),
+      "89012345678", "zoom code from /wc/ url")
+equal(meetingId(platform: .meet, url: "https://meet.google.com/xza-ddbx-ebn",
+                title: "(2) Meet - xza-ddbx-ebn - Google Chrome"),
+      "meet::xza-ddbx-ebn", "url code drives the id (ignores volatile title)")
+// The (2) unread prefix + recording clause + browser suffix all normalize away,
+// so two title reads of the SAME call produce ONE id (no churn).
+equal(meetingId(platform: .meet, url: nil, title: "(2) Meet - abc-defg-hij - Google Chrome"),
+      meetingId(platform: .meet, url: nil,
+                title: "Meet - abc-defg-hij - Camera and microphone recording - Google Chrome - Bibek"),
+      "meet (2)-prefix + recording clause normalize to the same id")
+check(meetingId(platform: .meet, url: "https://meet.google.com/aaa-bbbb-ccc", title: "")
+      != meetingId(platform: .meet, url: "https://meet.google.com/ddd-eeee-fff", title: ""),
+      "distinct meet codes -> distinct ids (no collapse)")
+equal(participantId(meetingId: "meet::abc", name: "Wedding Thapas"),
+      "meet::abc::wedding thapas", "participant id is meeting-namespaced + name-normalized")
+
+// MARK: MeetingStateTracker (lifecycle diff + grace + sticky flags)
+print("MeetingStateTracker:")
+do {
+    let mid = "meet::abc"
+    func part(_ name: String, muted: Bool? = nil, speaking: Bool? = nil, local: Bool? = nil) -> MeetingParticipant {
+        MeetingParticipant(id: participantId(meetingId: mid, name: name), name: name,
+                           isLocal: local, isMuted: muted, isSpeaking: speaking)
+    }
+    func snap(_ parts: [MeetingParticipant]) -> MeetingSnapshot {
+        MeetingSnapshot(id: mid, platform: .meet, title: "Meet - abc",
+                        participants: parts, startedAt: 0, updatedAt: 0)
+    }
+    func count(_ ev: [MeetingEvent], _ pred: (MeetingEvent) -> Bool) -> Int { ev.filter(pred).count }
+
+    var ev: [MeetingEvent] = []
+    let mt = MeetingStateTracker(opts: .init(graceMs: 1000)) { ev.append($0) }
+
+    mt.observe([snap([part("Alice"), part("Bob")])], 1000)
+    check(ev.contains { if case .meetingInitialized = $0 { return true }; return false },
+          "first snapshot -> meetingInitialized")
+    equal(count(ev) { if case .participantJoined = $0 { return true }; return false }, 2, "two joins on init")
+
+    ev.removeAll()
+    mt.observe([snap([part("Alice"), part("Bob"), part("Carol")])], 1500)
+    equal(count(ev) { if case let .participantJoined(_, p, _) = $0 { return p.name == "Carol" }; return false },
+          1, "new participant -> one join (Carol)")
+
+    ev.removeAll()
+    mt.observe([snap([part("Alice"), part("Bob")])], 1800)   // Carol missing, within grace
+    equal(count(ev) { if case .participantLeft = $0 { return true }; return false }, 0,
+          "flicker within grace -> no leave")
+
+    ev.removeAll()
+    mt.observe([snap([part("Alice"), part("Bob")])], 3000)   // Carol unseen > grace
+    check(ev.contains { if case let .participantLeft(_, _, name, _) = $0 { return name == "Carol" }; return false },
+          "absent past grace -> participantLeft (Carol)")
+
+    ev.removeAll()
+    mt.observe([snap([part("Alice", muted: true), part("Bob")])], 3200)
+    equal(count(ev) { if case let .participantUpdated(_, p, _) = $0 { return p.name == "Alice" }; return false },
+          1, "mute flip -> one participantUpdated")
+
+    ev.removeAll()
+    mt.observe([snap([part("Alice", muted: nil), part("Bob")])], 3400)
+    equal(count(ev) { if case .participantUpdated = $0 { return true }; return false }, 0,
+          "nil mute read -> no update (sticky last-known)")
+
+    ev.removeAll()
+    mt.observe([snap([part("Alice", muted: true, speaking: true), part("Bob")])], 3600)
+    equal(count(ev) { if case .participantUpdated = $0 { return true }; return false }, 0,
+          "isSpeaking flip alone -> no participantUpdated (speech events cover it)")
+
+    ev.removeAll()
+    mt.endAll(4000)
+    check(ev.contains { if case let .meetingEnded(m, _) = $0 { return m == mid }; return false },
+          "endAll -> meetingEnded")
+    equal(mt.meetingCount, 0, "no meetings after endAll")
+}
+do {
+    // Two same-id snapshots in one tick (two tabs of one call) -> one meeting, union roster.
+    var ev: [MeetingEvent] = []
+    let mt = MeetingStateTracker { ev.append($0) }
+    let mid = "meet::dup"
+    func one(_ n: String) -> MeetingSnapshot {
+        MeetingSnapshot(id: mid, platform: .meet, title: "Meet",
+                        participants: [MeetingParticipant(id: participantId(meetingId: mid, name: n), name: n)],
+                        startedAt: 0, updatedAt: 0)
+    }
+    mt.observe([one("Alice"), one("Bob")], 1000)
+    equal(mt.meetingCount, 1, "two same-id snapshots -> one meeting")
+    equal(ev.filter { if case .participantJoined = $0 { return true }; return false }.count, 2,
+          "merged roster -> two joins (Alice + Bob)")
+}
+do {
+    // An empty/unreadable roster tick must NOT evict the known roster.
+    var ev: [MeetingEvent] = []
+    let mt = MeetingStateTracker(opts: .init(graceMs: 500)) { ev.append($0) }
+    let mid = "meet::bg"
+    mt.observe([MeetingSnapshot(id: mid, platform: .meet, title: "Meet",
+        participants: [MeetingParticipant(id: participantId(meetingId: mid, name: "Alice"), name: "Alice")],
+        startedAt: 0, updatedAt: 0)], 1000)
+    ev.removeAll()
+    mt.observe([MeetingSnapshot(id: mid, platform: .meet, title: "Meet",
+        participants: [], startedAt: 0, updatedAt: 0)], 5000)   // empty tree, well past grace
+    equal(ev.filter { if case .participantLeft = $0 { return true }; return false }.count, 0,
+          "empty-tree tick -> no false leave")
+    equal(mt.meetingCount, 1, "empty-tree tick -> meeting stays alive")
+}
 
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

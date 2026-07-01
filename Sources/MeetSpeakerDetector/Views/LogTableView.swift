@@ -1,38 +1,49 @@
 import SwiftUI
 import SpeakerCore
 
-/// "Speaking log" — one row per completed speaking session, newest first.
+/// "Speaking log" — the live speech event feed: one row per `speech_on` and
+/// `speech_off`, newest first (not just completed sessions).
 struct LogTableView: View {
     @EnvironmentObject var model: AppModel
+
+    private var speech: [AppModel.EventRow] { model.eventLog.filter { $0.kind == .speech } }
 
     var body: some View {
         Card(title: "Speaking log",
              accessory: AnyView(
-                Text("\(model.sessions.count) session\(model.sessions.count == 1 ? "" : "s")")
+                Text("\(speech.count) event\(speech.count == 1 ? "" : "s")")
                     .font(.caption).foregroundStyle(.secondary)
              )) {
-            if model.sessions.isEmpty {
+            if speech.isEmpty {
                 emptyState
             } else {
-                Table(model.sessions) {
+                Table(speech) {
                     TableColumn("Time") { row in
-                        Text(formatClock(row.startTs))
+                        Text(formatClock(row.ts))
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                     .width(min: 72, ideal: 80)
                     TableColumn("Platform") { row in
-                        PlatformBadge(platform: row.platform)
+                        if let p = row.platform { PlatformBadge(platform: p) }
                     }
                     .width(min: 96, ideal: 120)
                     TableColumn("Speaker") { row in
-                        Text(row.name)
+                        Text(row.name ?? "—")
                     }
-                    TableColumn("Duration") { row in
-                        Text(formatDuration(row.durationMs))
-                            .font(.system(.body, design: .monospaced))
+                    TableColumn("Event") { row in
+                        HStack(spacing: 6) {
+                            Image(systemName: row.isSpeechOn ? "mic.fill" : "mic.slash")
+                                .font(.caption2)
+                                .foregroundStyle(row.isSpeechOn ? Color.green : Color.secondary)
+                            Text(row.isSpeechOn
+                                 ? "speech_on"
+                                 : "speech_off · \(formatDuration(row.durationMs ?? 0))")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(row.isSpeechOn ? .primary : .secondary)
+                        }
                     }
-                    .width(min: 72, ideal: 80)
+                    .width(min: 140, ideal: 170)
                 }
             }
         }
@@ -43,7 +54,7 @@ struct LogTableView: View {
             Image(systemName: "list.bullet.rectangle")
                 .font(.largeTitle)
                 .foregroundStyle(.tertiary)
-            Text("Completed speaking turns will appear here.")
+            Text("speech_on / speech_off events will appear here.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

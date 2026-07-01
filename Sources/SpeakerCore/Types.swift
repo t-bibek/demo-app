@@ -113,11 +113,89 @@ public struct EngineStatus: Sendable, Identifiable {
 
 // MARK: - Tracker events (produced by SessionTracker)
 
-/// Mirrors `SpeakerStart | SpeakerTick | SpeakerEnd`.
+/// Identity + attribution carried by every speech event. Bundled into one
+/// payload so adding fields later does not churn the `TrackerEvent` signature.
+public struct SpeechContext: Sendable, Equatable, Hashable {
+    /// Stable meeting id this utterance belongs to (see `meetingId(platform:url:title:)`).
+    public var meetingId: String
+    /// Deterministic participant id (see `participantId(meetingId:name:)`).
+    public var participantId: String
+    /// How the speaker was attributed this utterance — e.g. `"meet.geometry"`,
+    /// `"zoom.mute_gate"`, `"audio.someone"`. Auditable, Recall-style telemetry.
+    public var source: String?
+
+    public init(meetingId: String = "", participantId: String = "", source: String? = nil) {
+        self.meetingId = meetingId
+        self.participantId = participantId
+        self.source = source
+    }
+}
+
+/// Mirrors `SpeakerStart | SpeakerTick | SpeakerEnd`. The trailing `SpeechContext`
+/// carries the Recall-style meeting/participant/source identity.
 public enum TrackerEvent: Sendable {
-    case start(platform: Platform, name: String, startTs: Int)
-    case tick(platform: Platform, name: String, startTs: Int, durationMs: Int)
-    case end(platform: Platform, name: String, startTs: Int, endTs: Int, durationMs: Int)
+    case start(platform: Platform, name: String, startTs: Int, ctx: SpeechContext)
+    case tick(platform: Platform, name: String, startTs: Int, durationMs: Int, ctx: SpeechContext)
+    case end(platform: Platform, name: String, startTs: Int, endTs: Int, durationMs: Int, ctx: SpeechContext)
+}
+
+// MARK: - Meeting & participant model (Recall-style event layer)
+
+/// One participant in a meeting roster. The flags are THREE-STATE: `nil` means
+/// "the AX tree didn't expose it this scan". `MeetingStateTracker` keeps the last
+/// known value *sticky* across nil reads rather than churning `participantUpdated`.
+public struct MeetingParticipant: Codable, Sendable, Identifiable, Hashable {
+    /// Deterministic id = `"<meetingId>::<normalized name>"` — no real per-user
+    /// DOM id is exposed by AX. See `participantId(meetingId:name:)`.
+    public var id: String
+    public var name: String
+    public var isLocal: Bool?
+    public var isMuted: Bool?
+    public var isSpeaking: Bool?
+
+    public init(id: String, name: String,
+                isLocal: Bool? = nil, isMuted: Bool? = nil, isSpeaking: Bool? = nil) {
+        self.id = id
+        self.name = name
+        self.isLocal = isLocal
+        self.isMuted = isMuted
+        self.isSpeaking = isSpeaking
+    }
+}
+
+/// A meeting as seen in one scan tick: its stable id, platform, window title, and
+/// current roster. Fed to `MeetingStateTracker`, which diffs it across ticks.
+public struct MeetingSnapshot: Codable, Sendable, Identifiable, Hashable {
+    public var id: String
+    public var platform: Platform
+    public var title: String
+    /// Meeting URL from the browser address bar when available (nil for PWAs /
+    /// native apps, whose AX tree exposes no address bar).
+    public var url: String?
+    public var participants: [MeetingParticipant]
+    public var startedAt: Int
+    public var updatedAt: Int
+
+    public init(id: String, platform: Platform, title: String, url: String? = nil,
+                participants: [MeetingParticipant], startedAt: Int, updatedAt: Int) {
+        self.id = id
+        self.platform = platform
+        self.title = title
+        self.url = url
+        self.participants = participants
+        self.startedAt = startedAt
+        self.updatedAt = updatedAt
+    }
+}
+
+/// Recall-style meeting + participant lifecycle, produced by `MeetingStateTracker`.
+public enum MeetingEvent: Sendable {
+    case meetingInitialized(MeetingSnapshot)
+    case meetingUpdated(MeetingSnapshot)
+    case meetingEnded(meetingId: String, ts: Int)
+    case participantJoined(meetingId: String, participant: MeetingParticipant, ts: Int)
+    case participantUpdated(meetingId: String, participant: MeetingParticipant, ts: Int)
+    case participantLeft(meetingId: String, participantId: String, name: String, ts: Int)
 }
 
 /// Everything the UI layer can receive. Mirrors `AppEvent`.
@@ -125,4 +203,5 @@ public enum AppEvent: Sendable {
     case tracker(TrackerEvent)
     case windows(EngineWindows)
     case status(EngineStatus)
+    case meeting(MeetingEvent)
 }
