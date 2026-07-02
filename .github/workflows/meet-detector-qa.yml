@@ -1,0 +1,53 @@
+name: meet-detector-qa
+
+# Gate the Meet DOM active-speaker detector on its two proven harnesses so a
+# detector.js / fixtures.js edit can't regress silently.
+#   Job A — Node logic harness (baseline 23/23)
+#   Job B — real-browser QA in headless Chrome (baseline 33/33)
+# See docs/meet-dom-speaking-detection.md §4.
+
+on:
+  push:
+    paths:
+      - 'research/meet-dom-detector/**'
+      - '.github/workflows/meet-detector-qa.yml'
+  pull_request:
+    paths:
+      - 'research/meet-dom-detector/**'
+      - '.github/workflows/meet-detector-qa.yml'
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: research/meet-dom-detector
+
+jobs:
+  node-harness:
+    name: Node logic harness (23/23)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run Node scenario matrix
+        run: npm test   # exits non-zero if any scenario fails (baseline 23/23)
+
+  browser-qa:
+    name: Real-browser QA (33/33)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        with:
+          chrome-version: stable
+      - name: Run real-browser scenario matrix
+        env:
+          CI: 'true'
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: npm run test:browser   # exits non-zero if any scenario fails (baseline 33/33)

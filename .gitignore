@@ -12,3 +12,15 @@ build/
 /macos/ax-dumps/
 
 logs
+
+# Live Meet rig runtime artifacts — Chrome profiles (may hold a signed-in session),
+# captured meeting URL, and observation timelines. NEVER commit these.
+/research/meet-dom-detector/live/.live-profile/
+/research/meet-dom-detector/live/.meeting-url
+/research/meet-dom-detector/live/observe-timeline.jsonl
+/research/meet-dom-detector/live/audio/*.wav
+# machine-specific discovered audio device index + per-run results (regenerated)
+/research/meet-dom-detector/live/.audio-device-index
+/research/meet-dom-detector/live/.bh-device-index
+/research/meet-dom-detector/live/struct-loop-results.json
+node_modules/

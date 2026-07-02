@@ -1,0 +1,11 @@
+{
+  "name": "meet-dom-detector",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Caption-free Google Meet active-speaker detector + QA harnesses (see docs/meet-dom-speaking-detection.md)",
+  "scripts": {
+    "test": "node test.js",
+    "test:browser": "node browser-qa/run-browser-qa.js",
+    "test:all": "npm test && npm run test:browser"
+  }
+}

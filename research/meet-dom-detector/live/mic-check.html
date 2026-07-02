@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mic check</title></head>
+<body>
+<script>
+// Validates that Chrome's --use-file-for-fake-audio-capture actually drives a live
+// mic stream: getUserMedia -> WebAudio analyser -> max RMS. If the fake WAV is
+// injected, window.__micRMS climbs above ~0.001. Proves the live-rig audio path.
+window.__micRMS = 0; window.__micErr = null; window.__micReady = false; window.__ctxState = null;
+navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+  var ctx = new (window.AudioContext || window.webkitAudioContext)();
+  function go() {
+    var src = ctx.createMediaStreamSource(stream);
+    var an = ctx.createAnalyser(); an.fftSize = 2048;
+    // Connect through to destination so the graph is actually pulled (headless
+    // AudioContext won't render an unconnected analyser). A gain of 0 avoids any
+    // feedback while still forcing the pull.
+    var g = ctx.createGain(); g.gain.value = 0;
+    src.connect(an); an.connect(g); g.connect(ctx.destination);
+    var buf = new Float32Array(an.fftSize); var maxRms = 0; window.__micReady = true;
+    setInterval(function () {
+      window.__ctxState = ctx.state;
+      an.getFloatTimeDomainData(buf);
+      var s = 0; for (var i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+      var rms = Math.sqrt(s / buf.length); if (rms > maxRms) maxRms = rms;
+      window.__micRMS = maxRms;
+    }, 100);
+  }
+  if (ctx.state === 'suspended' && ctx.resume) { ctx.resume().then(go).catch(go); } else { go(); }
+}).catch(function (e) { window.__micErr = String(e); });
+</script>
+</body></html>

@@ -1,0 +1,237 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Meet DOM simulator (QA)</title>
+<style>
+  /* Real animation on the equalizer bars => getComputedStyle(bar).animationName
+     is 'eq' when speaking and 'none' when silent. This is what makes the browser
+     QA test the REAL computed-animation read, not a simulated flag. */
+  /* Faithful to live Meet 2026-07-03: stripeJiggleAnimation animates ONLY
+     background-size/position — bar boxes NEVER change size while animating
+     (which is what lets the detector require barHeight >= barWidth). */
+  @keyframes eq { 0%{background-position-y:0.1em} 50%{background-position-y:0} 100%{background-position-y:0.1em} }
+  /* Faithful to live Meet 2026-07-03: the equalizer is a small CIRCLE (in-tile
+     28x28 / People-panel 24x24) holding 3 tiny bar divs (live 4x16; sim 3x12). */
+  .IisKdb, .ZZstructZZ { display:inline-flex; align-items:center; justify-content:center;
+    gap:2px; width:28px; height:28px; border-radius:50%; background:#0b57d0; vertical-align:middle; }
+  .IisKdb > .bar { animation: eq .5s infinite linear; display:inline-block; width:3px; height:12px; background:#8ab4f8; }
+  .IisKdb.gjg47c > .bar { animation: none; }        /* silent: bars do not animate */
+  /* token-free widget variant: NO jsname/IisKdb anywhere; bars animate via a
+     garbage class the detector has never heard of */
+  .ZZstructZZ > .zbar { display:inline-block; width:3px; height:12px; background:#8ab4f8; }
+  .ZZstructZZ.zspeak > .zbar { animation: eq .5s infinite linear; }
+  .oZRSLe { display:inline-block; vertical-align:top; margin:2px; background:#202124; position:relative; }
+  .kssMZb { position:absolute; inset:0; outline:2px solid #8ab4f8; }
+  span.notranslate { color:#fff; font:12px sans-serif; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+(function () {
+  var stage = document.getElementById('stage');
+  var pid = 0;
+
+  // widget: undefined => no widget; true => speaking (no gjg47c); false => silent (gjg47c)
+  // opts.noTokens  => NO jsname/jscontroller/IisKdb at all (token-free variant;
+  //                   only its structure identifies it) — live-anchored: tokens rotate.
+  // opts.hidden    => display:none (live: a MUTED participant's widget is hidden/0x0).
+  // opts.noBars    => zero children, 0x0 block (live: the DYfzY self-meter variant;
+  //                   its only signal is the silence class toggling off).
+  function widget(speaking, opts) {
+    opts = opts || {};
+    var w = document.createElement('div');
+    if (opts.noTokens) {
+      w.className = 'ZZstructZZ' + (speaking ? ' zspeak' : '');
+      for (var j = 0; j < 3; j++) { var zb = document.createElement('div'); zb.className = 'zbar'; w.appendChild(zb); }
+      if (opts.hidden) w.style.display = 'none';
+      return w;
+    }
+    w.setAttribute('jscontroller', opts.jscontroller || 'ES310d');
+    w.setAttribute('jsname', 'QgSmzd');
+    w.setAttribute('jsaction', 'r31gIf:wfi2bd');
+    var cls = ['IisKdb'];
+    if (!speaking) cls.push('gjg47c');
+    if (opts.extraClass) cls.push(opts.extraClass);   // e.g. a rotated speaking class
+    w.className = cls.join(' ');
+    if (opts.noBars) { w.style.cssText = 'display:block;width:0;height:0;padding:0;border-radius:0;background:none'; }
+    else { for (var i = 0; i < 3; i++) { var b = document.createElement('div'); b.className = 'bar p21yBf iitYmd'; w.appendChild(b); } }
+    if (opts.hidden) w.style.display = 'none';
+    return w;
+  }
+  // Out-of-tile page chrome, live-anchored: (a) the control-bar mic meter is an
+  // ANIMATING equalizer-shaped div outside any tile; (b) a hidden 0x0 div with
+  // several leaf-div children exists page-wide (matched the OLD structural
+  // predicate — the visibility guard exists because of it).
+  function chromeLookalike() {
+    var w = document.createElement('div');
+    w.className = 'ZZstructZZ zspeak';
+    for (var i = 0; i < 3; i++) { var b = document.createElement('div'); b.className = 'zbar'; w.appendChild(b); }
+    return w;
+  }
+  function hiddenJunk() {
+    var d = document.createElement('div');
+    d.style.cssText = 'width:0;height:0';
+    for (var i = 0; i < 6; i++) d.appendChild(document.createElement('div'));
+    return d;
+  }
+
+  function tile(spec) {
+    var t = document.createElement('div');
+    t.className = 'oZRSLe';
+    t.setAttribute('data-participant-id', 'spaces/x/devices/' + (++pid));
+    t.style.width = (spec.w || 200) + 'px';
+    t.style.height = (spec.h || 120) + 'px';
+    if (spec.self) t.setAttribute('data-self', '');
+    if (spec.screenshare) t.setAttribute('data-screenshare', '');
+    if (spec.audioLevel !== undefined && spec.audioLevel !== null) t.setAttribute('data-audio-level', String(spec.audioLevel));
+    var nm = document.createElement('span'); nm.className = 'notranslate'; nm.textContent = spec.name; t.appendChild(nm);
+    if (spec.ring) { var r = document.createElement('div'); r.className = 'kssMZb'; t.appendChild(r); }
+    if (spec.speaking !== undefined) t.appendChild(widget(spec.speaking, spec.widgetOpts));
+    return t;
+  }
+
+  // A People-panel roster ROW: a [role=listitem] that ALSO carries
+  // data-participant-id and its own (24x24) equalizer — exactly like live Meet's
+  // panel. The detector must IGNORE it (stage-only); the panel is usually closed
+  // and must never be a dependency.
+  function panelRow(spec) {
+    if (!panel) { panel = document.createElement('div'); panel.setAttribute('role', 'list'); stage.appendChild(panel); }
+    var row = document.createElement('div');
+    row.setAttribute('role', 'listitem');
+    row.setAttribute('data-participant-id', 'spaces/x/devices/' + (++pid));
+    var nm = document.createElement('span'); nm.className = 'notranslate'; nm.textContent = spec.name; row.appendChild(nm);
+    if (spec.speaking !== undefined) row.appendChild(widget(spec.speaking, spec.widgetOpts));
+    panel.appendChild(row);
+  }
+  var panel = null;
+  function render(specs) {
+    stage.innerHTML = ''; panel = null;
+    specs.forEach(function (s) {
+      if (s.chrome) { stage.appendChild(chromeLookalike()); return; }
+      if (s.junk) { stage.appendChild(hiddenJunk()); return; }
+      if (s.panelRow) { panelRow(s); return; }
+      stage.appendChild(tile(s));
+    });
+  }
+
+  // Every required layout/scenario, as real DOM.
+  var SCENARIOS = [
+    { id: 'grid-one-speaking', ctx: { vad: true }, expect: { names: ['Bob'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: true }, { name: 'Carol', speaking: false }, { name: 'You', self: true, speaking: false }] },
+    { id: 'grid-multiple', ctx: { vad: true }, expect: { namesSet: ['Alice', 'Carol'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true }, { name: 'Bob', speaking: false }, { name: 'Carol', speaking: true }] },
+    { id: 'grid-sequence-1', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true }, { name: 'Bob', speaking: false }, { name: 'Carol', speaking: false }] },
+    { id: 'grid-sequence-2', ctx: { vad: true }, expect: { names: ['Carol'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: false }, { name: 'Carol', speaking: true }] },
+    { id: 'spotlight-indicator', ctx: { vad: true }, expect: { names: ['Bob'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: false, w: 800, h: 450 }, { name: 'Bob', speaking: true, w: 160, h: 90 }] },
+    { id: 'spotlight-no-indicator', ctx: { vad: true }, expect: { names: ['Alice'], via: 'geometry' },
+      specs: [{ name: 'Alice', w: 800, h: 450 }, { name: 'Bob', w: 160, h: 90 }] },
+    { id: 'pip', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true, w: 320, h: 180 }] },
+    { id: 'fullscreen-single', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true, w: 1280, h: 720 }] },
+    { id: 'muted-no-fp', ctx: { vad: false }, expect: { names: [], via: 'none' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: false }] },
+    { id: 'nobody-vad-open', ctx: { vad: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: false }] },
+    { id: 'screenshare-suppress', ctx: { vad: true, presentationActive: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      specs: [{ name: 'Shared screen', screenshare: true, w: 1000, h: 560 }, { name: 'Alice', w: 160, h: 90 }] },
+    { id: 'screenshare-with-indicator', ctx: { vad: true, presentationActive: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Shared screen', screenshare: true, w: 1000, h: 560 }, { name: 'Alice', speaking: true, w: 160, h: 90 }] },
+    { id: 'join-leave-1', ctx: { vad: true }, expect: { names: ['Dan'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: false }, { name: 'Dan', speaking: true }] },
+    { id: 'join-leave-2', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true }, { name: 'Bob', speaking: false }] },
+    { id: 'kssmzb-not-a-signal', ctx: { vad: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      // LIVE-REFUTED: kssMZb present on a silent tile is NOT speaking -> not named.
+      specs: [{ name: 'Alice', ring: true }, { name: 'Bob' }] },
+    { id: 'data-audio-level', ctx: { vad: true }, expect: { names: ['Alice'], via: 'dataAudioLevel' },
+      specs: [{ name: 'Alice', audioLevel: 3, speaking: false }, { name: 'Bob', audioLevel: 0, speaking: false }] },
+    { id: 'rotation-state-class', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      // speaking widget whose positive class was renamed to garbage: no gjg47c + bars animate => still detected
+      specs: [{ name: 'Alice', speaking: true, widgetOpts: { extraClass: 'ZZrenamedZZ' } }] },
+    { id: 'rotation-jscontroller', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      // jscontroller rotated tae9tc->ES310d->garbage, anchored by jsname=QgSmzd/IisKdb
+      specs: [{ name: 'Alice', speaking: true, widgetOpts: { jscontroller: 'ZZrotatedZZ' } }] },
+
+    // ---- 3 people · turn-wise · overlapping · sidebar layout ----
+    { id: '3p-turnwise-1', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true }, { name: 'Bob', speaking: false }, { name: 'Carol', speaking: false }] },
+    { id: '3p-turnwise-2', ctx: { vad: true }, expect: { names: ['Bob'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: true }, { name: 'Carol', speaking: false }] },
+    { id: '3p-turnwise-3', ctx: { vad: true }, expect: { names: ['Carol'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: false }, { name: 'Carol', speaking: true }] },
+    { id: '3p-overlap-2', ctx: { vad: true }, expect: { namesSet: ['Alice', 'Carol'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true }, { name: 'Bob', speaking: false }, { name: 'Carol', speaking: true }] },
+    { id: '3p-overlap-all', ctx: { vad: true }, expect: { namesSet: ['Alice', 'Bob', 'Carol'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true }, { name: 'Bob', speaking: true }, { name: 'Carol', speaking: true }] },
+    // Sidebar/tiled: one big main tile + a column of small tiles; a SMALL tile speaks
+    // -> the structural indicator must win over geometry (big tile isn't the speaker).
+    { id: 'sidebar-small-speaks', ctx: { vad: true }, expect: { names: ['Carol'], via: 'audioIndicator' },
+      specs: [{ name: 'Main', w: 700, h: 400, speaking: false }, { name: 'Alice', w: 150, h: 84, speaking: false },
+              { name: 'Bob', w: 150, h: 84, speaking: false }, { name: 'Carol', w: 150, h: 84, speaking: true }] },
+    // Same sidebar but nobody speaking -> no false positive.
+    { id: 'sidebar-silent-no-fp', ctx: { vad: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      specs: [{ name: 'Main', w: 700, h: 400, speaking: false }, { name: 'Alice', w: 150, h: 84, speaking: false },
+              { name: 'Bob', w: 150, h: 84, speaking: false }, { name: 'Carol', w: 150, h: 84, speaking: false }] },
+
+    // ---- STRUCTURE-FIRST (token-free) coverage — live-anchored 2026-07-03 ----
+    // Every Google token stripped (no jsname/jscontroller/IisKdb/gjg47c): the
+    // widget is found by SHAPE alone and speaking read from computed animation.
+    { id: 'structural-no-jsname', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true, widgetOpts: { noTokens: true } }, { name: 'Bob', speaking: false }] },
+    // Live: a MUTED participant's widget stays in the DOM but display:none/0x0.
+    // It must be neither named nor treated as an active signal.
+    { id: 'structural-muted-hidden', ctx: { vad: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      specs: [{ name: 'Alice', speaking: false, widgetOpts: { hidden: true } }, { name: 'Bob', speaking: false }] },
+    // Live: the control-bar mic meter is an ANIMATING equalizer OUTSIDE any tile
+    // (owner-less) — it must never produce a name.
+    { id: 'structural-fp-lookalike', ctx: { vad: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: false }, { chrome: true }] },
+    // Live: the DYfzY self-meter variant has NO bars and 0x0 size; its speaking
+    // signal is the silence class dropping off (level classes rotate). The
+    // class read only applies in a BARS-LESS build (bar widgets are
+    // authoritative when present), so every widget here is the no-bars variant.
+    { id: 'nobars-level-class', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true, widgetOpts: { noBars: true } },
+              { name: 'Bob', speaking: false, widgetOpts: { noBars: true } }] },
+    // Adversarial-review find (2026-07-03): a widget hidden mid-speech can retain
+    // a STALE speaking class/animation (computed styles resolve inside
+    // display:none subtrees!). Hidden jsname widgets must never name anyone.
+    { id: 'hidden-stale-speaking-class', ctx: { vad: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      specs: [{ name: 'Alice', speaking: true, widgetOpts: { hidden: true } }, { name: 'Bob', speaking: false }] },
+    // Live: a hidden 0x0 junk div with >=3 leaf children exists page-wide. It
+    // must NOT count as an observable indicator — with no real widgets present,
+    // geometry must still be allowed to pick the promoted tile.
+    { id: 'geometry-with-hidden-junk', ctx: { vad: true }, expect: { names: ['Alice'], via: 'geometry' },
+      specs: [{ name: 'Alice', w: 800, h: 450 }, { name: 'Bob', w: 160, h: 90 }, { junk: true }] },
+
+    // ---- DO NOT DEPEND ON THE PEOPLE PANEL (open or closed = same result) ----
+    // Panel OPEN, and the panel row for the speaker ALSO animates: the name still
+    // comes from the STAGE tile, exactly once (panel row must not double or shift).
+    { id: 'people-panel-open-same-result', ctx: { vad: true }, expect: { names: ['Bob'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: true },
+              { panelRow: true, name: 'Bob', speaking: true }, { panelRow: true, name: 'Alice', speaking: false }] },
+    // Panel row is the ONLY thing animating (stage tiles silent) — must be IGNORED
+    // (we don't read the panel), so nobody attributable -> Someone floor.
+    { id: 'people-panel-only-ignored', ctx: { vad: true }, expect: { names: ['Someone'], via: 'someoneFloor' },
+      specs: [{ name: 'Alice', speaking: false }, { name: 'Bob', speaking: false },
+              { panelRow: true, name: 'Carol', speaking: true }] },
+  ];
+
+  window.__scenarios = SCENARIOS.map(function (s) { return s.id; });
+  window.__setScenario = function (i) {
+    var s = SCENARIOS[i];
+    render(s.specs);
+    window.__ctx = s.ctx;
+    window.__oracle = { id: s.id, expect: s.expect, vad: s.ctx.vad, presentationActive: !!s.ctx.presentationActive };
+    return s.id;
+  };
+})();
+</script>
+</body>
+</html>

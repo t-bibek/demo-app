@@ -260,6 +260,62 @@ equal(meetActiveSpeaker(tiles: mtSpotlight, prevAreas: [:], vadSpeechActive: tru
 equal(meetActiveSpeaker(tiles: mtClass, prevAreas: [:], vadSpeechActive: true, presentationActive: true).names, ["Alice"],
       "presentation on + class match -> class still names the speaker")
 
+// MARK: Meet speech_on/speech_off events — VALIDATE the event pipeline against
+// the DOM detector's LIVE-VERIFIED semantics (2026-07-03, structure-only run:
+// single speakers named turn-wise 0.88-0.92, BOTH overlapping speakers named
+// 0.81/0.88 on real Google Meet). Here the same shape is checked deterministically:
+// a per-poll speaker set -> SessionTracker -> speech_on/speech_off transitions.
+print("Meet speech events (turn-wise + overlap):")
+do {
+    // Collect emitted (type, name, source) event tuples.
+    var evs: [(String, String, String?)] = []
+    let t = SessionTracker(opts: TrackerOptions(endSilenceMs: 2000, pulseWidthMs: 500)) { e in
+        switch e {
+        case let .start(_, n, _, ctx): evs.append(("speech_on", n, ctx.source))
+        case let .end(_, n, _, _, _, ctx): evs.append(("speech_off", n, ctx.source))
+        case .tick: break
+        }
+    }
+    // Drive the DOM detector's live semantics: the structural indicator names the
+    // active REMOTE(s); self would come from the mic path. One pulse per 500ms poll.
+    // Turn 1: Alice (remote) speaks t=0..1500 (source meet.structural).
+    for ts in stride(from: 0, through: 1500, by: 500) {
+        t.pulse(.meet, "Alice", ts, meetingId: "m1", participantId: "meet::m1::alice", source: "meet.structural")
+    }
+    // Gap: Alice goes silent; advance clock past endSilence -> speech_off Alice.
+    t.update(1500 + 2001)
+    // Turn 2: Bob (remote) speaks; then OVERLAP with Alice (both named same poll).
+    for ts in stride(from: 4000, through: 5500, by: 500) {
+        t.pulse(.meet, "Bob", ts, meetingId: "m1", participantId: "meet::m1::bob", source: "meet.structural")
+    }
+    for ts in stride(from: 5000, through: 5500, by: 500) {   // overlap window
+        t.pulse(.meet, "Alice", ts, meetingId: "m1", participantId: "meet::m1::alice", source: "meet.structural")
+    }
+    t.endAll()
+
+    let ons  = evs.filter { $0.0 == "speech_on" }
+    let offs = evs.filter { $0.0 == "speech_off" }
+    // Alice on (turn1), Bob on (turn2), Alice on again (overlap re-start) = 3 speech_on.
+    equal(ons.map { $0.1 }.sorted(), ["Alice", "Alice", "Bob"], "3 speech_on: Alice(turn1), Bob, Alice(overlap)")
+    // Every started session must close exactly once (turn1 Alice, then Bob+Alice at endAll).
+    equal(offs.count, ons.count, "every speech_on is matched by exactly one speech_off")
+    equal(offs.map { $0.1 }.sorted(), ["Alice", "Alice", "Bob"], "speech_off names mirror speech_on")
+    // Source attribution threads through to the event (so telemetry can tell which
+    // signal named the speaker — the structural read here).
+    check(evs.allSatisfy { $0.2 == "meet.structural" }, "every speech event carries source=meet.structural")
+    // Overlap: at endAll, Bob AND the re-started Alice are BOTH active concurrently.
+    check(t.activeCount == 0, "endAll closed all overlapping sessions")
+}
+// Self + remote are distinct participants (self via mic path, remote via structural).
+do {
+    var names: [String] = []
+    let t = SessionTracker { e in if case let .start(_, n, _, _) = e { names.append(n) } }
+    t.pulse(.meet, "Bibek Thapa", 0, meetingId: "m1", participantId: "meet::m1::self", source: "meet.self_mic")
+    t.pulse(.meet, "Alice", 0, meetingId: "m1", participantId: "meet::m1::alice", source: "meet.structural")
+    equal(names.sorted(), ["Alice", "Bibek Thapa"], "self(mic) + remote(structural) = two concurrent speakers")
+    equal(t.activeCount, 2, "self and remote tracked as distinct sessions")
+}
+
 // MARK: Teams rules (stable aria_*/calling_* tokens; speaking markers seeded)
 print("TeamsSpeakerRules:")
 let tr = TeamsSpeakerRules.builtin

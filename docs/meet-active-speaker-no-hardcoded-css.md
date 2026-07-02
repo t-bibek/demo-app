@@ -83,6 +83,93 @@ in the browser or dragging Meet's in-app volume to 0 *does* zero the rendered st
 
 ---
 
+## 2026-07-02 — CROSS-SURFACE: a durable speaking signal DOES exist, but only in the RAW DOM
+
+> **Full write-up in its own doc:** [meet-dom-speaking-detection.md](meet-dom-speaking-detection.md)
+> (DOM signals, ranking, config, real-browser QA, Recall re-check, live rig). Summary below.
+
+The "structural indicator PROVEN ABSENT" result above is correct **for the accessibility
+surface** (macOS AX / Windows UIA). A separate investigation this date found that Meet's
+durable speaking signal lives one layer up — in the **raw DOM**, which the AX/UIA scanners
+cannot read (Chromium strips `jsname`/`jscontroller`/`data-*` from AX; `window/docs/ARCHITECTURE.md:146`
+says UIA exposes only `class`→`ClassName`/`id`→`AutomationId`). So this is a *different capture
+surface*, not a reversal.
+
+**Durable raw-DOM speaking signals (caption-free, most→least stable):**
+1. `[data-audio-level]:not([data-audio-level="0"])` on the tile — semantic attr (Vexa's primary).
+2. The per-participant audio widget: anchor **`jsname="QgSmzd"` + base class `IisKdb`**; speaking =
+   **absence of silence class `gjg47c`** (triple-confirmed) and/or the equalizer bars animating.
+3. Tile identity `data-participant-id` (→ `data-requested-participant-id` → `data-ssrc`); name from
+   `span.notranslate`. **No captions** (product requirement).
+4. `.kssMZb` ring as remote-config'd fallback. Gate on VAD; "Someone" floor.
+
+**Durability evidence (rotation observed in the wild):** between the 2026-06-25 capture and current
+open-source snapshots the widget's `jscontroller` rotated `tae9tc`→`ES310d` and its bar child-classes
+changed, while `jsname="QgSmzd"`/`IisKdb`/`gjg47c` held. Anchor on jsname/IisKdb/data-*, never on
+jscontroller or the obfuscated speaking class. (`tae9tc` now = 0 GitHub Meet hits.)
+
+**Reachability:** needs a CDP / content-script / embedded-webview surface on BOTH platforms — the
+shipping AX/UIA app can't see any of these. On the AX surface, caption-free gallery multi-party still
+needs `kssMZb`.
+
+Full analysis: `~/.claude/google-meet-speaking-detection-analysis.md`. Runnable, dependency-free
+detector + 20/20 scenario harness (3 real captured-DOM + 2 real current-widget + 15 synthetic) + a
+zero-dep CDP capture driver: `research/meet-dom-detector/` (`detector.js`, `fixtures.js`, `test.js`,
+`cdp-capture.js`).
+
+---
+
+## 2026-07-03 — LIVE AX VERIFICATION (real 2-person call + BlackHole speaker)
+
+Re-verified the **accessibility-tree** side against a live Meet with a controllable real speaker
+(guest mic = BlackHole loopback). Tooling: `swift run AXSnapshot chrome` / `--watch` (forces the full
+a11y tree, like Recall). This is the AX-surface complement to the DOM findings above.
+
+### 1. Speaking is NOT in the AX tree — confirmed LIVE (not just static dumps)
+Captured the meeting AX tree SILENT vs the guest SPEAKING (real recognized speech) and diffed:
+**class tokens added/removed = none; descriptions = none; nothing toggles with speech.** The
+speaking-indicator widget (`jsname="QgSmzd"`/`IisKdb`, classes `gjg47c`/`Oaajhc`, the
+`stripeJiggleAnimation` bars) is **entirely PRUNED from Chrome's AX tree** — `gjg47c`/`Oaajhc`/`QgSmzd`/
+`IisKdb`/`stripeJiggle` = **0 nodes**. So the durable DOM signal (§ the RAW-DOM doc) is **DOM-only and
+invisible to AX/UIA**. On the AX surface, who-is-speaking MUST come from **audio VAD** (+ geometry +
+roster) — exactly the shipped design. `kssMZb` appears transiently in AX (a 24×24 node, and absent
+minutes later) — the last-active/focus marker, never a real-time speaking state.
+
+### 2. What the AX tree DOES expose (the usable detection surface) [verified live]
+- **Participant names** — `AXStaticText` ("Bibek Thapa", "BH speaker") → the roster for naming.
+- **Tile containers** — `.oZRSLe` with `AXFrame` geometry → geometry attribution.
+- **Self mic state** — button `AXTitle` "Turn on/off microphone".
+- **Screen-share / presentation** — `AXStaticText` **"You are presenting" / "Stop presenting"** appears
+  when sharing (auto-shared via `--use-fake-ui-for-media-stream`) → `MeetPresentationActive` works in AX.
+- NOT exposed: the speaking equalizer, `data-*`, `jsname`/`jscontroller`, CSS animations.
+
+### 3. AX availability by WINDOW STATE — the operational risk [verified live, host-only]
+| State | Meeting AX tree |
+|---|---|
+| Foreground (active tab, Chrome frontmost) | ✅ present (166 nodes) |
+| **Background TAB** (user switched tabs in that window) | ❌ **GONE** — Chrome drops AX for a non-active tab |
+| Background APP (another app frontmost, meeting still the active tab) | ✅ present (166) |
+| Minimized window | ✅ present (166) |
+| Maximized window | ✅ present (146) |
+
+**Takeaway:** AX name/geometry detection **survives minimize, maximize, and app-backgrounding** (the
+common "meeting open, working elsewhere" cases) but **dies when the meeting is a background TAB**. Audio
+VAD is window-state-independent (system audio), so the fusion degrades to VAD-only ("Someone", no name)
+in the background-tab case — a known, acceptable floor.
+
+### 4. Screen-share & multi-party [verified / structural]
+Screen-share: presenting markers are in AX (above); the shared surface adds a large region that would be
+the biggest `AXFrame` — hence geometry is suppressed under `presentationActive` (already implemented).
+Multi-party: the roster (`AXStaticText` names) and `.oZRSLe` tiles scale per participant; speaking stays
+absent from AX regardless. (Full live 3-people+share capture is a mechanical repeat — names/geometry
+scale, presentation markers appear, no speaking token.)
+
+**Net (AX product):** speaking = **audio VAD**; names = AX roster; geometry = AX `AXFrame`; presentation
+= AX "presenting" text — all window-state-robust except a background TAB. Rig: `research/meet-dom-detector/live/`
+(`ax-state.js` window-state driver; AX tools in `macos/Sources/AXSnapshot`).
+
+---
+
 ## Implementation status (2026-06-22)
 
 > **Update — CORRECTED finding (2026-06-22, narrated run 2).** The earlier

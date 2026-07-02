@@ -69,6 +69,17 @@ public struct MeetSpeakerResult: Equatable, Sendable {
 /// border is pure CSS / a pruned node). So who-is-speaking comes from audio VAD +
 /// roster (DetectionEngine), exactly as Recall does — this resolver is the
 /// Accessibility-only fallback. See docs/meet-active-speaker-no-hardcoded-css.md.
+///
+/// CROSS-SURFACE (2026-07-03, re-verified live): a durable, token-free STRUCTURAL
+/// speaking signal DOES exist — but only in the RAW DOM, which the AX tree prunes.
+/// It is a visible ~28x28 circular equalizer (3 leaf "bar" divs, 4x16) whose bars
+/// animate `stripeJiggleAnimation` while speaking; found by shape alone with zero
+/// page-wide false positives, and live-confirmed naming turn-wise + overlapping
+/// speakers (0.81-0.92) with EVERY Google class/jsname/jscontroller token
+/// disabled. It is unreachable from this AX resolver — a content-script / CDP /
+/// embedded-webview surface is required to read it. Reference implementation +
+/// QA: research/meet-dom-detector/ (Node 23/23, real-browser 31/31). Do NOT
+/// re-add a structural rule to the AX path expecting to see it here.
 public func meetActiveSpeaker(
     tiles: [MeetTileObservation],
     prevAreas: [String: Double],
