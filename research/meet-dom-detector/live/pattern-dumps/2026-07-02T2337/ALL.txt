@@ -1,0 +1,31 @@
+===== 01-baseline =====
+presenting=false  largest=BH Speaker  top2ratio=1
+SPEAKING=[]  muted=["BH Speaker","BH Two"]  promoted(kssMZb)=[]  ariaLive=[{"pol":"polite","txt":"Your meeting's readycloseCloseperson_addAdd othersOr share this meeting link wit"},{"pol":"polite","txt":"Your microphone is off."}]
+dom  name          state     pid       x     y     w    h     area   promoted self  eq(bars/display)
+0    BH Speaker    muted     ices/482     17   125   231  308    71148  -        -     ["0b/block","3b/none"]
+1    BH Two        muted     ices/483    260   125   231  308    71148  -        -     ["0b/block","3b/none"]
+2    Bibek Thapa   silent    ices/481    503   125   231  308    71148  -        SELF  ["0b/block","3b/none"]
+
+===== 02-pin-BHSpeaker =====
+presenting=false  largest=BH Speaker  top2ratio=1
+SPEAKING=[]  muted=["BH Speaker","BH Two"]  promoted(kssMZb)=[]  ariaLive=[{"pol":"polite","txt":"Your meeting's readycloseCloseperson_addAdd othersOr share this meeting link wit"},{"pol":"polite","txt":"Your microphone is off."}]
+dom  name          state     pid       x     y     w    h     area   promoted self  eq(bars/display)
+0    BH Speaker    muted     ices/482     17   125   231  308    71148  -        -     ["0b/block","3b/none"]
+1    BH Two        muted     ices/483    260   125   231  308    71148  -        -     ["0b/block","3b/none"]
+2    Bibek Thapa   silent    ices/481    503   125   231  308    71148  -        SELF  ["0b/block","3b/none"]
+
+===== 03-pin-BHTwo =====
+presenting=false  largest=BH Speaker  top2ratio=1
+SPEAKING=[]  muted=["BH Speaker","BH Two"]  promoted(kssMZb)=[]  ariaLive=[{"pol":"polite","txt":"Your meeting's readycloseCloseperson_addAdd othersOr share this meeting link wit"},{"pol":"polite","txt":"Your microphone is off."}]
+dom  name          state     pid       x     y     w    h     area   promoted self  eq(bars/display)
+0    BH Speaker    muted     ices/482     17   125   231  308    71148  -        -     ["0b/block","3b/none"]
+1    BH Two        muted     ices/483    260   125   231  308    71148  -        -     ["0b/block","3b/none"]
+2    Bibek Thapa   silent    ices/481    503   125   231  308    71148  -        SELF  ["0b/block","3b/none"]
+
+===== 04-pin-BibekThapa =====
+presenting=false  largest=BH Speaker  top2ratio=1
+SPEAKING=[]  muted=["BH Speaker","BH Two"]  promoted(kssMZb)=[]  ariaLive=[{"pol":"polite","txt":"Your meeting's readycloseCloseperson_addAdd othersOr share this meeting link wit"},{"pol":"polite","txt":"Your microphone is off."}]
+dom  name          state     pid       x     y     w    h     area   promoted self  eq(bars/display)
+0    BH Speaker    muted     ices/482     17   125   231  308    71148  -        -     ["0b/block","3b/none"]
+1    BH Two        muted     ices/483    260   125   231  308    71148  -        -     ["0b/block","3b/none"]
+2    Bibek Thapa   silent    ices/481    503   125   231  308    71148  -        SELF  ["0b/block","3b/none"]

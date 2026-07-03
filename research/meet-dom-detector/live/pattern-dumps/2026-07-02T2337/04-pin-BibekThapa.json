@@ -1,0 +1,150 @@
+{
+  "when": 1783035430700,
+  "presenting": false,
+  "largest": "BH Speaker",
+  "top2ratio": 1,
+  "speakingNow": [],
+  "mutedNow": [
+    "BH Speaker",
+    "BH Two"
+  ],
+  "kssMZbTiles": [],
+  "ariaLive": [
+    {
+      "pol": "polite",
+      "txt": "Your meeting's readycloseCloseperson_addAdd othersOr share this meeting link wit"
+    },
+    {
+      "pol": "polite",
+      "txt": "Your microphone is off."
+    }
+  ],
+  "rows": [
+    {
+      "domIdx": 0,
+      "name": "BH Speaker",
+      "pid": "spaces/kXh9JXyhUkQB/devices/482",
+      "pidShort": "ices/482",
+      "rect": [
+        17,
+        125,
+        231,
+        308
+      ],
+      "area": 71148,
+      "speaking": false,
+      "muted": true,
+      "state": "muted",
+      "inPromotedKssMZb": false,
+      "hasKssMZbInside": false,
+      "selfMirroredVideo": false,
+      "ariaLabel": null,
+      "tabindex": "-1",
+      "classesHead": "oZRSLe",
+      "equalizers": [
+        {
+          "wh": [
+            0,
+            0
+          ],
+          "display": "block",
+          "nBars": 0,
+          "animating": false
+        },
+        {
+          "wh": [
+            0,
+            0
+          ],
+          "display": "none",
+          "nBars": 3,
+          "animating": false
+        }
+      ]
+    },
+    {
+      "domIdx": 1,
+      "name": "BH Two",
+      "pid": "spaces/kXh9JXyhUkQB/devices/483",
+      "pidShort": "ices/483",
+      "rect": [
+        260,
+        125,
+        231,
+        308
+      ],
+      "area": 71148,
+      "speaking": false,
+      "muted": true,
+      "state": "muted",
+      "inPromotedKssMZb": false,
+      "hasKssMZbInside": false,
+      "selfMirroredVideo": false,
+      "ariaLabel": null,
+      "tabindex": "-1",
+      "classesHead": "oZRSLe",
+      "equalizers": [
+        {
+          "wh": [
+            72,
+            0
+          ],
+          "display": "block",
+          "nBars": 0,
+          "animating": false
+        },
+        {
+          "wh": [
+            0,
+            0
+          ],
+          "display": "none",
+          "nBars": 3,
+          "animating": false
+        }
+      ]
+    },
+    {
+      "domIdx": 2,
+      "name": "Bibek Thapa",
+      "pid": "spaces/kXh9JXyhUkQB/devices/481",
+      "pidShort": "ices/481",
+      "rect": [
+        503,
+        125,
+        231,
+        308
+      ],
+      "area": 71148,
+      "speaking": false,
+      "muted": false,
+      "state": "silent",
+      "inPromotedKssMZb": false,
+      "hasKssMZbInside": false,
+      "selfMirroredVideo": true,
+      "ariaLabel": null,
+      "tabindex": "-1",
+      "classesHead": "oZRSLe",
+      "equalizers": [
+        {
+          "wh": [
+            0,
+            0
+          ],
+          "display": "block",
+          "nBars": 0,
+          "animating": false
+        },
+        {
+          "wh": [
+            0,
+            0
+          ],
+          "display": "none",
+          "nBars": 3,
+          "animating": false
+        }
+      ]
+    }
+  ]
+}
