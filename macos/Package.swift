@@ -11,11 +11,19 @@ let package = Package(
             name: "SpeakerCore",
             path: "Sources/SpeakerCore"
         ),
+        // Thin Accessibility (AX) I/O layer — hoisted verbatim out of
+        // AccessibilityScanner so the scanner AND the event-driven MeetTileObserver
+        // read the AX tree through ONE implementation. Carries zero detection logic;
+        // also owns `monotonicMs()` so SpeakerCore stays clock-free (INV-6).
+        .target(
+            name: "AXKit",
+            path: "Sources/AXKit"
+        ),
         // The macOS app: SwiftUI UI + the native detection engine
         // (AVAudioEngine + ScreenCaptureKit + Accessibility API).
         .executableTarget(
             name: "MeetSpeakerDetector",
-            dependencies: ["SpeakerCore"],
+            dependencies: ["SpeakerCore", "AXKit"],
             path: "Sources/MeetSpeakerDetector"
         ),
         // Dependency-free self-test (XCTest-free) so the core logic can be

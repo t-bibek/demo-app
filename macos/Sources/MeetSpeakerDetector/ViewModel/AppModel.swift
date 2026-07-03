@@ -114,12 +114,55 @@ final class AppModel: ObservableObject {
 
     func startEngine() {
         guard engine == nil else { return }
-        let eng = DetectionEngine { [weak self] event in
+        let eng = DetectionEngine(config: Self.engineConfigFromEnv()) { [weak self] event in
             Task { @MainActor in self?.handle(event) }
         }
         engine = eng
         eng.start()
         running = true
+    }
+
+    /// Build the engine config from environment variables — the detector is a SwiftUI
+    /// `@main` app so argv is unusable; QA A/Bs legacy vs event mode via env WITHOUT a
+    /// rebuild. With NO env vars set, this returns a default `EngineConfig` (byte-for-byte
+    /// legacy 500ms polling). See plan step 6.
+    ///   MSD_MODE=event|legacy      master A/B switch (default legacy)
+    ///   MSD_SKIP_MEET_FULLSCAN     0/1 — override the event-implied Meet sub-walk skip
+    ///   MSD_RECONCILE_MS           reconcile-sweep cadence (ms)
+    ///   MSD_TRANSITION_SPIKE       confidence spike (default 1.0)
+    ///   MSD_TRANSITION_FLOOR       confidence floor (default 0.25)
+    ///   MSD_TRANSITION_HALFLIFE_MS confidence half-life (default 1200)
+    ///   MSD_RUN_SECONDS            clean auto-exit after N seconds (0 = forever)
+    ///   MSD_EDGE_LOG               append meet_edge NDJSON to this path (stdout kept)
+    static func engineConfigFromEnv() -> EngineConfig {
+        let env = ProcessInfo.processInfo.environment
+        var cfg = EngineConfig()
+
+        let mode = (env["MSD_MODE"] ?? "").lowercased()
+        cfg.eventDrivenMeet = (mode == "event")
+        // Event mode IMPLIES the Meet sub-walk short-circuit unless explicitly disabled
+        // (the live CPU-compare suite depends on event mode eliminating the sub-walks).
+        // MSD_MODE=legacy (or unset) keeps full_walks counting per scan so the A/B
+        // baseline works (INV-8).
+        if cfg.eventDrivenMeet {
+            let skipRaw = env["MSD_SKIP_MEET_FULLSCAN"]
+            cfg.skipMeetInFullScan = (skipRaw == nil) ? true : (skipRaw != "0")
+        } else {
+            cfg.skipMeetInFullScan = false
+        }
+
+        if let r = env["MSD_RECONCILE_MS"], let v = Int(r), v > 0 { cfg.reconcileEveryMs = v }
+
+        var tc = cfg.transition
+        if let s = env["MSD_TRANSITION_SPIKE"], let v = Double(s) { tc.spike = v }
+        if let f = env["MSD_TRANSITION_FLOOR"], let v = Double(f) { tc.floor = v }
+        if let h = env["MSD_TRANSITION_HALFLIFE_MS"], let v = Double(h), v >= 0 { tc.halfLifeMs = v }
+        cfg.transition = tc
+
+        if let rs = env["MSD_RUN_SECONDS"], let v = Int(rs), v > 0 { cfg.runSeconds = v }
+        if let p = env["MSD_EDGE_LOG"], !p.isEmpty { cfg.edgeLogPath = p }
+
+        return cfg
     }
 
     func stopEngine() {

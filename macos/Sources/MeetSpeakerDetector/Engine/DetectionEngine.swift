@@ -1,5 +1,6 @@
 import Foundation
 import SpeakerCore
+import AXKit
 
 /// Engine tuning, mirroring the original's adjustable parameters:
 /// poll interval 500 ms, remote audio threshold 0.02, mic threshold 0.04.
@@ -12,6 +13,29 @@ struct EngineConfig {
     /// NDJSON line, in addition to the log file. Handy while developing; visible
     /// when the app is launched from a terminal (`swift run MeetSpeakerDetector`).
     var logEventsToTerminal: Bool = true
+
+    // MARK: Event-driven Meet (plan steps 6–8). ALL default OFF, so with NO env vars
+    // set the engine is byte-for-byte the legacy 500ms full-walk poller.
+
+    /// MSD_MODE=event — subscribe the AXObserver path for Meet (edges + confidence)
+    /// instead of a full AX walk every tick. false = legacy polling (default).
+    var eventDrivenMeet: Bool = false
+    /// Short-circuit the expensive Meet sub-walks inside `scanner.scan()` when the
+    /// observer is live (the Stage-2 CPU win). IMPLIED by event mode unless
+    /// MSD_SKIP_MEET_FULLSCAN=0. Legacy mode keeps counting `full_walks` per scan so the
+    /// A/B baseline works (INV-8).
+    var skipMeetInFullScan: Bool = false
+    /// Reconciliation-sweep cadence (bounded re-scan + re-subscribe + death detection).
+    var reconcileEveryMs: Int = 4000
+    /// AXObserver notification-storm coalescing window.
+    var edgeCoalesceMs: Int = 70
+    /// Transition-confidence tuning (spike/floor/half-life).
+    var transition: TransitionConfidenceConfig = TransitionConfidenceConfig()
+    /// MSD_RUN_SECONDS — clean auto-exit after N seconds (required for unattended QA).
+    /// 0 = run forever (default).
+    var runSeconds: Int = 0
+    /// MSD_EDGE_LOG — append `meet_edge` NDJSON to this path too (stdout mirror kept).
+    var edgeLogPath: String? = nil
 }
 
 /// Drives the whole detection pipeline. Every poll it merges two independent
@@ -54,6 +78,20 @@ final class DetectionEngine {
     private var teamsNamed = 0       // ticks named via audio-direction fallback
     private var teamsSomeone = 0     // ticks attributed to anonymous "Someone"
 
+    // Event-driven Meet (plan steps 5–8). All inert unless `config.eventDrivenMeet`.
+    private var meetObserver: MeetTileObserver?
+    private var meetTransition = TransitionConfidence()
+    private var meetLastReconcileMs = 0
+    // meet_walk_stats counters (emitted per reconcile + on stop, in BOTH modes so the
+    // A/B baseline works). `full_walks` counts every Meet sub-walk `scan()` performs
+    // in LEGACY mode; event mode drives `subtree_reads`/`edges`/`reconcile_repairs`.
+    private var meetFullWalks = 0
+    private var meetEdgeCount = 0
+    private var meetSubtreeReads = 0
+    private var meetReconcileRepairs = 0
+    private var meetStatsStartMs = 0
+    private var edgeLogHandle: FileHandle?
+
     /// Where completed-session NDJSON is written.
     let logURL: URL
 
@@ -84,7 +122,33 @@ final class DetectionEngine {
             systemMeter = meter
             Task { await meter.start() }
         }
-        status(.info, "Detection started — polling every \(config.pollIntervalMs) ms.")
+
+        meetStatsStartMs = nowMs()
+        meetLastReconcileMs = nowMs()
+        meetTransition = TransitionConfidence(config: config.transition)
+
+        // Open the optional edge-event log (MSD_EDGE_LOG) — meet_edge lines are
+        // appended here too, in ADDITION to the stdout/NDJSON mirror in record().
+        if let path = config.edgeLogPath {
+            let url = URL(fileURLWithPath: path)
+            FileManager.default.createFile(atPath: path, contents: nil)
+            edgeLogHandle = try? FileHandle(forWritingTo: url)
+            edgeLogHandle?.seekToEndOfFile()
+        }
+
+        // Event mode: spin up the AXObserver (dedicated CFRunLoop thread). Legacy mode
+        // leaves this nil, so `scanner.scan()` does the full Meet walk exactly as before.
+        if config.eventDrivenMeet {
+            let obs = MeetTileObserver(scanner: scanner, coalesceMs: config.edgeCoalesceMs)
+            obs.onLifecycle = { [weak self] state, nodes in
+                self?.queue.async { self?.recordObserverLifecycle(state, nodes) }
+            }
+            meetObserver = obs
+            obs.start()
+            status(.info, "Detection started — event-driven Meet (MSD_MODE=event), audio poll every \(config.pollIntervalMs) ms.")
+        } else {
+            status(.info, "Detection started — polling every \(config.pollIntervalMs) ms.")
+        }
 
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + .milliseconds(config.pollIntervalMs),
@@ -93,6 +157,16 @@ final class DetectionEngine {
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
+
+        // MSD_RUN_SECONDS — clean auto-exit for unattended QA. Stop the engine (which
+        // flushes the final meet_walk_stats), then terminate the process.
+        if config.runSeconds > 0 {
+            let deadline = DispatchTime.now() + .seconds(config.runSeconds)
+            DispatchQueue.global().asyncAfter(deadline: deadline) { [weak self] in
+                self?.stop()
+                exit(0)
+            }
+        }
     }
 
     func stop() {
@@ -107,6 +181,20 @@ final class DetectionEngine {
             (systemMeter as? SystemAudioMeter)?.stop()
         }
         systemMeter = nil
+
+        // Event-driven Meet teardown + FINAL meet_walk_stats (emitted in BOTH modes so
+        // the A/B baseline always has a closing sample). Fold in the observer's own
+        // counters before it stops.
+        if let obs = meetObserver {
+            let s = obs.snapshotStats()
+            meetSubtreeReads = s.subtreeReads
+            meetReconcileRepairs = s.reconcileRepairs
+            obs.stop()
+            meetObserver = nil
+        }
+        emitWalkStats(now: nowMs())
+        edgeLogHandle?.closeFile()
+        edgeLogHandle = nil
 
         // Meet attribution telemetry. `class fired` monitors the strict kssMZb
         // match so a rotation shows up as named/someone accruing while class-fired
@@ -147,6 +235,56 @@ final class DetectionEngine {
         }
 
         scanner.meetLocalUserName = config.localUserName   // for name-based self-tile ID (the AX `(You)` label was removed)
+
+        // EVENT-DRIVEN MEET (plan step 7). Drain the observer's edges → feed the
+        // transition confidence → build the per-tick transition state the resolver
+        // uses to disambiguate stale rings. Also drive the reconciliation sweep and
+        // tell the scanner to skip the expensive Meet sub-walk while the observer is
+        // live. All inert in legacy mode (meetObserver == nil).
+        var meetTransitionState: MeetTransitionState? = nil
+        var meetEventSnapshot: MeetTileSnapshot? = nil
+        if let obs = meetObserver {
+            scanner.skipMeetSubWalk = config.skipMeetInFullScan
+            // Reconcile sweep on cadence (bounded re-scan + re-subscribe + death detect).
+            // Emit a meet_walk_stats sample at each reconcile so the CPU-compare suite
+            // gets periodic counters (also emitted on stop).
+            if now - meetLastReconcileMs >= config.reconcileEveryMs {
+                meetLastReconcileMs = now
+                obs.reconcile()
+                let s = obs.snapshotStats()
+                meetSubtreeReads = s.subtreeReads
+                meetReconcileRepairs = s.reconcileRepairs
+                emitWalkStats(now: now)
+            } else {
+                // PRIMARY edge source (plan step 7 / handoff edge-source #1): a fast
+                // bounded subtree re-read every poll tick. Class-token ring moves post NO
+                // AX notification, so without this the observer only catches a ring move
+                // when an unrelated notification wakes it — up to 4s late, past the 800ms
+                // edge-latency bar. Skipped on a reconcile tick (reconcile already re-reads).
+                obs.pollRefresh()
+            }
+            let mono = AXKit.monotonicMs()
+            for e in obs.drainEdges() {
+                meetTransition.edge(to: e.to, at: e.atMs)
+                let conf = meetTransition.confidence(of: e.to, at: mono)
+                meetEdgeCount += 1
+                recordEdge(e, confidence: conf)
+            }
+            // Fold the observer's live counters into the engine's meet_walk_stats.
+            let s = obs.snapshotStats()
+            meetSubtreeReads = s.subtreeReads
+            meetReconcileRepairs = s.reconcileRepairs
+            meetEventSnapshot = obs.currentSnapshot()
+            if let holder = meetTransition.holder {
+                meetTransitionState = MeetTransitionState(
+                    holder: holder,
+                    confidence: meetTransition.confidence(of: holder, at: mono),
+                    nowMs: mono)
+            }
+        } else {
+            scanner.skipMeetSubWalk = false
+        }
+
         let scanned = scanner.scan()
 
         if scanned.isEmpty {
@@ -163,7 +301,7 @@ final class DetectionEngine {
         // One status chip per MEETING, not per window — a call can span several
         // windows (Teams main + compact, Zoom main + PIP) that share one meeting id.
         var chipMeetings = Set<String>()
-        for w in scanned {
+        for var w in scanned {
             let wMid = meetingId(platform: w.platform, url: w.url, title: w.title)
             // Keep-alive-only windows (the Teams compact / PIP view) hold the meeting
             // open but contribute no speakers or roster — snapshot them (empty) so the
@@ -199,13 +337,27 @@ final class DetectionEngine {
                 // it over the mute-gate / anonymous floor.
                 add(pip, w.platform == .zoom ? "zoom.pip" : "teams.pip")
             } else if w.platform == .meet {
+                // LEGACY vs EVENT tile source. Legacy: the scanner's full per-tile
+                // sub-walk (counted as one `full_walk` per Meet scan for the A/B
+                // baseline — INV-8). Event: the scanner skipped that walk, so tiles come
+                // from the observer snapshot (synthesized from its ring/focus/equalizer
+                // holders). If the observer has no snapshot yet (first ticks / background
+                // tab), fall through with empty tiles → VAD-only "Someone" floor.
+                let meetTiles: [MeetTileObservation]
+                if meetObserver != nil && config.skipMeetInFullScan {
+                    meetTiles = Self.meetTilesFromSnapshot(meetEventSnapshot)
+                } else {
+                    meetFullWalks += 1
+                    meetTiles = w.meetTiles
+                }
+
                 // Remote/active naming comes ONLY from the AX tree now (structural →
                 // geometry → strict kssMZb), VAD-gated. Corrected understanding:
                 // kssMZb IS a real per-tile active-speaker class — the self-CLUSTER
                 // that confounded it with hover/self-view was removed. Audio
                 // direction is NO LONGER used to name remotes; the mic only names the
                 // LOCAL user, whose own tile never carries the speaking ring.
-                if w.meetTiles.contains(where: { $0.classSpeaking }) { meetClassFired += 1 }
+                if meetTiles.contains(where: { $0.classSpeaking }) { meetClassFired += 1 }
 
                 // Remote attribution (ring/geometry) is gated on SYSTEM audio ONLY —
                 // NOT the local mic. The mic meter moves for the USER'S OWN voice, and
@@ -215,21 +367,34 @@ final class DetectionEngine {
                 // mic-attributed separately below. Soft-open when capture is
                 // unavailable (accessibility-only mode leans on the ring/geometry).
                 let remoteVad = audioReliable ? remoteActive : true
-                let r = meetActiveSpeaker(tiles: w.meetTiles, prevAreas: meetPrevAreas,
-                                          vadSpeechActive: remoteVad, presentationActive: w.presentationActive)
+                // `transition:` disambiguates stale rings in event mode; nil in legacy
+                // mode ⇒ byte-for-byte the same call as before (opt-in non-regression).
+                let r = meetActiveSpeaker(tiles: meetTiles, prevAreas: meetPrevAreas,
+                                          vadSpeechActive: remoteVad, presentationActive: w.presentationActive,
+                                          transition: meetTransitionState)
                 // Resolve the local user's REAL name — never the generic "You". Prefer
                 // the "(You)"-tagged tile; if that missed but there's a single tile and
                 // the mic is live, that lone tile is self. If it can't be resolved yet
                 // (e.g. the very first tick, before tiles parse), we DON'T name self
                 // this tick rather than logging a throwaway "You" that then splits into
                 // two speakers ("You" + the real name).
-                let selfTile = w.meetTiles.first(where: { $0.isMe })
+                let selfTile = meetTiles.first(where: { $0.isMe })
                 let meetSelfName: String? = selfTile?.name
-                    ?? (micActive && (w.localUserUnmuted ?? false) && w.meetTiles.count == 1
-                        ? w.meetTiles[0].name : nil)
+                    ?? (micActive && (w.localUserUnmuted ?? false) && meetTiles.count == 1
+                        ? meetTiles[0].name : nil)
 
                 if r.via != .none && r.via != .someoneFloor {
-                    let src = r.via == .cssClass ? "meet.kssMZb" : "meet.geometry"
+                    // Attribution source for telemetry. The event-driven edge path gets
+                    // its own `meet.kssMZb.edge` tag so edge-driven naming is visible
+                    // end-to-end (plan step 6 SessionTracker source).
+                    let src: String
+                    switch r.via {
+                    case .ringTransition: src = "meet.kssMZb.edge"
+                    case .cssClass:       src = "meet.kssMZb"
+                    case .equalizer:      src = "meet.equalizer"
+                    case .focused:        src = "meet.focused"
+                    default:              src = "meet.geometry"
+                    }
                     // Never name the self tile as a remote — self is mic-driven below.
                     for n in r.names where n != meetSelfName { add(n, src) }
                     meetNamed += 1
@@ -260,7 +425,17 @@ final class DetectionEngine {
                     }
                     // else: within grace — hold, don't emit Someone yet.
                 }
-                meetPrevAreas = Dictionary(w.meetTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
+                meetPrevAreas = Dictionary(meetTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
+
+                // Event mode + skipped sub-walk: the scanner returned an empty roster
+                // (the walk that would fill it was skipped), so seed the meeting roster
+                // from the observer snapshot's holders + this tick's speakers, keeping
+                // the meeting alive with a non-empty participant list.
+                if meetObserver != nil && config.skipMeetInFullScan && w.participants.isEmpty {
+                    var roster = Set(meetTiles.map { $0.name })
+                    roster.formUnion(who.filter { $0 != "Someone" })
+                    w.participants = Array(roster)
+                }
             } else if w.platform == .teams {
                 // Teams (new client) exposes NO AX is-speaking signal — proven live
                 // (state/geometry/announcements all empty) and in Recall's binary
@@ -454,6 +629,78 @@ final class DetectionEngine {
            let line = String(data: data, encoding: .utf8) {
             FileHandle.standardOutput.write(Data("[event] \(line)\n".utf8))
         }
+    }
+
+    /// Reconstruct the minimal `MeetTileObservation`s the resolver needs from an
+    /// observer snapshot (event mode, when the scanner skipped the per-tile sub-walk).
+    /// The snapshot already excludes self, so every synthesized tile is a non-self
+    /// remote: equalizer speakers get `equalizerSpeaking`, the ring holder gets
+    /// `classSpeaking`, the focus holder gets `isFocused`. Geometry is unavailable
+    /// (area 0) — the resolver leans on the ring/equalizer/transition signals instead,
+    /// which is exactly what event mode is for. Empty snapshot ⇒ [] ⇒ VAD "Someone" floor.
+    static func meetTilesFromSnapshot(_ snap: MeetTileSnapshot?) -> [MeetTileObservation] {
+        guard let snap else { return [] }
+        var byName: [String: (ring: Bool, focus: Bool, eq: Bool)] = [:]
+        for n in snap.equalizerSpeakers { byName[n, default: (false, false, false)].eq = true }
+        if let r = snap.ringHolder { byName[r, default: (false, false, false)].ring = true }
+        if let f = snap.focusHolder { byName[f, default: (false, false, false)].focus = true }
+        return byName.enumerated().map { i, kv in
+            MeetTileObservation(name: kv.key, area: 0, orderIndex: i,
+                                classSpeaking: kv.value.ring, isFocused: kv.value.focus,
+                                isMe: false, equalizerSpeaking: kv.value.eq)
+        }
+    }
+
+    // MARK: Event-driven Meet instrumentation (plan step 6 NDJSON)
+
+    /// Emit one `meet_walk_stats` line: full_walks / subtree_reads / edges /
+    /// reconcile_repairs / walks_per_min. Called per reconcile AND on stop, counting in
+    /// BOTH modes so the CPU-compare suite can diff legacy (full_walks) vs event
+    /// (subtree_reads) directly.
+    private func emitWalkStats(now: Int) {
+        let elapsedMs = max(1, now - meetStatsStartMs)
+        let walksPerMin = Double(meetFullWalks) / (Double(elapsedMs) / 60_000.0)
+        record("meet_walk_stats", [
+            "full_walks": meetFullWalks,
+            "subtree_reads": meetSubtreeReads,
+            "edges": meetEdgeCount,
+            "reconcile_repairs": meetReconcileRepairs,
+            "walks_per_min": (walksPerMin * 100).rounded() / 100,
+        ], ts: now)
+    }
+
+    /// Emit one `meet_edge` line per drained edge (kind/from/to/confidence/mono_ts/wall_ts)
+    /// and mirror it to MSD_EDGE_LOG when set (stdout mirror is kept via record()).
+    /// `mono_ts` (monotonic uptime ms) is the decay origin; `wall_ts` (epoch ms) is the
+    /// correlation key the live-QA edge-latency check matches against the rig's scripted
+    /// swap wall-times — the edge-log FILE lines must carry it, not just the stdout mirror.
+    private func recordEdge(_ e: MeetEdgeEvent, confidence: Double) {
+        let wall = nowMs()
+        var f: [String: Any] = [
+            "kind": e.kindToken,
+            "to": e.to,
+            "confidence": (confidence * 1000).rounded() / 1000,
+            "mono_ts": e.atMs,
+            "wall_ts": wall,
+        ]
+        if let from = e.from { f["from"] = from }
+        record("meet_edge", f, ts: wall)
+        if let h = edgeLogHandle {
+            var obj = f
+            obj["type"] = "meet_edge"
+            if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+               let line = String(data: data, encoding: .utf8) {
+                h.write(Data("\(line)\n".utf8))
+            }
+        }
+    }
+
+    /// Emit one `meet_observer` lifecycle line (started/resubscribed/dead/background_tab).
+    private func recordObserverLifecycle(_ state: MeetObserverState, _ nodes: Int) {
+        record("meet_observer", [
+            "state": state.rawValue,
+            "subscribed_nodes": nodes,
+        ], ts: nowMs())
     }
 
     private func speechFields(_ platform: Platform, _ name: String,

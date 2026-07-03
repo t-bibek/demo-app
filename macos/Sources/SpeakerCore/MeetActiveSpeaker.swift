@@ -58,20 +58,27 @@ public struct MeetTileObservation: Equatable, Sendable {
 /// Which signal decided the active speaker — for telemetry: a rotation shows up
 /// as speech with no `.cssClass` hits (and `.someoneFloor` gaps).
 public enum MeetSpeakerSignal: String, Sendable, Equatable {
-    case none          // no speech (VAD gate closed)
-    case equalizer     // PROTOTYPE per-tile equalizer node (absence-of-gjg47c) — direct per-utterance read
-    case cssClass      // kssMZb active-speaker ring (present in AX for 3+ people)
-    case focused       // AXFocused promoted/spotlit tile — clean token-free boolean
-    case geometry      // a clearly promoted/spotlit tile by area ratio — class-free
-    case someoneFloor  // speech, but no tile attributable
+    case none           // no speech (VAD gate closed)
+    case equalizer      // PROTOTYPE per-tile equalizer node (absence-of-gjg47c) — direct per-utterance read
+    case ringTransition // fresh AXObserver edge (confidence-disambiguated ring/focus) — event-driven
+    case cssClass       // kssMZb active-speaker ring (present in AX for 3+ people)
+    case focused        // AXFocused promoted/spotlit tile — clean token-free boolean
+    case geometry       // a clearly promoted/spotlit tile by area ratio — class-free
+    case someoneFloor   // speech, but no tile attributable
 }
 
 public struct MeetSpeakerResult: Equatable, Sendable {
     public var names: [String]
     public var via: MeetSpeakerSignal
-    public init(names: [String], via: MeetSpeakerSignal) {
+    /// Transition confidence that decided a `.ringTransition` attribution (nil for
+    /// every other path). Surfaced so telemetry can show WHY a fresh edge overrode a
+    /// stale ring during rapid turn-taking. Additive/defaulted — `transition: nil`
+    /// callers get nil, so all existing results compare equal.
+    public var confidence: Double?
+    public init(names: [String], via: MeetSpeakerSignal, confidence: Double? = nil) {
         self.names = names
         self.via = via
+        self.confidence = confidence
     }
 }
 
@@ -117,7 +124,8 @@ public func meetActiveSpeaker(
     prevAreas: [String: Double],
     vadSpeechActive: Bool,
     presentationActive: Bool = false,
-    someoneLabel: String = "Someone"
+    someoneLabel: String = "Someone",
+    transition: MeetTransitionState? = nil
 ) -> MeetSpeakerResult {
     guard vadSpeechActive else { return MeetSpeakerResult(names: [], via: .none) }
 
@@ -133,6 +141,21 @@ public func meetActiveSpeaker(
     let equalizerNames = tiles.filter { $0.equalizerSpeaking && !$0.isMe }.map { $0.name }
     if !equalizerNames.isEmpty {
         return MeetSpeakerResult(names: equalizerNames, via: .equalizer)
+    }
+
+    // 1c) FRESH EDGE (event-driven, additive — plan step 4). During rapid turn-taking
+    //     the AX tree leaves MULTIPLE stale rings lit at once (the just-ended speaker's
+    //     ring lingers a beat before Meet clears it), so the plain overlap ring set
+    //     below would name both. The AXObserver's most-recent ring/focus EDGE, with
+    //     transition confidence, disambiguates to the person who ACTUALLY just started:
+    //     if a fresh transition names a NON-SELF holder that is among the currently-lit
+    //     ring tiles, that holder alone wins via `.ringTransition`. `transition == nil`
+    //     (every legacy/self-test caller) SKIPS this entirely, so behavior is
+    //     byte-for-byte unchanged. Self-exclusion (`!isMe`): a self holder is ignored so
+    //     the resolver falls through to the remote ring (self is mic-attributed).
+    if let t = transition, let holder = t.holder,
+       tiles.contains(where: { $0.name == holder && $0.classSpeaking && !$0.isMe }) {
+        return MeetSpeakerResult(names: [holder], via: .ringTransition, confidence: t.confidence)
     }
 
     // 2) Active-speaker ring (`kssMZb`) — Meet draws it on the SPEAKING remote's

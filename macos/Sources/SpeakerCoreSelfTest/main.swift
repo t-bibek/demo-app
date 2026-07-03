@@ -702,5 +702,132 @@ do {
     equal(mt.meetingCount, 1, "empty-tree tick -> meeting stays alive")
 }
 
+// MARK: TransitionConfidence (event-driven ring/focus — pure, time-injected).
+// Decay: floor + (spike-floor)·0.5^(elapsed/halfLife). Defaults spike 1.0, floor
+// 0.25, halfLife 1200ms → t=0:1.0, t=halfLife:0.625, t→∞:0.25. All clocks injected
+// (no Date()/monotonic call inside SpeakerCore — INV-6). Epsilon compare on doubles.
+print("TransitionConfidence:")
+do {
+    func approx(_ a: Double, _ b: Double, _ eps: Double = 1e-9) -> Bool { abs(a - b) < eps }
+    let cfg = TransitionConfidenceConfig()   // 1.0 / 0.25 / 1200
+    equal(cfg.spike, 1.0, "default spike 1.0")
+    equal(cfg.floor, 0.25, "default floor 0.25")
+    equal(cfg.halfLifeMs, 1200, "default halfLife 1200ms")
+
+    var tc = TransitionConfidence(config: cfg)
+    tc.edge(to: "Alice", at: 0)
+    // t=0 -> spike 1.0
+    check(approx(tc.confidence(of: "Alice", at: 0), 1.0), "decay t=0 -> 1.0 (spike)")
+    // t=halfLife -> floor + (spike-floor)*0.5 = 0.25 + 0.75*0.5 = 0.625
+    check(approx(tc.confidence(of: "Alice", at: 1200), 0.625), "decay t=halfLife -> 0.625 (midpoint)")
+    // t -> infinity -> floor 0.25 (stickiness; never 0 while holder unchanged)
+    check(approx(tc.confidence(of: "Alice", at: 1_000_000), 0.25, 1e-6), "decay t->inf -> 0.25 (floor)")
+    // Non-holder is always exactly 0.
+    equal(tc.confidence(of: "Bob", at: 0), 0.0, "non-holder confidence = 0 (t=0)")
+    equal(tc.confidence(of: "Bob", at: 1200), 0.0, "non-holder confidence = 0 (later)")
+    // Monotonic non-increase over the decay while the holder is unchanged.
+    var prev = tc.confidence(of: "Alice", at: 0)
+    var monotone = true
+    for t in stride(from: 100, through: 6000, by: 100) {
+        let c = tc.confidence(of: "Alice", at: t)
+        if c > prev + 1e-12 { monotone = false; break }
+        prev = c
+    }
+    check(monotone, "holder confidence is monotonically non-increasing between edges")
+
+    // Holder-switch re-spike: Alice@0 -> Bob@100 => Alice 0, Bob 1.0.
+    tc.edge(to: "Bob", at: 100)
+    equal(tc.confidence(of: "Alice", at: 100), 0.0, "holder switched -> old holder Alice = 0")
+    check(approx(tc.confidence(of: "Bob", at: 100), 1.0), "holder switched -> new holder Bob re-spikes to 1.0")
+    // A repeat edge to the SAME holder re-spikes (fresh burst = fresh evidence).
+    tc.edge(to: "Bob", at: 1300)   // 1200ms after the last Bob edge (was at 0.625)
+    check(approx(tc.confidence(of: "Bob", at: 1300), 1.0), "same-holder re-edge re-spikes to 1.0")
+    // halfLife of 0 -> flat floor (guard against divide-by-zero).
+    var flat = TransitionConfidence(config: TransitionConfidenceConfig(spike: 1.0, floor: 0.25, halfLifeMs: 0))
+    flat.edge(to: "X", at: 0)
+    equal(flat.confidence(of: "X", at: 500), 0.25, "halfLife 0 -> flat floor (no divide-by-zero)")
+    // holderConfidence convenience mirrors confidence(of: holder).
+    check(approx(tc.holderConfidence(at: 1300), tc.confidence(of: "Bob", at: 1300)), "holderConfidence == confidence(of: holder)")
+    equal(TransitionConfidence().holderConfidence(at: 5000), 0.0, "no holder -> holderConfidence 0")
+}
+
+// MARK: meetEdgesFromDiff (snapshot diff -> ring-moved / focus-moved / equalizer-onset).
+// Pure: no AX, no clock. Self already excluded when the snapshot is built.
+print("meetEdgesFromDiff:")
+do {
+    // ring Alice -> Bob => exactly one ring-moved edge (from Alice, to Bob).
+    let a = MeetTileSnapshot(ringHolder: "Alice")
+    let b = MeetTileSnapshot(ringHolder: "Bob")
+    let e1 = meetEdgesFromDiff(prev: a, next: b, at: 500)
+    equal(e1.count, 1, "ring Alice->Bob -> one edge")
+    equal(e1.first?.kind, .ringMoved, "ring move -> kind ringMoved")
+    equal(e1.first?.from, "Alice", "ring move -> from Alice")
+    equal(e1.first?.to, "Bob", "ring move -> to Bob")
+    equal(e1.first?.kindToken, "ring-moved", "ring move -> token 'ring-moved'")
+    // no change => [].
+    equal(meetEdgesFromDiff(prev: b, next: b, at: 600).count, 0, "no change -> []")
+    // nil -> focus Carol => one focus-moved edge (from nil, to Carol).
+    let e2 = meetEdgesFromDiff(prev: nil, next: MeetTileSnapshot(focusHolder: "Carol"), at: 700)
+    equal(e2.count, 1, "nil->focus Carol -> one edge")
+    equal(e2.first?.kind, .focusMoved, "focus appear -> kind focusMoved")
+    equal(e2.first?.from ?? "<nil>", "<nil>", "focus appear from nothing -> from nil")
+    equal(e2.first?.to, "Carol", "focus appear -> to Carol")
+    // equalizer silent->speaking onset for a NEW speaker only (existing speaker not re-emitted).
+    let e3 = meetEdgesFromDiff(prev: MeetTileSnapshot(equalizerSpeakers: ["Alice"]),
+                               next: MeetTileSnapshot(equalizerSpeakers: ["Alice", "Bob"]), at: 800)
+    equal(e3.map { $0.to }, ["Bob"], "equalizer onset only for the NEW speaker (Bob)")
+    equal(e3.first?.kind, .equalizerOnset, "equalizer onset -> kind equalizerOnset")
+    // holder -> nil (signal lost) emits NO edge (a lost signal is not a move).
+    equal(meetEdgesFromDiff(prev: MeetTileSnapshot(ringHolder: "Alice"),
+                            next: MeetTileSnapshot(ringHolder: nil), at: 900).count, 0,
+          "ring lost (->nil) -> no edge")
+    // SELF-EXCLUSION (INV-5): a snapshot built from tiles where the only ring/focus
+    // is the SELF tile yields no holder -> no edge (self-focus-edge-yields-no-name).
+    let selfOnly = MeetTileSnapshot.from(tiles: [
+        MeetTileObservation(name: "Me", area: 10_000, orderIndex: 0, classSpeaking: true,
+                            isFocused: true, isMe: true, equalizerSpeaking: true),
+    ])
+    equal(selfOnly.ringHolder ?? "<nil>", "<nil>", "self ring excluded from snapshot (isMe)")
+    equal(selfOnly.focusHolder ?? "<nil>", "<nil>", "self focus excluded from snapshot (isMe)")
+    equal(selfOnly.equalizerSpeakers, [], "self equalizer excluded from snapshot (isMe)")
+    equal(meetEdgesFromDiff(prev: nil, next: selfOnly, at: 1000).count, 0,
+          "self-only snapshot -> no edges (self-focus-edge yields no name)")
+}
+
+// MARK: Meet rapid-swap disambiguation via .ringTransition (event-driven).
+// Two STALE rings the AX tree left lit after a fast swap: with a fresh transition
+// holder=Bob the resolver returns EXACTLY ["Bob"] via .ringTransition; the SAME
+// tiles with transition:nil return today's overlap set (opt-in non-regression twin).
+print("Meet rapid-swap disambiguation (.ringTransition):")
+do {
+    let staleRings = [
+        MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: true),
+        MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: true),
+    ]
+    // transition holder=Bob, high confidence -> disambiguate to just Bob.
+    let toBob = MeetTransitionState(holder: "Bob", confidence: 1.0, nowMs: 1000)
+    let r = meetActiveSpeaker(tiles: staleRings, prevAreas: [:], vadSpeechActive: true, transition: toBob)
+    equal(r.names, ["Bob"], "two stale rings + transition holder=Bob -> ['Bob']")
+    equal(r.via, .ringTransition, "rapid-swap disambiguation -> via .ringTransition")
+    check(r.confidence != nil, "ringTransition result carries a confidence")
+    // NON-REGRESSION TWIN: same tiles, transition:nil -> today's overlap set (both rings).
+    let legacy = meetActiveSpeaker(tiles: staleRings, prevAreas: [:], vadSpeechActive: true, transition: nil)
+    equal(legacy.names.sorted(), ["Alice", "Bob"], "transition:nil -> today's overlap set (opt-in non-regression)")
+    equal(legacy.via, .cssClass, "transition:nil -> via .cssClass (unchanged)")
+    // A self-holder transition must NOT name self (self-exclusion on the edge path).
+    let staleWithSelf = [
+        MeetTileObservation(name: "Me",  area: 10_000, orderIndex: 0, classSpeaking: true, isMe: true),
+        MeetTileObservation(name: "Bob", area: 10_000, orderIndex: 1, classSpeaking: true),
+    ]
+    let toSelf = MeetTransitionState(holder: "Me", confidence: 1.0, nowMs: 1000)
+    let rs = meetActiveSpeaker(tiles: staleWithSelf, prevAreas: [:], vadSpeechActive: true, transition: toSelf)
+    check(!rs.names.contains("Me"), "transition holder = SELF -> self never named (falls back to remote ring)")
+    equal(rs.names, ["Bob"], "self-holder transition -> remote ring wins (Bob)")
+    // transition holder present but NOT among the ring tiles -> fall through to ring set.
+    let toGhost = MeetTransitionState(holder: "Nobody", confidence: 1.0, nowMs: 1000)
+    let rg = meetActiveSpeaker(tiles: staleRings, prevAreas: [:], vadSpeechActive: true, transition: toGhost)
+    equal(rg.names.sorted(), ["Alice", "Bob"], "transition holder not in ring tiles -> ring overlap set (no phantom)")
+}
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

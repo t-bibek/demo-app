@@ -3,6 +3,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import SpeakerCore
+import AXKit
 
 /// One meeting window observed during a scan.
 struct ScannedWindow {
@@ -74,6 +75,15 @@ final class AccessibilityScanner {
     /// `meetTileIsSelf` "(You)" scan no longer matches. Default "You" is a no-op.
     var meetLocalUserName: String = "You"
 
+    /// Stage-2 CPU win (plan step 8): when the event-driven observer is live, skip the
+    /// EXPENSIVE Meet per-tile sub-walk (`meetTileObservations` + panel roster) inside
+    /// `scan()` — the observer's bounded subtree reads supply Meet tiles instead. The
+    /// Meet window is still detected + call-gated (so the meeting stays alive) but comes
+    /// back with EMPTY `meetTiles`, which the engine's event branch ignores in favor of
+    /// the observer snapshot. Teams/Zoom sub-walks are untouched. Default false =
+    /// legacy full walk (so `full_walks` counts per scan for the A/B baseline).
+    var skipMeetSubWalk: Bool = false
+
     /// A tile's name identifies self when it equals the configured local user name
     /// (case-insensitive). No-op when the name is the placeholder "You".
     private func meetNameIsSelf(_ name: String) -> Bool {
@@ -139,14 +149,7 @@ final class AccessibilityScanner {
     /// different same-bundle background Chrome. `NSRunningApplication.activate` targets
     /// THIS exact PID. AppKit-guarded so the SpeakerCore logic stays platform-portable.
     static func forceActivateForCapture(pid: pid_t) {
-        #if canImport(AppKit)
-        guard let running = NSRunningApplication(processIdentifier: pid) else { return }
-        if #available(macOS 14.0, *) {
-            running.activate()
-        } else {
-            running.activate(options: [.activateIgnoringOtherApps])
-        }
-        #endif
+        AXKit.forceActivateForCapture(pid: pid)
     }
 
     // MARK: Scan
@@ -176,7 +179,20 @@ final class AccessibilityScanner {
                 // when the window is genuinely frontmost. Force-activate the target PID
                 // directly (System Events "set frontmost" snaps back to a same-bundle
                 // background Chrome). See `forceActivateForCapture`.
-                Self.forceActivateForCapture(pid: app.processIdentifier)
+                //
+                // EVENT MODE (skipMeetSubWalk): the MeetTileObserver owns Meet
+                // materialization — it activates AROUND reconcile and on a stale read, not
+                // every tick (handoff §6 / plan step 6: "event mode should reduce
+                // activation frequency … activate around reconcile/settle, not every
+                // tick"). Force-activating EVERY 500ms scan here on top of that was a
+                // per-tick CPU tax (window-server + AX re-serialize churn) AND the known
+                // frontmost-pinning UX blocker, and it double-activated with the observer.
+                // So in event mode `scan()` does NOT pin Chrome frontmost each tick; the
+                // AXManual/AXEnhanced flags (idempotent, cheap) still get set. Legacy mode
+                // (skipMeetSubWalk == false) is byte-for-byte unchanged.
+                if !skipMeetSubWalk {
+                    Self.forceActivateForCapture(pid: app.processIdentifier)
+                }
             }
             // Native Zoom: resolve the local user's "(me)" name ONCE across all the
             // app's windows (the Participants panel may be a separate window from the
@@ -198,7 +214,21 @@ final class AccessibilityScanner {
 
                 var collector = TreeCollector()
                 collector.url = webURL   // authoritative URL for the stable meeting id
-                walk(window, depth: 0, into: &collector)
+                // Stage-2 CPU win (plan step 8): the ~6000-node deep `walk()` is the walk
+                // that dominates the poll cost. In EVENT mode (skipMeetSubWalk) the observer
+                // supplies ALL Meet tile/speaker data, and the Meet branch throws away
+                // everything the deep walk would produce for a Meet window anyway (meetTiles
+                // / participants are cleared below). So when the pre-walk AXURL already
+                // classifies this window as Meet, SKIP the deep walk entirely — the window
+                // is still detected + call-gated via `meetCallActive` (a targeted, early-
+                // terminating search that keeps the meeting alive). Only the full-scan Meet
+                // walk is skipped; Teams/Zoom and legacy mode are byte-for-byte unchanged
+                // (they still do the deep walk). This is what makes eventCpu << pollingCpu:
+                // skipping the sub-tile pass alone (as before) left the dominant walk intact.
+                let skipMeetDeepWalk = skipMeetSubWalk && platformForURL(webURL) == .meet
+                if !skipMeetDeepWalk {
+                    walk(window, depth: 0, into: &collector)
+                }
 
                 // If the AXURL wasn't found (older Chromium / odd tree), the walk's
                 // text-based capture may still fill it — let it refine the platform.
@@ -224,9 +254,6 @@ final class AccessibilityScanner {
                 var keepAliveOnly = false
 
                 if platform == .meet {
-                    // Meet's active speaker is fused (geometry + class + VAD) in the
-                    // engine — the scanner supplies per-tile observations + presentation.
-                    let m = meetTileObservations(in: window)
                     // ACTIVE-CALL gate (product parity): the "Leave call" button /
                     // "Call controls" landmark — with the mic control as a secondary
                     // in-call signal. The URL/title CODE is deliberately NOT sufficient:
@@ -237,13 +264,28 @@ final class AccessibilityScanner {
                     // MeetingStateTracker ages it out to meeting_ended.
                     guard meetCallActive(in: window)
                             || collector.localUserUnmuted != nil else { continue }
-                    meetTiles = m.tiles
-                    presentationActive = meetPresentationActive(in: window)
-                    speakers = []   // engine resolves Meet speakers from meetTiles (kssMZb)
-                    // Roster: the People panel when it's open (authoritative), else the
-                    // tile-anchored names. Speaking detection is unchanged.
-                    let panel = meetPanelRoster(in: window)
-                    participants = panel.isEmpty ? dedup(m.participants) : dedup(panel)
+                    speakers = []   // engine resolves Meet speakers from meetTiles (kssMZb) / observer edges
+                    if skipMeetSubWalk {
+                        // Stage-2 CPU win (plan step 8): the event-driven observer is
+                        // live, so SKIP the expensive per-tile sub-walk + panel roster.
+                        // The window is still detected + call-gated (meeting stays
+                        // alive); `meetTiles` stays empty and the engine's event branch
+                        // attributes from the observer snapshot instead. This is the
+                        // walk that dominated the poll cost — eliminating it is the whole
+                        // point of event mode.
+                        meetTiles = []
+                        participants = []
+                    } else {
+                        // Meet's active speaker is fused (geometry + class + VAD) in the
+                        // engine — the scanner supplies per-tile observations + presentation.
+                        let m = meetTileObservations(in: window)
+                        meetTiles = m.tiles
+                        presentationActive = meetPresentationActive(in: window)
+                        // Roster: the People panel when it's open (authoritative), else the
+                        // tile-anchored names. Speaking detection is unchanged.
+                        let panel = meetPanelRoster(in: window)
+                        participants = panel.isEmpty ? dedup(m.participants) : dedup(panel)
+                    }
                 } else if platform == .teams {
                     // The Teams "Meeting compact view" window is a secondary PIP-like
                     // view — call-control chrome, not participant tiles. Keep the call
@@ -361,6 +403,75 @@ final class AccessibilityScanner {
             }
         }
         return results
+    }
+
+    // MARK: Bounded Meet subtree scan (event-driven refresh + reconciliation)
+
+    /// Result of `meetStageSubtreeScan(pid:)` — the SAME per-tile facts a full
+    /// `scan()` produces for Meet, but for ONE Chrome pid and WITHOUT the multi-window,
+    /// multi-platform sweep. `callActive == false` means the tab is a landing/post-call
+    /// screen or backgrounded (no "Leave call" / call-controls landmark) — the observer
+    /// treats that like a dead read and lets the reconcile sweep clear its snapshot.
+    struct MeetSubtreeScan: Equatable {
+        var tiles: [MeetTileObservation]
+        var participants: [String]
+        var presentationActive: Bool
+        var callActive: Bool
+        var url: String?
+        /// Nodes visited resolving the stage root — a cheap "did we actually read a
+        /// live tree" sanity signal (a backgrounded tab yields a near-empty walk).
+        var reachable: Bool
+    }
+
+    /// Read ONLY Google Meet's video-stage subtree for a single Chrome pid — the
+    /// cheap replacement for the full `scan()` used by the event-driven path
+    /// (observer refresh + the reconciliation sweep). Reuses the exact same
+    /// `meetStageRoot` / `meetTileObservations` / `meetPresentationActive` /
+    /// `meetCallActive` code the polling path uses, so event mode reads IDENTICAL
+    /// per-tile facts — no second, drift-prone extractor.
+    ///
+    /// Materialization (handoff §5): forces the full AX tree + activates the pid so
+    /// the equalizer/ring state is live. Callers drive activate→settle→read cadence
+    /// (they call this AFTER a settle, not in the same instant they activate).
+    func meetStageSubtreeScan(pid: pid_t) -> MeetSubtreeScan? {
+        guard AXIsProcessTrusted() else { return nil }
+        let axApp = AXUIElementCreateApplication(pid)
+        AXKit.forceFullAXTree(pid: pid)
+
+        // Find the Chrome window hosting the Meet call. Classify by AXWebArea AXURL
+        // (address-bar-independent — works for the PWA), exactly like `scan()`.
+        for window in axArray(axApp, "AXWindows") {
+            guard let webURL = webAreaMeetingURL(in: window),
+                  platformForURL(webURL) == .meet else { continue }
+            let callActive = meetCallActive(in: window)
+            let m = meetTileObservations(in: window)
+            let panel = meetPanelRoster(in: window)
+            let participants = panel.isEmpty ? m.participants : dedup(panel)
+            return MeetSubtreeScan(
+                tiles: m.tiles,
+                participants: participants,
+                presentationActive: meetPresentationActive(in: window),
+                callActive: callActive,
+                url: webURL,
+                reachable: true)
+        }
+        return nil
+    }
+
+    /// The Meet video-stage root AX element for a single Chrome pid — the subscription
+    /// anchor the observer walks to find tiles + equalizer-anchor nodes. Returns the
+    /// window too so the observer can subscribe app-level notifications. nil when no
+    /// Meet window is present for this pid.
+    func meetStageElements(pid: pid_t) -> (app: AXUIElement, window: AXUIElement, stage: AXUIElement)? {
+        guard AXIsProcessTrusted() else { return nil }
+        let axApp = AXUIElementCreateApplication(pid)
+        AXKit.forceFullAXTree(pid: pid)
+        for window in axArray(axApp, "AXWindows") {
+            guard let webURL = webAreaMeetingURL(in: window),
+                  platformForURL(webURL) == .meet else { continue }
+            return (axApp, window, meetStageRoot(in: window))
+        }
+        return nil
     }
 
     /// The active speaker on a Teams window, read from its
@@ -584,34 +695,19 @@ final class AccessibilityScanner {
 
     // MARK: AX helpers
 
-    private func axString(_ el: AXUIElement, _ attr: String) -> String? {
-        var v: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success else { return nil }
-        return v as? String
-    }
+    // AX I/O is hoisted to the shared `AXKit` target (Step 1) so the scanner and the
+    // event-driven MeetTileObserver read the tree through ONE implementation. These
+    // stay as thin private forwarders so every existing call site is unchanged.
+    private func axString(_ el: AXUIElement, _ attr: String) -> String? { AXKit.axString(el, attr) }
 
-    private func axArray(_ el: AXUIElement, _ attr: String) -> [AXUIElement] {
-        var v: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success else { return [] }
-        return (v as? [AXUIElement]) ?? []
-    }
+    private func axArray(_ el: AXUIElement, _ attr: String) -> [AXUIElement] { AXKit.axArray(el, attr) }
 
-    private func axClassList(_ el: AXUIElement) -> [String] {
-        var v: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, "AXDOMClassList" as CFString, &v) == .success else { return [] }
-        return (v as? [String]) ?? []
-    }
+    private func axClassList(_ el: AXUIElement) -> [String] { AXKit.axClassList(el) }
 
     /// Read a boolean AX attribute (e.g. AXFocused). Meet marks the promoted/spotlit
     /// tile with AXFocused:true (live-verified 2026-07-03) — a token-free speaker
     /// signal for Auto/spotlight layouts.
-    private func axBool(_ el: AXUIElement, _ attr: String) -> Bool {
-        var v: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success else { return false }
-        if let n = v as? NSNumber { return n.boolValue }
-        if CFGetTypeID(v!) == CFBooleanGetTypeID() { return CFBooleanGetValue((v as! CFBoolean)) }
-        return false
-    }
+    private func axBool(_ el: AXUIElement, _ attr: String) -> Bool { AXKit.axBool(el, attr) }
     /// True if THIS tile, or any descendant, carries AXFocused (Meet puts it on a
     /// child of the promoted tile). Bounded shallow walk.
     private func meetTileFocused(_ tile: AXUIElement) -> Bool {
@@ -629,13 +725,7 @@ final class AccessibilityScanner {
 
     /// The AXURL of an element as a string (comes back as URL / NSURL / String).
     /// Used for meeting-URL classification independent of the address bar.
-    private func axURL(_ el: AXUIElement) -> String? {
-        var v: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, "AXURL" as CFString, &v) == .success, let v else { return nil }
-        if let u = v as? URL { return u.absoluteString }
-        if let u = v as? NSURL { return u.absoluteString }
-        return v as? String
-    }
+    private func axURL(_ el: AXUIElement) -> String? { AXKit.axURL(el) }
 
     /// The meeting URL from the window's AXWebArea AXURL — the address-bar-
     /// independent source that works for installed PWAs (no address bar) and
@@ -657,28 +747,9 @@ final class AccessibilityScanner {
         return found
     }
 
-    private func axParent(_ el: AXUIElement) -> AXUIElement? {
-        var v: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, "AXParent" as CFString, &v) == .success, let v,
-              CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }
-        return (v as! AXUIElement)
-    }
+    private func axParent(_ el: AXUIElement) -> AXUIElement? { AXKit.axParent(el) }
 
-    private func axFrame(_ el: AXUIElement) -> CGRect? {
-        var v: CFTypeRef?
-        if AXUIElementCopyAttributeValue(el, "AXFrame" as CFString, &v) == .success,
-           let v, CFGetTypeID(v) == AXValueGetTypeID() {
-            var r = CGRect.zero
-            if AXValueGetValue(v as! AXValue, .cgRect, &r) { return r }
-        }
-        var sv: CFTypeRef?
-        if AXUIElementCopyAttributeValue(el, "AXSize" as CFString, &sv) == .success,
-           let sv, CFGetTypeID(sv) == AXValueGetTypeID() {
-            var s = CGSize.zero
-            if AXValueGetValue(sv as! AXValue, .cgSize, &s) { return CGRect(origin: .zero, size: s) }
-        }
-        return nil
-    }
+    private func axFrame(_ el: AXUIElement) -> CGRect? { AXKit.axFrame(el) }
 
     // MARK: Native Zoom roster (no AX speaking signal — read roster + mute)
 
