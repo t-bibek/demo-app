@@ -16,6 +16,9 @@ public struct TeamsAXNode: Codable, Sendable {
     public var desc: String?
     public var title: String?
     public var value: String?
+    /// AXHelp — native Zoom's PIP thumbnail carries its content markers here.
+    /// Optional + defaulted so existing distilled Teams fixtures decode unchanged.
+    public var help: String?
     public var classes: [String]
     /// AXFrame as plain doubles (x, y, w, h) — keeps SpeakerCore AppKit-free.
     public var x: Double?
@@ -25,7 +28,8 @@ public struct TeamsAXNode: Codable, Sendable {
     public var children: [TeamsAXNode]
 
     public init(role: String? = nil, subrole: String? = nil, desc: String? = nil,
-                title: String? = nil, value: String? = nil, classes: [String] = [],
+                title: String? = nil, value: String? = nil, help: String? = nil,
+                classes: [String] = [],
                 x: Double? = nil, y: Double? = nil, w: Double? = nil, h: Double? = nil,
                 children: [TeamsAXNode] = []) {
         self.role = role
@@ -33,6 +37,7 @@ public struct TeamsAXNode: Codable, Sendable {
         self.desc = desc
         self.title = title
         self.value = value
+        self.help = help
         self.classes = classes
         self.x = x
         self.y = y
