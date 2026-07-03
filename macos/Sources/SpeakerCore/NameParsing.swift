@@ -99,6 +99,11 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         "react", "switch", "avatar", "end", "home", "apps", "notes", "whiteboard",
         // Google Meet panel / chrome labels that leak in as fake tiles:
         "people", "contributors", "in call",
+        // Meet "Adjust view" LAYOUT-MENU option labels — leak TRANSIENTLY when the
+        // layout panel is open during a window reflow (live-QA 2026-07-03). Exact-match
+        // (never clips a real display name); the durable fix is fallback hysteresis so
+        // the graceful fallback can't admit overlay labels mid-reflow.
+        "auto", "tiled", "tiles", "sidebar",
         // Teams meeting-stage chrome that leaks in as fake tiles:
         "cancel", "nobody",
         // Browser/PWA chrome + Meet call-control buttons that leak as fake people
@@ -120,6 +125,12 @@ public func isLikelyPersonName(_ s: String) -> Bool {
         // Meet/browser call-control button phrases (leak as fake participant rows):
         "turn on", "turn off", "leave call", "leave now", "leave meeting",
         "raise hand", "lower hand", "more options", "show everyone",
+        // Live-observed Meet leaks (2026-07-03, meeting kmw-reho-hxx / edj-mwje-adv):
+        // the roster-row overflow "More actions" popup, the avatar overlay
+        // "Camera is off", and the "Adjust view" layout control. INTERIM band-aid —
+        // the durable fix is the structural allowlist (roster row / tile-with-mic).
+        "more actions", "adjust view", "camera is off", "camera is on",
+        "hide tiles", "without video",
         // Teams meeting-stage / pre-join chrome buttons & labels:
         "turn camera", "camera on", "camera off", "raise your", "your hand",
         "calling control", "join info", "copy join", "learn more", "passcode",
