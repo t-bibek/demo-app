@@ -19,13 +19,27 @@ const { spawn, execSync } = require('child_process');
 const { CHROME, sleep, httpJson, attachToPage } = require('./cdp-lib.js');
 const { buildOverride } = require('./fake-mic-override.js');
 const { admit } = require('./admit-guest.js');
+const { runScriptedTurns } = require('./roster-rig-turns.js');
 
-const MEET_ARG = process.argv[2] || 'new';
-const GUEST_A_NAME = process.argv[3] || 'Guest Alpha';
-const GUEST_B_NAME = process.argv[4] || 'Guest Bravo';
+// Positional args, with a leading --turns flag stripped out (any position).
+const ARGV = process.argv.slice(2);
+const RUN_TURNS = ARGV.includes('--turns');
+const POS = ARGV.filter((a) => a !== '--turns');
+const MEET_ARG = POS[0] || 'new';
+const GUEST_A_NAME = POS[1] || 'Guest Alpha';
+const GUEST_B_NAME = POS[2] || 'Guest Bravo';
+// Bravo's voice: prefer the distinct "Karen" guest2.wav (make-fake-speech.sh); fall
+// back to the older guestb.wav so an existing checkout without guest2.wav still runs.
+const BRAVO_WAV = (() => {
+  const g2 = path.join(__dirname, 'fake-audio', 'guest2.wav');
+  const gb = path.join(__dirname, 'fake-audio', 'guestb.wav');
+  return fs.existsSync(g2) ? g2 : gb;
+})();
 const HOST = { port: 9224, wav: path.join(__dirname, 'fake-audio', 'host.wav'), profile: path.join(__dirname, '.rig-profiles', 'host') };
 const GUEST_A = { port: 9226, wav: path.join(__dirname, 'fake-audio', 'guest.wav'), name: GUEST_A_NAME };
-const GUEST_B = { port: 9227, wav: path.join(__dirname, 'fake-audio', 'guestb.wav'), name: GUEST_B_NAME };
+const GUEST_B = { port: 9227, wav: BRAVO_WAV, name: GUEST_B_NAME };
+const HOST_NAME_HINT = 'Bibek Thapa'; // signed-in host display name (for the turn matrix)
+const RESULTS_PATH = path.join(__dirname, 'roster-rig-turns-results.json');
 const log = (...a) => console.log('[roster-rig]', ...a);
 
 async function launch({ port, profile, wav, label }) {
@@ -33,6 +47,15 @@ async function launch({ port, profile, wav, label }) {
     `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check', '--autoplay-policy=no-user-gesture-required',
     '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
+    // 3-window headful rig: only one window is OS-frontmost, so the other two are
+    // OCCLUDED and Chrome throttles their compositor → CSS equalizer animations pause
+    // and the animation-based DOM detector reads every backgrounded tile as SILENT
+    // (cross-observation matrix collapses to all-zeros). These flags keep occluded /
+    // backgrounded renderers running so all three observers see live speech animation.
+    // (Same flags Puppeteer/Playwright use for headful multi-window rendering.)
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-background-timer-throttling',
     'about:blank',
   ], { stdio: 'ignore' });
   let target = null;
@@ -58,22 +81,32 @@ async function waitPrejoin(conn) {
   }
   return false;
 }
-const inCall = (pg) => pg.evalJs(`!![...document.querySelectorAll("button")].find(function(b){return /leave call/i.test(b.getAttribute("aria-label")||"")})`);
+// Broad element scope: Meet has rendered "Leave call" as both <button> and
+// role=button/div across builds — anchoring on <button> alone misses joins.
+const inCall = (pg) => pg.evalJs(`!![...document.querySelectorAll("button,[role=button],[aria-label]")].find(function(b){return /leave call/i.test(b.getAttribute("aria-label")||"")})`);
 
 async function hostJoin(host) {
   if (await inCall(host)) return true;
   await waitPrejoin(host); await sleep(2000);
-  if (await inCall(host)) return true;
-  let t = JSON.parse(await host.evalJs(`(${CENTER})("Turn off camera")`) || 'null'); if (t) { await cdpClick(host, t.x, t.y); await sleep(400); }
-  t = JSON.parse(await host.evalJs(`(${CENTER})("^Join now$|Join now")`) || 'null');
-  if (t) { await cdpClick(host, t.x, t.y); }
-  else {
-    await host.evalJs(`(${CLICK})("Not now")`); await sleep(300);
-    await host.evalJs(`(${CLICK})("Other ways to join")`); await sleep(800);
-    const c = await host.evalJs(`(${CLICK})("Join here too")`);
-    if (c === 'null') throw new Error('host: neither "Join now" nor "Join here too" found');
+  // Meet's join UI renders late and non-deterministically, and the creation loop's
+  // inline clicks can land seconds after we get here — so retry the whole join
+  // repertoire with patience instead of throwing on the first miss (a first-miss
+  // throw loses the race to a host that is mid-join and about to succeed).
+  for (let round = 0; round < 20; round++) {
+    if (await inCall(host)) return true;
+    let t = JSON.parse(await host.evalJs(`(${CENTER})("Turn off camera")`) || 'null');
+    if (t) { await cdpClick(host, t.x, t.y); await sleep(400); }
+    t = JSON.parse(await host.evalJs(`(${CENTER})("^Join now$|Join now")`) || 'null');
+    if (t) { await cdpClick(host, t.x, t.y); }
+    else {
+      await host.evalJs(`(${CLICK})("Not now")`); await sleep(300);
+      await host.evalJs(`(${CLICK})("Other ways to join")`); await sleep(800);
+      await host.evalJs(`(${CLICK})("Join here too")`);
+    }
+    await sleep(1500);
+    if (await inCall(host)) return true;
+    await sleep(1500);
   }
-  for (let i = 0; i < 20; i++) { await sleep(1500); if (await inCall(host)) return true; }
   return false;
 }
 
@@ -150,11 +183,31 @@ async function main() {
     } catch (e) { return ''; }
   })();
 
+  // Degrade to 2-party (host + Alpha) with verdict REVIEW if Bravo failed to admit
+  // (Meet anonymous-join throttle) — a Meet-side hiccup must not burn a loop iteration.
+  const degraded = !bAdmit;
+
   const state = { meetingUrl, code, hostPort: HOST.port, hostPid, guestA: GUEST_A.name, guestB: GUEST_B.name,
-    hostAdmittedA: aAdmit, hostAdmittedB: bAdmit, tiles: JSON.parse(tiles || '[]') };
+    hostAdmittedA: aAdmit, hostAdmittedB: bAdmit, degraded, tiles: JSON.parse(tiles || '[]') };
   fs.writeFileSync(path.join(__dirname, '.roster-rig-state.json'), JSON.stringify(state, null, 2));
   log(`STATE: ${JSON.stringify(state)}`);
-  log('READY. Windows left OPEN. Run AXSnapshot against the host, then Ctrl-C to tear down.');
+
+  if (RUN_TURNS) {
+    if (!aAdmit) throw new Error('Guest Alpha failed to admit — cannot run turn sequence even degraded');
+    log(`RUNNING SCRIPTED TURNS${degraded ? ' [DEGRADED 2-party: Bravo not admitted → verdict REVIEW]' : ''}`);
+    const turnResults = await runScriptedTurns(
+      { host, guestA, guestB: degraded ? null : guestB },
+      { host: HOST_NAME_HINT, guestA: GUEST_A.name, guestB: GUEST_B.name },
+      { resultsPath: RESULTS_PATH, log, degraded },
+    );
+    // Fold the degraded flag + admit status into the results the QA runner reads.
+    const merged = { ...turnResults, degraded, verdictHint: degraded ? 'REVIEW' : 'PASS',
+      hostAdmittedA: aAdmit, hostAdmittedB: bAdmit, meetingUrl, code };
+    fs.writeFileSync(RESULTS_PATH, JSON.stringify(merged, null, 2));
+    log(`TURNS COMPLETE. Results at ${RESULTS_PATH}. Windows left OPEN. Ctrl-C to tear down.`);
+  } else {
+    log('READY. Windows left OPEN. Run AXSnapshot against the host, then Ctrl-C to tear down.');
+  }
   await new Promise(() => {});
 }
 

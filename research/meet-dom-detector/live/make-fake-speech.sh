@@ -15,4 +15,9 @@ gen() { # name voice text
 }
 gen host  Daniel   "This is the host speaking. Host host host. One two three four five. The host is talking now clearly."
 gen guest Samantha "Guest here, this is the guest speaking. Guest guest guest. Six seven eight nine ten. The guest is talking clearly."
+# Third DISTINCT voice for the 3-party rig's second guest (Guest Bravo).
+# Karen is a clearly different timbre from Samantha so a human + Meet's VAD can tell
+# Alpha (guest.wav) and Bravo (guest2.wav) apart during rapid swaps/overlap. The rig
+# prefers guest2.wav for Bravo and falls back to the older guestb.wav if it's absent.
+gen guest2 Karen    "Bravo speaking here, this is the second guest. Bravo bravo bravo. Eleven twelve thirteen fourteen fifteen. Bravo is talking clearly."
 echo "done."
