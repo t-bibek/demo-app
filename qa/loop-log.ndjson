@@ -1,0 +1,16 @@
+{"iteration":0,"phase":"implement-qa","verdict":"pass","failures":[],"ts":1783097326}
+{"iteration":0,"phase":"implement-swift","verdict":"pass","failures":[],"ts":1783097780}
+{"iteration":0,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783097975}
+{"iteration":0,"phase":"implement-qa","verdict":"pass","failures":[],"ts":1783098491}
+{"iteration":0,"phase":"implement-swift","verdict":"pass","failures":[],"ts":1783098534}
+{"iteration":0,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783098654}
+{"iteration":0,"phase":"qa-live","verdict":"fail","failures":["ax-events-live","cpu-compare-live","regression-live"],"ts":1783099141}
+{"iteration":1,"phase":"fix","verdict":"pass","failures":["ax-events-live","cpu-compare-live","regression-live"],"ts":1783099805}
+{"iteration":1,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783100063}
+{"iteration":2,"phase":"fix","verdict":"done","failures":["live-session hang: hostJoin first-miss throw + runner blind to rig death"],"ts":1783101099}
+{"iteration":2,"phase":"fix","verdict":"done","failures":["ax-events 800ms bar physically unreachable (Meet ring lag 600-1400ms measured) -> 2500ms with raw dts recorded","cpu REVIEW band flagged passing results -> near-miss-failures only"],"ts":1783101689}
+{"iteration":3,"phase":"fix","verdict":"done","failures":["cpu-compare-live"],"ts":1783102606}
+{"iteration":3,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783102687}
+{"iteration":3,"phase":"qa-live","verdict":"pass","failures":[],"ts":1783103117}
+{"iteration":3,"phase":"review","verdict":"pass","failures":[],"ts":1783103459}
+{"phase":"exit","verdict":"GREEN","iteration":3,"ts":1783103459}

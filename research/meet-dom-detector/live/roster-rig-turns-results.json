@@ -1,0 +1,280 @@
+{
+  "startedWall": 1783102751307,
+  "degraded": false,
+  "participants": [
+    {
+      "key": "host",
+      "name": "Bibek Thapa"
+    },
+    {
+      "key": "guestA",
+      "name": "Guest Alpha"
+    },
+    {
+      "key": "guestB",
+      "name": "Guest Bravo"
+    }
+  ],
+  "swaps": [
+    {
+      "from": null,
+      "to": "host",
+      "tSpeakStart": 1783102759613
+    },
+    {
+      "from": "host",
+      "to": "guestA",
+      "tSpeakStart": 1783102770963
+    },
+    {
+      "from": "guestA",
+      "to": "guestB",
+      "tSpeakStart": 1783102782304
+    },
+    {
+      "from": "guestB",
+      "to": "guestA",
+      "tSpeakStart": 1783102793637
+    },
+    {
+      "from": "guestA",
+      "to": "guestB",
+      "tSpeakStart": 1783102796388
+    },
+    {
+      "from": "guestB",
+      "to": "guestA",
+      "tSpeakStart": 1783102799136
+    },
+    {
+      "from": "guestA",
+      "to": "guestB",
+      "tSpeakStart": 1783102801881
+    }
+  ],
+  "rows": [
+    {
+      "turn": "SILENCE",
+      "ms": 3000,
+      "matrix": {
+        "host": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        },
+        "guestA": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        },
+        "guestB": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        }
+      }
+    },
+    {
+      "turn": "HOST",
+      "ms": 8000,
+      "matrix": {
+        "host": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        },
+        "guestA": {
+          "host": 1,
+          "guestA": 0,
+          "guestB": 0
+        },
+        "guestB": {
+          "host": 1,
+          "guestA": 0,
+          "guestB": 0
+        }
+      }
+    },
+    {
+      "turn": "ALPHA",
+      "ms": 8000,
+      "matrix": {
+        "host": {
+          "host": 0,
+          "guestA": 1,
+          "guestB": 0
+        },
+        "guestA": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        },
+        "guestB": {
+          "host": 0,
+          "guestA": 1,
+          "guestB": 0
+        }
+      }
+    },
+    {
+      "turn": "BRAVO",
+      "ms": 8000,
+      "matrix": {
+        "host": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 1
+        },
+        "guestA": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 1
+        },
+        "guestB": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        }
+      }
+    },
+    {
+      "turn": "RAPID_SWAP",
+      "ms": 8000,
+      "matrix": null,
+      "steps": [
+        {
+          "turn": "RAPID_guestA",
+          "ms": 2000,
+          "matrix": {
+            "host": {
+              "host": 0,
+              "guestA": 0.86,
+              "guestB": 0
+            },
+            "guestA": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 0
+            },
+            "guestB": {
+              "host": 0,
+              "guestA": 1,
+              "guestB": 0
+            }
+          }
+        },
+        {
+          "turn": "RAPID_guestB",
+          "ms": 2000,
+          "matrix": {
+            "host": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 1
+            },
+            "guestA": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 1
+            },
+            "guestB": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 0
+            }
+          }
+        },
+        {
+          "turn": "RAPID_guestA",
+          "ms": 2000,
+          "matrix": {
+            "host": {
+              "host": 0,
+              "guestA": 1,
+              "guestB": 0
+            },
+            "guestA": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 0
+            },
+            "guestB": {
+              "host": 0,
+              "guestA": 1,
+              "guestB": 0
+            }
+          }
+        },
+        {
+          "turn": "RAPID_guestB",
+          "ms": 2000,
+          "matrix": {
+            "host": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 1
+            },
+            "guestA": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 1
+            },
+            "guestB": {
+              "host": 0,
+              "guestA": 0,
+              "guestB": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "turn": "OVERLAP",
+      "ms": 8000,
+      "matrix": {
+        "host": {
+          "host": 0,
+          "guestA": 1,
+          "guestB": 1
+        },
+        "guestA": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 1
+        },
+        "guestB": {
+          "host": 0,
+          "guestA": 1,
+          "guestB": 0
+        }
+      }
+    },
+    {
+      "turn": "SILENCE_END",
+      "ms": 3000,
+      "matrix": {
+        "host": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        },
+        "guestA": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        },
+        "guestB": {
+          "host": 0,
+          "guestA": 0,
+          "guestB": 0
+        }
+      }
+    }
+  ],
+  "note": "matrix[observer][participant] = fraction of polls the observer detector named that participant tile. Self cells (~0 by design) are recorded but excluded from accuracy bars. swaps[].tSpeakStart is wall-clock ms at each single-speaker onset — correlate detector meet_edge events against these for edge latency.",
+  "verdictHint": "PASS",
+  "hostAdmittedA": true,
+  "hostAdmittedB": true,
+  "meetingUrl": "https://meet.google.com/gpp-iuvg-kta",
+  "code": "gpp-iuvg-kta"
+}

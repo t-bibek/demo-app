@@ -29,3 +29,5 @@ logs
 /research/meet-dom-detector/live/.bh-device-index
 /research/meet-dom-detector/live/struct-loop-results.json
 node_modules/
+# Claude Code session worktrees (transient agent workspaces)
+.claude/worktrees/
