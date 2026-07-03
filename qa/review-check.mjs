@@ -183,18 +183,25 @@ guard('INV-8 A/B flag wired', () => {
 // no passive who-is-speaking signal exists). The builtin rules must ship an EMPTY
 // speakingClasses — `vdi-frame-occlusion` (a video-placement token that shipped
 // briefly as a speaking class) must never return outside a comment — and the
-// self-test must assert the emptiness so a config regression fails loudly.
-guard('INV-9 teams class-free', () => {
-  const src = readOrNull('macos/Sources/SpeakerCore/TeamsSpeakerRules.swift');
-  if (src == null) { fail('INV-9 teams class-free', 'TeamsSpeakerRules.swift is missing'); return; }
-  const stripped = stripComments(src);
-  if (/speakingClasses:\s*\[\s*\]/.test(stripped)) pass('INV-9 teams class-free', 'builtin speakingClasses is empty');
-  else fail('INV-9 teams class-free', 'builtin speakingClasses is NOT empty — a CSS/DOM class decides Teams speaking again');
-  if (/vdi-frame-occlusion/.test(stripped)) fail('INV-9 teams class-free', 'vdi-frame-occlusion re-appeared outside a comment (it tracks video frames, not the speaker)');
-  else pass('INV-9 teams class-free', 'vdi-frame-occlusion only referenced in comments');
+// self-test must assert the ring names the speaker so a regression fails loudly.
+// INV-9 (2026-07-04, SUPERSEDES the earlier "class-free" stance): Teams DOES
+// expose a per-speaker ring (vdi-frame-occlusion, live-verified 3-party
+// co-variance). The invariant now guards that the ring is (a) shipped as the
+// speaking signal and (b) read STRUCTURALLY — inside a resolved tile's subtree,
+// never a whole-window `.contains` (which would mismark the tile-wide
+// vdi-occlusion / self vdi-dynamic-occlusion).
+guard('INV-9 teams ring structural', () => {
+  const rules = stripComments(readOrNull('macos/Sources/SpeakerCore/TeamsSpeakerRules.swift') || '');
+  if (!rules) { fail('INV-9 teams ring structural', 'TeamsSpeakerRules.swift is missing'); return; }
+  if (/speakingClasses:\s*\[[^\]]*vdi-frame-occlusion/.test(rules)) pass('INV-9 teams ring structural', 'builtin speakingClasses ships vdi-frame-occlusion (the ring)');
+  else fail('INV-9 teams ring structural', 'builtin speakingClasses no longer carries vdi-frame-occlusion — the live-verified speaker ring was dropped');
+  // The ring MUST be read per-tile (a bounded subtree scan), not whole-window.
+  const ext = stripComments(readOrNull('macos/Sources/SpeakerCore/TeamsTileExtraction.swift') || '');
+  if (/teamsTileSubtreeSpeaks\s*\(/.test(ext) && /func\s+teamsTileSubtreeSpeaks/.test(ext)) pass('INV-9 teams ring structural', 'ring read via a per-tile subtree scan (teamsTileSubtreeSpeaks), not whole-window');
+  else fail('INV-9 teams ring structural', 'no per-tile subtree scan for the ring — a whole-window class scan would mismark vdi-occlusion/vdi-dynamic-occlusion');
   const tests = stripComments(readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '');
-  if (/speakingClasses\.isEmpty/.test(tests)) pass('INV-9 teams class-free', 'self-test asserts speakingClasses.isEmpty');
-  else fail('INV-9 teams class-free', 'no self-test asserts builtin speakingClasses.isEmpty');
+  if (/names EXACTLY Alice|resolver names BOTH remotes/.test(tests)) pass('INV-9 teams ring structural', 'self-test asserts the ring names the exact speaker(s)');
+  else fail('INV-9 teams ring structural', 'no self-test asserts the ring-based speaker timeline');
 });
 
 // INV-10 — Teams attribution paths exclude the SELF tile (the exact bug INV-1/5
