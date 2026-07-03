@@ -68,6 +68,20 @@ struct ScannedWindow {
 /// audio path can log a "Someone" session. Requires Accessibility permission.
 final class AccessibilityScanner {
 
+    /// The signed-in local user's display name, set by DetectionEngine from config.
+    /// Used to identify the SELF tile by name — necessary because the `(You)` label
+    /// was removed from the current-build Meet AX tree (2026-07-03), so the legacy
+    /// `meetTileIsSelf` "(You)" scan no longer matches. Default "You" is a no-op.
+    var meetLocalUserName: String = "You"
+
+    /// A tile's name identifies self when it equals the configured local user name
+    /// (case-insensitive). No-op when the name is the placeholder "You".
+    private func meetNameIsSelf(_ name: String) -> Bool {
+        let n = meetLocalUserName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, n.lowercased() != "you" else { return false }
+        return name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == n.lowercased()
+    }
+
     // Native meeting apps keyed by bundle id.
     private static let nativeApps: [String: Platform] = [
         "us.zoom.xos": .zoom,
@@ -124,6 +138,16 @@ final class AccessibilityScanner {
             guard isNative || isBrowser else { continue }
 
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
+            // Force the FULL a11y tree on Chromium/Electron apps (parity with the
+            // AXSnapshot / MeetProbe diagnostic tools). Without these two flags a
+            // Chromium/WebView2/Electron app serves a degraded, mostly-static tree
+            // to passive readers, so dynamic roster/mute/geometry state can be stale
+            // or missing. Idempotent + cheap; gate to browser/native meeting apps so
+            // we don't poke unrelated processes.
+            if isBrowser || isNative {
+                AXUIElementSetAttributeValue(axApp, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+                AXUIElementSetAttributeValue(axApp, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+            }
             // Native Zoom: resolve the local user's "(me)" name ONCE across all the
             // app's windows (the Participants panel may be a separate window from the
             // tiles the roster is read from), then apply it to every roster below.
@@ -548,6 +572,31 @@ final class AccessibilityScanner {
         return (v as? [String]) ?? []
     }
 
+    /// Read a boolean AX attribute (e.g. AXFocused). Meet marks the promoted/spotlit
+    /// tile with AXFocused:true (live-verified 2026-07-03) — a token-free speaker
+    /// signal for Auto/spotlight layouts.
+    private func axBool(_ el: AXUIElement, _ attr: String) -> Bool {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success else { return false }
+        if let n = v as? NSNumber { return n.boolValue }
+        if CFGetTypeID(v!) == CFBooleanGetTypeID() { return CFBooleanGetValue((v as! CFBoolean)) }
+        return false
+    }
+    /// True if THIS tile, or any descendant, carries AXFocused (Meet puts it on a
+    /// child of the promoted tile). Bounded shallow walk.
+    private func meetTileFocused(_ tile: AXUIElement) -> Bool {
+        if axBool(tile, "AXFocused") { return true }
+        var found = false, n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if found || n >= 400 || d > 20 { return }
+            n += 1
+            if axBool(el, "AXFocused") { found = true; return }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found { return } }
+        }
+        rec(tile, 0)
+        return found
+    }
+
     /// The AXURL of an element as a string (comes back as URL / NSURL / String).
     /// Used for meeting-URL classification independent of the address bar.
     private func axURL(_ el: AXUIElement) -> String? {
@@ -730,16 +779,19 @@ final class AccessibilityScanner {
 
         // One entry per name; keep the largest tile (the real video tile, not a
         // tiny duplicate label). Track frame for geometry + reading order.
-        struct Acc { var area: Double; var speaking: Bool; var isMe: Bool; var minY: CGFloat; var minX: CGFloat }
+        struct Acc { var area: Double; var speaking: Bool; var focused: Bool; var isMe: Bool; var minY: CGFloat; var minX: CGFloat }
         var byName: [String: Acc] = [:]
         var captionFrames: [CGRect] = []
         func consider(_ tile: AXUIElement, _ name: String) {
             let frame = axFrame(tile) ?? .zero
             let area = Double(frame.width * frame.height)
             let speaking = meetTileIsSpeaking(classTokens: tileClassTokens(tile), rules: meetRules)
-            let isMe = meetTileIsSelf(tile)
+            let focused = meetTileFocused(tile)
+            // Self: prefer the account name-match (the `(You)` label was removed from
+            // the current-build AX tree, 2026-07-03); fall back to the legacy check.
+            let isMe = meetTileIsSelf(tile) || meetNameIsSelf(name)
             if let ex = byName[name], ex.area >= area { return }
-            byName[name] = Acc(area: area, speaking: speaking, isMe: isMe, minY: frame.minY, minX: frame.minX)
+            byName[name] = Acc(area: area, speaking: speaking, focused: focused, isMe: isMe, minY: frame.minY, minX: frame.minX)
         }
 
         // Captions first — the authoritative display name.
@@ -760,7 +812,7 @@ final class AccessibilityScanner {
         let ordered = byName.sorted { ($0.value.minY, $0.value.minX) < ($1.value.minY, $1.value.minX) }
         let tiles = ordered.enumerated().map { i, kv in
             MeetTileObservation(name: kv.key, area: kv.value.area, orderIndex: i,
-                                classSpeaking: kv.value.speaking, isMe: kv.value.isMe)
+                                classSpeaking: kv.value.speaking, isFocused: kv.value.focused, isMe: kv.value.isMe)
         }
         return (tiles, ordered.map { $0.key })
     }

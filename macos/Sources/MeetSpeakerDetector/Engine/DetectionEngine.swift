@@ -139,6 +139,7 @@ final class DetectionEngine {
             audioReliable = (systemMeter as? SystemAudioMeter)?.running ?? false
         }
 
+        scanner.meetLocalUserName = config.localUserName   // for name-based self-tile ID (the AX `(You)` label was removed)
         let scanned = scanner.scan()
 
         if scanned.isEmpty {
