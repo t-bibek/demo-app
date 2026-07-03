@@ -23,5 +23,13 @@ struct ContentView: View {
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            // Headless/live-run harness hook: auto-start detection when
+            // MSD_AUTOSTART=1 so the app can run under `swift run` in the
+            // background without a human clicking Start. No-op otherwise.
+            if ProcessInfo.processInfo.environment["MSD_AUTOSTART"] == "1", !model.running {
+                model.startEngine()
+            }
+        }
     }
 }
