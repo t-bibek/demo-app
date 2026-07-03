@@ -49,21 +49,25 @@ public struct TeamsSpeakerResult: Equatable, Sendable {
     }
 }
 
-/// Fused, VAD-gated Teams active-speaker resolution — mirrors Recall's
-/// `lastAxActiveSpeakerSet` (structural AX scan) ⊕ VAD, with the opaque
-/// is-speaking token demoted to a telemetered, config-loadable signal and audio
-/// as the floor. See docs/teams-active-speaker-detection.md.
+/// Fused Teams active-speaker resolution. The primary signal is the STRUCTURAL
+/// per-tile speaker ring (`vdi-frame-occlusion`, read inside each resolved tile
+/// by `teamsExtractWindow`) — Teams' OWN VAD output, live-verified 2026-07-04 to
+/// track exactly the audible remote(s). See docs/teams-active-speaker-detection.md.
 ///
 /// Order:
-///  1. **VAD gate** — no speech ⇒ no speaker (kills stale-token false positives).
-///     `vadSpeechActive` is passed `true` when audio capture is unavailable, so
-///     the gate is *soft* and Teams still works Accessibility-only.
-///  2. **Structural** — every tile whose AX text/classes mark it speaking (the
-///     mirror of Recall's PIP / main-overlay scan; handles multi-tile).
-///  3. **Geometry** — if nothing matched, a clearly dominant overlay tile
-///     (speaker view). Off by default (`useGeometry`) until the indicator is
-///     probe-verified, so Teams never *guesses* a name on an unverified build.
-///  4. **Someone floor** — speech, nobody attributable (today's safe behavior).
+///  1. **Structural ring** — every NON-SELF tile whose subtree carries the
+///     speaker-ring token. Trusted DIRECTLY, ahead of our own audio gate: the
+///     ring IS Teams' VAD, so it names the speaker(s) — including simultaneous
+///     overlap — even when our peak meter is quiet. Self-excluded (self is
+///     mic-attributed, and its ring token differs anyway).
+///  2. **VAD gate** — below here we need our own audio to justify a guess; no
+///     speech ⇒ no speaker. Soft (passed `true` when capture is unavailable).
+///  3. **Geometry** — a clearly dominant overlay tile (speaker view) when the
+///     ring wasn't readable. Opt-in (`useGeometry`).
+///  4. **Someone floor** — speech but nobody attributable. The engine only lets
+///     this surface when the tree is UNREADABLE (backgrounded/throttled); when
+///     the tiles are foreground-readable the ring names the speaker, so a
+///     foreground "Someone" is treated as a bug.
 public func teamsActiveSpeaker(
     tiles: [TeamsTileObservation],
     prevAreas: [String: Double],
@@ -71,15 +75,15 @@ public func teamsActiveSpeaker(
     useGeometry: Bool = false,
     someoneLabel: String = "Someone"
 ) -> TeamsSpeakerResult {
-    guard vadSpeechActive else { return TeamsSpeakerResult(names: [], via: .none) }
-
-    // 2) Structural is-speaking (mirrors Recall's scan; supports multiple tiles).
-    //    SELF-EXCLUDED, like the Meet ring path: a config'd rule matching the self
-    //    tile must never name the local user — self is mic-attributed separately.
+    // 1) Structural ring — Teams' own VAD; trusted regardless of our audio meter.
+    //    SELF-EXCLUDED, like the Meet ring path.
     let speaking = tiles.filter { $0.isSpeaking && !$0.isMe }.map { $0.name }
     if !speaking.isEmpty {
         return TeamsSpeakerResult(names: speaking, via: .structural)
     }
+
+    // 2) No ring lit — now require our own audio to justify a fallback guess.
+    guard vadSpeechActive else { return TeamsSpeakerResult(names: [], via: .none) }
 
     // 3) Geometry fallback — a clearly dominant overlay tile (opt-in). Never
     //    returns the SELF tile (mirrors meetActiveSpeaker): a big pinned

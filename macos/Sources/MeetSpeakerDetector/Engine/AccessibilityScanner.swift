@@ -331,10 +331,12 @@ final class AccessibilityScanner {
                         teamsRoster = ex.roster
                         speakers = []   // engine resolves Teams speakers from teamsTiles + audio
                         participants = ex.participants
-                        // Prefer Teams' OWN active-speaker note ("<name> is speaking")
-                        // over the audio mute-gate — it's the same VAD signal shown in
-                        // the compact window, and avoids the ambiguous "Someone".
-                        pipSpeaker = ex.speakingNote
+                        // Main window: the engine names the speaker from the per-tile
+                        // RING (vdi-frame-occlusion) — overlap-capable and always
+                        // present when foreground. The transient "<name> is speaking"
+                        // note is NOT used here (it names only one and is usually
+                        // absent); it stays the compact-window signal above.
+                        pipSpeaker = nil
                     }
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +

@@ -443,61 +443,58 @@ final class DetectionEngine {
                     w.participants = Array(roster)
                 }
             } else if w.platform == .teams {
-                // Teams (new client) exposes NO AX is-speaking signal — proven live
-                // (state/geometry/announcements all empty) and in Recall's binary
-                // (its " is active speaker" check is inert; it uses VAD). So attribute
-                // by AUDIO DIRECTION + MUTE, exactly like native Zoom: mic = you,
-                // system audio = a remote, gated by per-participant mute. Remote mute
-                // comes from the People-panel ROSTER (the only reliable source —
-                // requires the panel open); local mute from the self tile/roster.
-                // `teamsActiveSpeaker` stays as a config-driven hook (speakingClasses
-                // is empty today) but never fires, so this is the live path.
-                // See docs/teams-active-speaker-detection.md §7.
-                let vad = audioReliable ? (micActive || remoteActive) : true
-                let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: vad)
+                // Teams (new client) DOES expose a per-speaker RING —
+                // `vdi-frame-occlusion` on the active remote's tile subtree, Teams'
+                // OWN VAD (live-verified 2026-07-04, 3-party co-variance; supersedes
+                // the old §7 "no signal" verdict). The pure extractor reads it
+                // STRUCTURALLY per tile, so `teamsActiveSpeaker` names the speaking
+                // remote(s) directly — overlap-capable, self-excluded. Audio/mute is
+                // now only a fallback (camera-off speaker) + the local-user mic path.
+                // See docs/teams-active-speaker-detection.md.
+                let readable = !w.teamsTiles.isEmpty
+                // Ring is Teams' VAD → trusted directly (vadSpeechActive: true).
+                let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: true)
                 if r.via == .structural {
-                    for n in r.names { add(n, "teams.structural") }   // only if a config'd class ever matches
+                    for n in r.names { add(n, "teams.ring") }   // remote speaker(s) via vdi-frame-occlusion
                     teamsStructural += 1
-                } else if audioReliable {
-                    // Prefer the People-panel ROSTER for mute (reliable per-remote,
-                    // panel-open); fall back to per-tile mute when the panel is closed.
+                }
+                if audioReliable {
+                    // Mute source: the People-panel ROSTER (reliable per-remote,
+                    // panel-open) else per-tile mute.
                     let roster = w.teamsRoster
                     let meRoster = roster.first(where: { $0.isMe })
                     let meTile = w.teamsTiles.first(where: { $0.isMe })
                     let localUnmuted = meRoster?.unmuted ?? meTile?.unmuted ?? (w.localUserUnmuted ?? false)
                     let localName = meRoster?.name ?? meTile?.name ?? config.localUserName
-                    let remotes = roster.isEmpty
-                        ? w.teamsTiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
-                        : roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
-                    let names = zoomMuteGateSpeakers(
-                        micActive: micActive, localUnmuted: localUnmuted, localName: localName,
-                        remoteActive: remoteActive, remoteUnmutedNames: remotes)
-                    let named = names.filter { $0 != "Someone" }
-                    for n in named {
-                        add(n, "teams.mute_gate"); teamsNamed += 1
-                    }
-                    // HONEST ambiguity floor, DEBOUNCED (mirrors Meet's someoneGrace):
-                    // remote speech with 0 or 2+ unmuted remotes can't be named — that
-                    // IS "Someone", the documented Teams ceiling. But Teams' own
-                    // "<name> is speaking" note (read as pipSpeaker above) lags the
-                    // audio by a beat, so emitting Someone instantly flashed a spurious
-                    // speaker right before the real name resolved. Hold the floor for
-                    // someoneGraceMs; if the note / mute-gate names anyone within the
-                    // window we never emit it.
-                    if !named.isEmpty || !names.contains("Someone") {
-                        teamsSomeoneUnattributedSince = nil
-                    } else {
-                        let since = teamsSomeoneUnattributedSince ?? now
-                        teamsSomeoneUnattributedSince = since
-                        if now - since >= someoneGraceMs {
-                            add("Someone", "teams.someone")
-                            teamsSomeone += 1
-                        }
-                        // else: within grace — hold, don't emit Someone yet.
+                    // SELF via mic — the self tile carries no speaker ring (it has
+                    // vdi-dynamic-occlusion), so the local user is named from the mic
+                    // when unmuted, exactly like Meet's self path.
+                    if micActive && localUnmuted { add(localName, "teams.self_mic") }
+                    // Camera-off remote fallback: the ring needs a video frame, so if
+                    // it named no remote yet there IS remote audio, mute-gate a SINGLE
+                    // unmuted remote (2+ stays ambiguous → we don't guess).
+                    if r.via != .structural && remoteActive {
+                        let remotes = roster.isEmpty
+                            ? w.teamsTiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+                            : roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+                        if remotes.count == 1 { add(remotes[0], "teams.mute_gate"); teamsNamed += 1 }
                     }
                 }
-                // else: no audio capture and no class → emit nothing (don't spam
-                // "Someone" when we can't even confirm there's speech).
+                // "Someone" ONLY when the tree is UNREADABLE (no tiles —
+                // backgrounded/WebView2-throttled) yet remote audio is present.
+                // Foreground-readable NEVER yields "Someone": the ring names the
+                // speaker, so a foreground "Someone" is a bug by definition. Debounced
+                // like Meet so a one-tick read gap can't flash it.
+                if !who.isEmpty || readable || !(audioReliable && remoteActive) {
+                    teamsSomeoneUnattributedSince = nil
+                } else {
+                    let since = teamsSomeoneUnattributedSince ?? now
+                    teamsSomeoneUnattributedSince = since
+                    if now - since >= someoneGraceMs {
+                        add("Someone", "teams.someone")
+                        teamsSomeone += 1
+                    }
+                }
                 teamsPrevAreas = Dictionary(w.teamsTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
             } else if w.directSpeakerRead {
                 // Meet (kssMZb class) / Zoom web ("active speaker" marker): the UI
