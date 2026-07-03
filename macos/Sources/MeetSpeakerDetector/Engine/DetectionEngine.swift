@@ -77,6 +77,10 @@ final class DetectionEngine {
     private var teamsStructural = 0  // ticks named via the AX is-speaking token (Recall-style)
     private var teamsNamed = 0       // ticks named via audio-direction fallback
     private var teamsSomeone = 0     // ticks attributed to anonymous "Someone"
+    // Teams someoneGrace twin: ts remote speech first went unattributable (0 or
+    // 2+ unmuted remotes). Held for someoneGraceMs before the honest "Someone",
+    // so Teams' own lagging "<name> is speaking" note can name the speaker first.
+    private var teamsSomeoneUnattributedSince: Int?
 
     // Event-driven Meet (plan steps 5–8). All inert unless `config.eventDrivenMeet`.
     private var meetObserver: MeetTileObserver?
@@ -336,6 +340,8 @@ final class DetectionEngine {
                 // OWN VAD (Zoom "Talking: <name>", Teams "<name> is speaking"). Trust
                 // it over the mute-gate / anonymous floor.
                 add(pip, w.platform == .zoom ? "zoom.pip" : "teams.pip")
+                // The note named the speaker — the Someone floor is attributed.
+                if w.platform == .teams { teamsSomeoneUnattributedSince = nil }
             } else if w.platform == .meet {
                 // LEGACY vs EVENT tile source. Legacy: the scanner's full per-tile
                 // sub-walk (counted as one `full_walk` per Meet scan for the A/B
@@ -466,14 +472,28 @@ final class DetectionEngine {
                     let names = zoomMuteGateSpeakers(
                         micActive: micActive, localUnmuted: localUnmuted, localName: localName,
                         remoteActive: remoteActive, remoteUnmutedNames: remotes)
-                    // Drop the ambiguous remote floor ("Someone") for Teams entirely:
-                    // Teams' own "<name> is speaking" note (read as pipSpeaker above) is
-                    // the authoritative active-speaker signal — it just lags the audio
-                    // by a beat. Emitting "Someone" in that gap flashes a spurious
-                    // speaker right before the real name resolves. Keep only NAMED
-                    // mute-gate results (when the roster is readable).
-                    for n in names where n != "Someone" {
+                    let named = names.filter { $0 != "Someone" }
+                    for n in named {
                         add(n, "teams.mute_gate"); teamsNamed += 1
+                    }
+                    // HONEST ambiguity floor, DEBOUNCED (mirrors Meet's someoneGrace):
+                    // remote speech with 0 or 2+ unmuted remotes can't be named — that
+                    // IS "Someone", the documented Teams ceiling. But Teams' own
+                    // "<name> is speaking" note (read as pipSpeaker above) lags the
+                    // audio by a beat, so emitting Someone instantly flashed a spurious
+                    // speaker right before the real name resolved. Hold the floor for
+                    // someoneGraceMs; if the note / mute-gate names anyone within the
+                    // window we never emit it.
+                    if !named.isEmpty || !names.contains("Someone") {
+                        teamsSomeoneUnattributedSince = nil
+                    } else {
+                        let since = teamsSomeoneUnattributedSince ?? now
+                        teamsSomeoneUnattributedSince = since
+                        if now - since >= someoneGraceMs {
+                            add("Someone", "teams.someone")
+                            teamsSomeone += 1
+                        }
+                        // else: within grace — hold, don't emit Someone yet.
                     }
                 }
                 // else: no audio capture and no class → emit nothing (don't spam

@@ -497,15 +497,17 @@ do {
     equal(t.activeCount, 2, "self and remote tracked as distinct sessions")
 }
 
-// MARK: Teams rules (stable aria_*/calling_* tokens; speaking markers seeded)
+// MARK: Teams rules (stable aria_*/calling_* tokens; CLASS-FREE speaking — §7)
 print("TeamsSpeakerRules:")
 let tr = TeamsSpeakerRules.builtin
+check(tr.speakingClasses.isEmpty,
+      "builtin speakingClasses EMPTY — no CSS/DOM class ever decides Teams speaking")
 check(tr.tileIsSpeaking(textBlob: "wedding thapas is active speaker", classTokens: []),
-      "is-active-speaker text marker -> speaking")
+      "is-active-speaker text marker -> speaking (config hook; never fires live)")
 check(!tr.tileIsSpeaking(textBlob: "wedding thapas", classTokens: []),
       "plain name -> not speaking")
-check(tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-frame-occlusion", "fui-Flex"]),
-      "vdi-frame-occlusion class -> speaking (shipped Teams active-speaker anchor)")
+check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-frame-occlusion", "fui-Flex"]),
+      "vdi-frame-occlusion -> NOT speaking (placement token, tracks video frames not the speaker — removed 2026-07-03)")
 check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-occlusion", "fui-Flex"]),
       "vdi-occlusion (bare, on every tile) -> NOT speaking")
 check(tr.tileIsSelf(textBlob: "bibek thapa (you)", classTokens: []),
@@ -543,6 +545,15 @@ do {
     check(myself?.name == "Bibek Thapa" && myself?.unmuted == false, "self video tile -> (Bibek Thapa, muted) [drop 'Myself video,']")
     let myselfUn = parseTeamsRosterRow("Myself video, Bibek Thapa, Unmuted, Has context menu")
     check(myselfUn?.name == "Bibek Thapa" && myselfUn?.unmuted == true, "self video tile unmuted -> (Bibek Thapa, unmuted)")
+
+    // CURRENT native build (live-verified 2026-07-03): the panel row dropped the
+    // "Has context menu" phrase entirely — the mic word is the only anchor left.
+    let bare = parseTeamsRosterRow("Bibek Thapa, Organizer, Unmuted")
+    check(bare?.name == "Bibek Thapa" && bare?.unmuted == true,
+          "current-build row (no context-menu phrase) -> (Bibek Thapa, unmuted)")
+    let bareMuted = parseTeamsRosterRow("David Thapa (Guest), Meeting guest, Muted")
+    check(bareMuted?.name == "David Thapa" && bareMuted?.unmuted == false,
+          "current-build guest row -> (David Thapa, muted)")
 
     // WEB client (teams.microsoft.com) real strings: the row anchor is "Context
     // menu is available", and the UNMUTED form DROPS the mic word entirely.
@@ -588,6 +599,321 @@ equal(teamsActiveSpeaker(tiles: ttSpotlight, prevAreas: [:], vadSpeechActive: tr
 // 4) gallery, no token -> Someone floor.
 equal(teamsActiveSpeaker(tiles: ttGallery, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
       "gallery, no token -> via someoneFloor")
+// 5) SELF-EXCLUSION (mirrors the Meet ring fix): a config'd rule matching the
+//    SELF tile must never name the local user — self is mic-attributed.
+let ttSelfSpeaking = [
+    TeamsTileObservation(name: "Me",  area: 10_000, orderIndex: 0, isSpeaking: true, isMe: true),
+    TeamsTileObservation(name: "Bob", area: 10_000, orderIndex: 1, isSpeaking: false),
+]
+equal(teamsActiveSpeaker(tiles: ttSelfSpeaking, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "config'd token on SELF only -> not named (falls to Someone floor)")
+equal(teamsActiveSpeaker(tiles: ttSelfSpeaking, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
+      "token on SELF only -> via someoneFloor (self is mic-attributed)")
+let ttSelfPlusRemote = [
+    TeamsTileObservation(name: "Me",    area: 10_000, orderIndex: 0, isSpeaking: true, isMe: true),
+    TeamsTileObservation(name: "Alice", area: 10_000, orderIndex: 1, isSpeaking: true),
+]
+equal(teamsActiveSpeaker(tiles: ttSelfPlusRemote, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "token on self + remote -> only the remote named (self excluded)")
+// 6) geometry never promotes SELF (a big pinned self-view isn't speech evidence).
+let ttSelfDominant = [
+    TeamsTileObservation(name: "Me",  area: 200_000, orderIndex: 0, isSpeaking: false, isMe: true),
+    TeamsTileObservation(name: "Bob", area: 10_000,  orderIndex: 1, isSpeaking: false),
+]
+equal(teamsActiveSpeaker(tiles: ttSelfDominant, prevAreas: [:], vadSpeechActive: true, useGeometry: true).names, ["Someone"],
+      "geometry on, SELF dominant -> not named (Someone floor, mirrors Meet)")
+
+// MARK: Teams pure extraction — REAL captured fixtures (macos/Fixtures/teams,
+// distilled from ax-dumps 20260701-*). The SAME teamsExtractWindow the scanner
+// ships runs here, so the deterministic loop tests the shipping extraction.
+print("Teams extraction (captured fixtures):")
+func loadTeamsFixture(_ name: String) -> TeamsAXNode? {
+    let url = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()   // SpeakerCoreSelfTest/
+        .deletingLastPathComponent()   // Sources/
+        .deletingLastPathComponent()   // macos/
+        .appendingPathComponent("Fixtures/teams/\(name).json")
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    return try? JSONDecoder().decode(TeamsAXNode.self, from: data)
+}
+
+// CELL: 2 participants × speaker/large view (screen-share stage) — the remote's
+// camera is OFF, so its tile desc has NO "video is" token ("David Tgapa (Guest),
+// muted, Context menu is available"); the OLD extractor required one and missed
+// the only remote. Self is an AXImage ("Myself video, …"), NOT an AXMenuItem.
+if let root = loadTeamsFixture("native-2p-share-cameraoff-remote") {
+    let ex = teamsExtractWindow(root)
+    equal(ex.participants.sorted(), ["Bibek Thapa", "David Tgapa"],
+          "2p/share: exactly the real roster — camera-OFF remote NOT missed, zero chrome FPs")
+    check(ex.callActive, "2p/share: call gate ACTIVE (Leave button / Shared content)")
+    let me2 = ex.tiles.first(where: { $0.isMe })
+    check(me2?.name == "Bibek Thapa", "2p/share: self via 'Myself video' AXImage (role-independent)")
+    equal(me2?.unmuted, true, "2p/share: self explicit Unmuted read")
+    let david = ex.tiles.first(where: { $0.name == "David Tgapa" })
+    check(david != nil && david?.isMe == false, "2p/share: remote tile present, not self")
+    equal(david?.unmuted, false, "2p/share: remote explicit 'muted' read")
+    check(ex.roster.isEmpty, "2p/share: roster EMPTY (panel closed — tile rows can't masquerade)")
+    // Engine cell semantics: remote speech while the only remote is MUTED can't
+    // be attributed -> honest Someone (the engine debounces it via someoneGrace).
+    let remotes2 = ex.tiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: me2?.unmuted ?? false,
+            localName: me2?.name ?? "You", remoteActive: true, remoteUnmutedNames: remotes2),
+          ["Someone"], "2p/share: remote speech w/ only-remote muted -> honest Someone")
+    // Self speech: mic active + self unmuted -> the REAL name, never "You".
+    equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: me2?.unmuted ?? false,
+            localName: me2?.name ?? "You", remoteActive: false, remoteUnmutedNames: remotes2),
+          ["Bibek Thapa"], "2p/share: self speech -> real roster name via self tile")
+} else { check(false, "fixture native-2p-share-cameraoff-remote.json missing") }
+
+// CELL: 3 participants × side-gallery + share. Self appears TWICE (a gallery
+// AXMenuItem "Bibek Thapa, video is on, Context menu is available" AND the
+// "Myself video" AXImage) — must merge to ONE isMe entry. "BIDHEYAK THAPA" is a
+// real ALL-CAPS display name (was rejected by the un-anchored caps heuristic).
+if let root = loadTeamsFixture("native-3p-sidegallery-share") {
+    let ex = teamsExtractWindow(root)
+    equal(ex.participants, ["BIDHEYAK THAPA", "Bibek Thapa", "Biheyak Thapa"],
+          "3p/side-gallery: exactly the real roster, reading order, ALL-CAPS name kept")
+    check(ex.callActive, "3p/side-gallery: call gate ACTIVE")
+    equal(ex.tiles.count, 3, "3p/side-gallery: 3 tiles (self gallery tile + Myself image MERGED)")
+    let me3 = ex.tiles.filter { $0.isMe }
+    equal(me3.map { $0.name }, ["Bibek Thapa"], "3p/side-gallery: exactly one self entry")
+    equal(me3.first?.unmuted, true, "3p/side-gallery: self Unmuted from the Myself image (explicit beats default)")
+    equal(ex.tiles.first(where: { $0.name == "BIDHEYAK THAPA" })?.unmuted, false,
+          "3p/side-gallery: main-stage remote explicit muted")
+    equal(ex.tiles.first(where: { $0.name == "Biheyak Thapa" })?.unmuted, false,
+          "3p/side-gallery: side-gallery remote explicit muted")
+    // Engine cell: both remotes muted + remote speech -> honest Someone.
+    let remotes3 = ex.tiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "Bibek Thapa",
+            remoteActive: true, remoteUnmutedNames: remotes3),
+          ["Someone"], "3p/side-gallery: remote speech, all remotes muted -> honest Someone")
+} else { check(false, "fixture native-3p-sidegallery-share.json missing") }
+
+// NEGATIVE CELL: the Teams home "Meet" tab — meeting-link cards ("Meeting link,
+// Meeting with Bibek Thapa, …, card"), Join buttons, headings. Zero participants,
+// call gate INACTIVE (this window must never start a meeting). It DOES carry the
+// profile button, so it's also the self-name-hint source fixture.
+if let root = loadTeamsFixture("native-home-meet-tab-negative") {
+    let ex = teamsExtractWindow(root)
+    equal(ex.participants, [], "home tab: ZERO participants (cards/buttons are not tiles)")
+    check(!ex.callActive, "home tab: call gate INACTIVE (no Leave/Shared content/Attendees)")
+    check(ex.tiles.isEmpty && ex.roster.isEmpty && ex.speakingNote == nil,
+          "home tab: no tiles, no roster, no speaking note")
+    equal(teamsSelfNameHint(root), "Bibek Thapa",
+          "home tab: self-name hint from 'Profile picture of <Name>.' label")
+} else { check(false, "fixture native-home-meet-tab-negative.json missing") }
+
+// CELL: SOLO call (1 participant) × Participants panel open — the CURRENT build
+// (captured 2026-07-03): no "Myself video" tile, no self marker in the panel row
+// ("Bibek Thapa, Organizer, Unmuted"). Self resolves via the app-wide profile
+// HINT; the header row ("In this meeting, 1 total") is rejected.
+if let root = loadTeamsFixture("native-1p-panel-open") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(ex.participants, ["Bibek Thapa"], "solo/panel: exactly the one real participant")
+    check(ex.callActive, "solo/panel: call gate ACTIVE (Leave + Attendees outline)")
+    equal(ex.roster.count, 1, "solo/panel: one roster row (header/invite rows rejected)")
+    equal(ex.roster.first?.unmuted, true, "solo/panel: self row Unmuted")
+    equal(ex.roster.first?.isMe, true, "solo/panel: self flagged via the profile hint (no Myself tile in this layout)")
+    check(ex.speakingNote == nil, "solo/panel: no speaking note")
+    // Hint unavailable (occluded home window throttles its tree): SOLO-ATTENDEE
+    // inference still resolves self — an in-call window with exactly one attendee
+    // and no stage tiles can only be showing the local user.
+    let noHint = teamsExtractWindow(root)
+    equal(noHint.roster.first?.isMe, true, "solo/panel: hint absent -> self via solo-attendee inference")
+} else { check(false, "fixture native-1p-panel-open.json missing") }
+
+// Solo-attendee inference stays HONEST: with 2+ attendees (and no self tile or
+// hint) nobody is guessed as self.
+do {
+    let panel2 = TeamsAXNode(role: "AXOutline", desc: "Attendees", children: [
+        TeamsAXNode(role: "AXRow", title: "Alice Kumar, Meeting guest, Unmuted"),
+        TeamsAXNode(role: "AXRow", title: "Bibek Thapa, Organizer, Unmuted"),
+    ])
+    let win = TeamsAXNode(role: "AXWindow", children: [
+        TeamsAXNode(role: "AXButton", desc: "Leave"), panel2,
+    ])
+    let ex = teamsExtractWindow(win)
+    equal(ex.roster.count, 2, "2-attendee panel, no tiles: both rows extracted")
+    check(ex.roster.allSatisfy { !$0.isMe }, "2-attendee panel, no self signal -> NOBODY guessed as self")
+    // …and the hint disambiguates it.
+    let exH = teamsExtractWindow(win, selfHint: "Bibek Thapa")
+    equal(exH.roster.first(where: { $0.name == "Bibek Thapa" })?.isMe, true,
+          "2-attendee panel + hint -> self flagged by name")
+}
+
+// Self-name hint parsing (the profile-button label, home window).
+print("Teams self-name hint:")
+equal(teamsSelfNameFromProfileLabel("Profile picture of Bibek Thapa."), "Bibek Thapa",
+      "'Profile picture of <Name>.' -> name")
+check(teamsSelfNameFromProfileLabel("Your profile, status In a call") == nil, "status label -> nil")
+check(teamsSelfNameFromProfileLabel("Profile picture of .") == nil, "empty name -> nil")
+check(teamsSelfNameFromProfileLabel("Bibek Thapa") == nil, "bare name (no profile prefix) -> nil")
+
+// MARK: Teams extraction — SYNTHETIC matrix cells (grammar from the live
+// captures + docs/teams-probe.md; cells we can't capture offline are modeled on
+// the proven AXMenuItem/"Myself video"/roster-row grammar and re-verified in the
+// LIVE pass, qa/qa.teams.config.mjs).
+print("Teams extraction (synthetic matrix):")
+func synTile(_ desc: String, x: Double, y: Double, w: Double, h: Double) -> TeamsAXNode {
+    TeamsAXNode(role: "AXMenuItem", desc: desc, x: x, y: y, w: w, h: h)
+}
+func synSelf(_ desc: String, x: Double, y: Double, w: Double, h: Double) -> TeamsAXNode {
+    TeamsAXNode(role: "AXImage", desc: desc, x: x, y: y, w: w, h: h)
+}
+func synWindow(_ kids: [TeamsAXNode], leave: Bool = true) -> TeamsAXNode {
+    var children = kids
+    if leave { children.append(TeamsAXNode(role: "AXButton", desc: "Leave", x: 1061, y: 64, w: 48, h: 48)) }
+    return TeamsAXNode(role: "AXWindow", children: [TeamsAXNode(role: "AXGroup", children: children)])
+}
+
+// CELL: gallery × 2p (equal tiles, no share). Unmuted remote carries NO mic word
+// (the Teams convention) -> reads unmuted; single unmuted remote + remote speech
+// -> named. Window-size independence: the SAME tree scaled 0.3× must extract
+// identically (no geometry constants anywhere).
+for scale in [1.0, 0.3] {
+    let s = { (v: Double) in v * scale }
+    let g2 = synWindow([
+        synTile("Alice Kumar, video is on, Context menu is available", x: s(3), y: s(121), w: s(560), h: s(600)),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: s(570), y: s(121), w: s(560), h: s(600)),
+    ])
+    let ex = teamsExtractWindow(g2)
+    equal(ex.participants, ["Alice Kumar", "Bibek Thapa"],
+          "gallery/2p @\(scale)x: exact roster (size-independent)")
+    equal(ex.tiles.first(where: { $0.isMe })?.name, "Bibek Thapa", "gallery/2p @\(scale)x: self resolved")
+    let remotes = ex.tiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "Bibek Thapa",
+            remoteActive: true, remoteUnmutedNames: remotes),
+          ["Alice Kumar"], "gallery/2p @\(scale)x: remote speech -> the single unmuted remote NAMED")
+}
+
+// CELL: gallery × 3p (2 remotes: one unmuted, one muted). Mute-gate names the
+// single unmuted remote; flipping BOTH unmuted degrades honestly to Someone.
+do {
+    let g3 = synWindow([
+        synTile("Alice Kumar, video is on, Context menu is available", x: 3, y: 121, w: 370, h: 300),
+        synTile("Bob Rai (Guest), muted, Context menu is available", x: 380, y: 121, w: 370, h: 300),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 760, y: 121, w: 370, h: 300),
+    ])
+    let ex = teamsExtractWindow(g3)
+    equal(ex.participants, ["Alice Kumar", "Bob Rai", "Bibek Thapa"], "gallery/3p: exact roster")
+    equal(ex.tiles.first(where: { $0.name == "Bob Rai" })?.unmuted, false, "gallery/3p: camera-off muted remote read")
+    let remotes = ex.tiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "Bibek Thapa",
+            remoteActive: true, remoteUnmutedNames: remotes),
+          ["Alice Kumar"], "gallery/3p: mute-gate names the single unmuted remote")
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "Bibek Thapa",
+            remoteActive: true, remoteUnmutedNames: ["Alice Kumar", "Bob Rai"]),
+          ["Someone"], "gallery/3p: 2+ unmuted remotes -> honest Someone (multi-talker ceiling)")
+}
+
+// CELL: speaker/large view × 3p — one promoted tile + strip. Extraction must be
+// IDENTICAL to gallery (structure-keyed, not geometry-keyed).
+do {
+    let sp = synWindow([
+        synTile("Alice Kumar, video is on, Context menu is available", x: 3, y: 121, w: 900, h: 560),
+        synTile("Bob Rai (Guest), muted, Context menu is available", x: 910, y: 121, w: 160, h: 90),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 910, y: 220, w: 160, h: 90),
+    ])
+    let ex = teamsExtractWindow(sp)
+    equal(ex.participants, ["Alice Kumar", "Bob Rai", "Bibek Thapa"],
+          "speaker-view/3p: exact roster (promoted tile changes nothing)")
+    equal(ex.tiles.first(where: { $0.isMe })?.name, "Bibek Thapa", "speaker-view/3p: self resolved")
+}
+
+// CELL: together mode × 3p — one shared canvas, equal/overlapping per-person
+// rows (same AXMenuItem grammar; re-verified live).
+do {
+    let tg = synWindow([
+        synTile("Alice Kumar, video is on, Context menu is available", x: 100, y: 200, w: 300, h: 300),
+        synTile("Bob Rai, video is on, Context menu is available", x: 400, y: 200, w: 300, h: 300),
+        synTile("Bibek Thapa, video is on, Context menu is available", x: 700, y: 200, w: 300, h: 300),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 986, y: 600, w: 156, h: 86),
+    ])
+    let ex = teamsExtractWindow(tg)
+    equal(ex.participants, ["Alice Kumar", "Bob Rai", "Bibek Thapa"],
+          "together/3p: exact roster (canvas rows, self merged)")
+    equal(ex.tiles.filter { $0.isMe }.map { $0.name }, ["Bibek Thapa"], "together/3p: one self entry")
+}
+
+// CELL: compact/PIP window — no tiles; Teams' own "<name> is speaking" note
+// names the speaker (the scanner keeps the call alive via the window title).
+do {
+    let speaking = TeamsAXNode(role: "AXWindow", children: [
+        TeamsAXNode(role: "AXGroup", desc: "Alice Kumar is speaking"),
+        TeamsAXNode(role: "AXButton", desc: "Turn camera on"),
+    ])
+    let ex = teamsExtractWindow(speaking)
+    equal(ex.speakingNote, "Alice Kumar", "compact: '<name> is speaking' note -> speaker named")
+    equal(ex.participants, [], "compact: chrome ('Turn camera on') never a participant")
+    let idle = TeamsAXNode(role: "AXWindow", children: [
+        TeamsAXNode(role: "AXGroup", desc: "Nobody is speaking"),
+    ])
+    check(teamsExtractWindow(idle).speakingNote == nil, "compact: 'Nobody is speaking' -> nil (keep-alive only)")
+}
+
+// CELL: People panel OPEN — roster rows live under the Attendees outline ONLY.
+// A roster-only participant (gallery overflow) still reaches `participants`
+// (fusion: roster ∪ tiles), and the self row is flagged from the self tile.
+do {
+    let panel = TeamsAXNode(role: "AXOutline", desc: "Attendees", children: [
+        TeamsAXNode(role: "AXGroup", desc: "Alice Kumar, Has context menu, Meeting guest, Unmuted"),
+        TeamsAXNode(role: "AXGroup", desc: "Bob Rai (Guest), Has context menu, Meeting guest, Muted"),
+        TeamsAXNode(role: "AXGroup", desc: "Carol Overflow, Has context menu, Meeting guest, Muted"),
+        TeamsAXNode(role: "AXGroup", desc: "Bibek Thapa, Has context menu, Organizer, Unmuted"),
+        TeamsAXNode(role: "AXGroup", desc: "In this meeting, 4 total Mute all"),
+    ])
+    let win = synWindow([
+        synTile("Alice Kumar, video is on, Context menu is available", x: 3, y: 121, w: 370, h: 300),
+        synTile("Bob Rai (Guest), muted, Context menu is available", x: 380, y: 121, w: 370, h: 300),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 760, y: 121, w: 370, h: 300),
+        panel,
+    ])
+    let ex = teamsExtractWindow(win)
+    equal(ex.roster.count, 4, "panel-open: 4 roster rows (header/bulk rows rejected)")
+    equal(ex.roster.first(where: { $0.name == "Bob Rai" })?.unmuted, false, "panel-open: remote mute from the ROSTER row")
+    equal(ex.roster.first(where: { $0.name == "Bibek Thapa" })?.isMe, true, "panel-open: self row flagged from the self tile")
+    check(ex.participants.contains("Carol Overflow"),
+          "panel-open: roster-only participant reaches participants (roster ∪ tiles fusion)")
+    equal(ex.participants.count, 4, "panel-open: exactly the real 4 participants")
+    // Engine cell: panel roster drives the mute-gate -> single unmuted remote named.
+    let remotes = ex.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "Bibek Thapa",
+            remoteActive: true, remoteUnmutedNames: remotes),
+          ["Alice Kumar"], "panel-open: roster mute-gate names the single unmuted remote")
+}
+
+// FALSE-POSITIVE regression net: progressive name fragments, lobby chrome,
+// toasts, un-anchored menu items, anchored-but-chrome labels -> ZERO tiles.
+do {
+    let junk = synWindow([
+        TeamsAXNode(role: "AXStaticText", value: "Bib"),
+        TeamsAXNode(role: "AXStaticText", value: "Bibe"),
+        TeamsAXNode(role: "AXStaticText", value: "Bibek Th"),
+        TeamsAXNode(role: "AXButton", desc: "Join now"),
+        TeamsAXNode(role: "AXStaticText", value: "Computer audio"),
+        TeamsAXNode(role: "AXGroup", desc: "Your camera is turned on"),
+        TeamsAXNode(role: "AXMenuItem", desc: "Alice Kumar"),                        // no context-menu anchor
+        TeamsAXNode(role: "AXMenuItem", desc: "More options, Context menu is available"), // anchored chrome
+        TeamsAXNode(role: "AXGroup", desc: "Waiting in lobby, David Thapa"),
+        TeamsAXNode(role: "AXGroup", desc: "David Thapa (Guest), muted, Context menu is available"), // right text, WRONG role
+    ])
+    let ex = teamsExtractWindow(junk)
+    equal(ex.participants, [], "FP net: fragments/lobby/toasts/un-anchored rows -> ZERO participants")
+    equal(ex.tiles.count, 0, "FP net: zero tiles")
+}
+
+// Anchored name hygiene: the structural anchor admits shouty REAL names but
+// never chrome; un-anchored reads keep the strict caps rejection.
+print("Teams anchored name parsing:")
+equal(cleanParticipantName("BIDHEYAK THAPA, video is on, muted, Context menu is available", structuralAnchor: true),
+      "BIDHEYAK THAPA", "anchored: ALL-CAPS real display name kept")
+check(cleanParticipantName("BIDHEYAK THAPA") == nil, "un-anchored: ALL-CAPS still rejected (chrome heuristic)")
+check(cleanParticipantName("USD") == nil, "un-anchored: caps label 'USD' still rejected")
+check(cleanParticipantName("Mute mic (⇧ ⌘ M)", structuralAnchor: true) == nil, "anchored: chrome labels still rejected")
+check(cleanParticipantName("Elapsed time 05:13", structuralAnchor: true) == nil, "anchored: digit chrome still rejected")
+let capsRow = parseTeamsRosterRow("BIDHEYAK THAPA, Has context menu, Meeting guest, Unmuted")
+check(capsRow?.name == "BIDHEYAK THAPA" && capsRow?.unmuted == true,
+      "roster row: ALL-CAPS name parsed (anchored) with mute state")
 
 // MARK: Meeting identity (stable id from URL code / normalized title)
 print("MeetingIdentity:")

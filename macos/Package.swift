@@ -65,6 +65,15 @@ let package = Package(
             dependencies: ["SpeakerCore"],
             path: "Sources/MeetProbe"
         ),
+        // AX driver for the LIVE Teams QA rig: presses named controls (Mute mic,
+        // View → Gallery/Speaker/Together, Join) and resizes the Teams window so
+        // qa/teams-live/run-teams-live-qa.mjs can drive the layout × participant
+        // matrix without AppleScript. Run: `swift run TeamsDrive find "Mute mic"`.
+        .executableTarget(
+            name: "TeamsDrive",
+            dependencies: ["AXKit"],
+            path: "Sources/TeamsDrive"
+        ),
         // Native-Zoom (us.zoom.xos) analog of MeetProbe. Zoom's grid is Metal /
         // AX-opaque (recall-and-demo-extraction.md §1.11), so this fingerprints
         // the Participants-panel rows (roles + text + state, no AXDOMClassList)

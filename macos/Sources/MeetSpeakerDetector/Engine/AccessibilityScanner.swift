@@ -198,6 +198,11 @@ final class AccessibilityScanner {
             // app's windows (the Participants panel may be a separate window from the
             // tiles the roster is read from), then apply it to every roster below.
             let zoomSelfHint: String? = (bundleID == "us.zoom.xos") ? zoomSelfNameHint(axApp) : nil
+            // Native Teams: the signed-in user's name from the "Profile picture of
+            // <Name>." label (home window), resolved ONCE — the self signal for
+            // layouts with no "Myself video" tile (solo call / roster-only panel).
+            let teamsSelfHint: String? = (Self.nativeApps[bundleID] == .teams)
+                ? teamsSelfHintAcrossWindows(axApp) : nil
             for window in axArray(axApp, "AXWindows") {
                 let title = axString(window, "AXTitle") ?? ""
                 // Classify by the AXWebArea's AXURL FIRST (product parity — see
@@ -287,6 +292,12 @@ final class AccessibilityScanner {
                         participants = panel.isEmpty ? dedup(m.participants) : dedup(panel)
                     }
                 } else if platform == .teams {
+                    // ONE bounded AX→TeamsAXNode conversion, then the PURE extractor
+                    // (SpeakerCore.teamsExtractWindow) — the same code the fixture
+                    // replay in SpeakerCoreSelfTest exercises, so the deterministic
+                    // harness tests EXACTLY the shipping extraction (no drift).
+                    let ex = teamsExtractWindow(teamsWindowNode(window), rules: teamsRules,
+                                                selfHint: teamsSelfHint)
                     // The Teams "Meeting compact view" window is a secondary PIP-like
                     // view — call-control chrome, not participant tiles. Keep the call
                     // alive from it (so minimising to it doesn't end the meeting) but
@@ -299,7 +310,7 @@ final class AccessibilityScanner {
                         // directly (like the Zoom PIP). When nobody's speaking, just
                         // keep the call alive (the main window supplies the roster).
                         speakers = []
-                        if let sp = teamsSpeakingNote(in: window) {
+                        if let sp = ex.speakingNote {
                             pipSpeaker = sp
                             participants = [sp]
                         } else {
@@ -307,29 +318,23 @@ final class AccessibilityScanner {
                             keepAliveOnly = true
                         }
                     } else {
-                        // Teams (new client) is a Chromium WebView, so its tiles surface
-                        // in AX like Meet's — supply per-tile observations for the engine's
-                        // VAD-gated resolver. See docs/teams-active-speaker-detection.md.
-                        let t = teamsTileObservations(in: window)
-                        // Remote mute is read from the People-panel roster rows (the one
-                        // dependable source; requires the panel open). Mark the row that
-                        // matches the self tile as isMe. See docs/teams-probe.md.
-                        let selfName = t.tiles.first(where: { $0.isMe })?.name
-                        teamsRoster = teamsRosterEntries(in: window, selfName: selfName)
                         // ACTIVE-CALL gate (product parity): a "Leave" button, a "Shared
                         // content" main landmark, or an "Attendees" outline — covers native
                         // AND web Teams. The meeting URL alone is NOT enough (…/light-
                         // meetings/launch is the launcher page before joining); the chat /
                         // home window lacks these too. Roster / self tile corroborate.
-                        guard teamsCallActive(in: window) || !teamsRoster.isEmpty
-                                || t.tiles.contains(where: { $0.isMe }) else { continue }
-                        teamsTiles = t.tiles
+                        guard ex.callActive || !ex.roster.isEmpty
+                                || ex.tiles.contains(where: { $0.isMe }) else { continue }
+                        teamsTiles = ex.tiles
+                        // Remote mute from the People-panel roster (panel open only —
+                        // the one dependable source); the tile rows carry it otherwise.
+                        teamsRoster = ex.roster
                         speakers = []   // engine resolves Teams speakers from teamsTiles + audio
-                        participants = dedup(t.tiles.map { $0.name } + teamsRoster.map { $0.name })
+                        participants = ex.participants
                         // Prefer Teams' OWN active-speaker note ("<name> is speaking")
                         // over the audio mute-gate — it's the same VAD signal shown in
                         // the compact window, and avoids the ambiguous "Someone".
-                        pipSpeaker = teamsSpeakingNote(in: window)
+                        pipSpeaker = ex.speakingNote
                     }
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +
@@ -474,31 +479,6 @@ final class AccessibilityScanner {
         return nil
     }
 
-    /// The active speaker on a Teams window, read from its
-    /// `AXDocumentNote desc="<name> is speaking"` indicator — Teams' OWN VAD
-    /// (verified via AXDump; present in both the main and compact/PIP windows).
-    /// Returns nil for "Nobody is speaking". This is far more reliable than the
-    /// audio-direction mute-gate, so the engine prefers it.
-    private func teamsSpeakingNote(in window: AXUIElement) -> String? {
-        var name: String?
-        var n = 0
-        func rec(_ el: AXUIElement, _ d: Int) {
-            if name != nil || n >= 2000 || d > maxDepth { return }
-            n += 1
-            if let desc = axString(el, "AXDescription") {
-                let low = desc.lowercased()
-                if low.hasSuffix("is speaking"), !low.hasPrefix("nobody") {
-                    let base = String(desc.dropLast("is speaking".count))
-                        .trimmingCharacters(in: CharacterSet(charactersIn: " ,"))
-                    if let clean = cleanParticipantName(base) { name = clean; return }
-                }
-            }
-            for c in axArray(el, "AXChildren") { rec(c, d + 1); if name != nil { return } }
-        }
-        rec(window, 0)
-        return name
-    }
-
     /// Zoom WEB active-speaker + roster read from the tile structure.
     ///
     /// Each participant tile is a `speaker-bar-container__video-frame` (filmstrip)
@@ -565,38 +545,6 @@ final class AccessibilityScanner {
         return (barActive ?? bigActive, dedup(names))
     }
 
-    /// Is this Teams window/tab actually IN a call — not the chat / home / calendar
-    /// view or the "…/light-meetings/launch" launcher page (which shares the meeting
-    /// URL)? Ported from the product's teamsCallActive/teamsCallWindowOpen: a
-    /// "Leave" button, a "Shared content" main landmark, or an "Attendees" outline.
-    /// Covers native AND web Teams; all vanish when the call ends.
-    private func teamsCallActive(in window: AXUIElement) -> Bool {
-        var active = false
-        var n = 0
-        func rec(_ el: AXUIElement, _ d: Int) {
-            if active || n >= maxNodesPerWindow || d > maxDepth { return }
-            n += 1
-            if let role = axString(el, "AXRole") {
-                if role == "AXButton" {
-                    let label = ((axString(el, "AXTitle") ?? "") + " "
-                        + (axString(el, "AXDescription") ?? "")).lowercased()
-                    if label.contains("leave") { active = true; return }
-                }
-                if role == "AXGroup", axString(el, "AXSubrole") == "AXLandmarkMain",
-                   let d = axString(el, "AXDescription")?.lowercased(), d.contains("shared content") {
-                    active = true; return
-                }
-                if role == "AXOutline", let d = axString(el, "AXDescription")?.lowercased(),
-                   d.contains("attendees") {
-                    active = true; return
-                }
-            }
-            for c in axArray(el, "AXChildren") { rec(c, d + 1); if active { return } }
-        }
-        rec(window, 0)
-        return active
-    }
-
     // MARK: Platform resolution
 
     private static func platform(forNative bundleID: String, windowTitle: String) -> Platform? {
@@ -654,11 +602,13 @@ final class AccessibilityScanner {
         // Local mute state. Zoom web's control reads "unmute my microphone"
         // while you are muted, "mute my microphone" while unmuted. Google Meet
         // uses "Turn on microphone" (muted) / "Turn off microphone" (unmuted).
+        // Teams' toolbar reads "Unmute mic" (muted) / "Mute mic" (unmuted) —
+        // an independent local-mute signal that survives a hidden self tile.
         if lower.contains("unmute my") || lower.contains("unmute (") || lower == "unmute"
-            || lower.contains("turn on microphone") {
+            || lower.contains("unmute mic") || lower.contains("turn on microphone") {
             c.localUserUnmuted = false
         } else if lower.contains("mute my") || lower.contains("mute (") || lower == "mute"
-            || lower.contains("turn off microphone") {
+            || lower.contains("mute mic") || lower.contains("turn off microphone") {
             c.localUserUnmuted = true
         }
 
@@ -1312,137 +1262,65 @@ final class AccessibilityScanner {
         return found
     }
 
-    // MARK: Microsoft Teams per-tile active-speaker scan
+    // MARK: Microsoft Teams window conversion (extraction is pure — SpeakerCore)
 
-    /// Config-loaded Teams rules (stable `aria_*`/`calling_*` tokens + speaking
-    /// markers); a token change is a config drop, not a rebuild. Loaded once.
+    /// Config-loaded Teams rules (stable `aria_*`/`calling_*` tokens; speaking
+    /// stays a config-only hook — class-free by §7); a token change is a config
+    /// drop, not a rebuild. Loaded once.
     private let teamsRules = TeamsSpeakerRules.resolved()
 
-    /// Builds Teams per-tile observations for the engine's VAD-gated resolver —
-    /// the analog of `meetTileObservations`. New Teams is a Chromium WebView so
-    /// its tiles surface in AX like Meet's: name → tile-sized ancestor, with the
-    /// is-speaking / self / mute flags derived from `TeamsSpeakerRules` (verified
-    /// via a Teams probe run). See docs/teams-active-speaker-detection.md.
-    /// True when an AXMenuItem description is a real Teams participant tile:
-    /// "<Name>, video is on/off[, muted], Context menu is available" (remote) or
-    /// "Myself video, <Name>, Unmuted, Has context menu" (self). Requires BOTH the
-    /// context-menu affordance (every tile has it; chrome doesn't) AND a video/self
-    /// marker, so lobby/pre-join controls and status toasts never pass.
-    private static func isTeamsParticipantTile(_ desc: String) -> Bool {
-        let l = desc.lowercased()
-        guard l.contains("context menu") || l.contains("has context") else { return false }
-        return l.contains("video is") || l.contains("video on") || l.contains("video off")
-            || l.contains("myself video")
-    }
-
-    private func teamsTileObservations(in window: AXUIElement) -> (tiles: [TeamsTileObservation], participants: [String]) {
-        var nameNodes: [(AXUIElement, String)] = []
-        var scanned = 0
-        func collect(_ el: AXUIElement, _ depth: Int) {
-            if scanned >= maxNodesPerWindow || depth > maxDepth { return }
-            scanned += 1
-            // Only REAL participant tiles: Teams renders each as an AXMenuItem whose
-            // AXDescription is "<Name>, video is on/off[, muted], Context menu is
-            // available" (self: "Myself video, <Name>, Unmuted, Has context menu").
-            // Anchoring on that STRUCTURE — not any text node — drops lobby chrome
-            // ("Join now", "Computer audio"), status strings ("On hold", "Your camera
-            // is turned on"), and the progressive name-fragment AXStaticTexts
-            // ("Bib" → "Bibe" → "Bibek" …) that were leaking in as participants.
-            if axString(el, "AXRole") == "AXMenuItem",
-               let desc = axString(el, "AXDescription"), Self.isTeamsParticipantTile(desc),
-               let name = cleanParticipantName(desc) {
-                nameNodes.append((el, name))
-            }
-            for c in axArray(el, "AXChildren") { collect(c, depth + 1) }
-        }
-        collect(window, 0)
-
-        struct Acc { var area: Double; var speaking: Bool; var isMe: Bool; var unmuted: Bool?; var minY: CGFloat; var minX: CGFloat }
-        var byName: [String: Acc] = [:]
-        for (node, name) in nameNodes {
-            guard let tile = meetTileAncestor(of: node) else { continue }
-            let frame = axFrame(tile) ?? .zero
-            let area = Double(frame.width * frame.height)
-            let (blob, classes) = tileTextAndClasses(tile)
-            let speaking = teamsRules.tileIsSpeaking(textBlob: blob, classTokens: classes)
-            let isMe = teamsRules.tileIsSelf(textBlob: blob, classTokens: classes)
-            // Teams writes an explicit "muted" token on a muted tile but NOTHING
-            // when a remote is unmuted (only the self tile says "Unmuted"). So a
-            // real participant tile with no muted token is unmuted — otherwise
-            // remote unmute never surfaces (is_muted stays unknown for everyone
-            // who isn't muted). A tile always has a name here, so treat unknown as
-            // unmuted rather than dropping the state.
-            let unmuted = teamsRules.muteState(textBlob: blob, classTokens: classes) ?? true
-            if let ex = byName[name], ex.area >= area { continue }
-            byName[name] = Acc(area: area, speaking: speaking, isMe: isMe, unmuted: unmuted, minY: frame.minY, minX: frame.minX)
-        }
-
-        let ordered: [Dictionary<String, Acc>.Element] = byName.sorted { ($0.value.minY, $0.value.minX) < ($1.value.minY, $1.value.minX) }
-        let tiles = ordered.enumerated().map { i, kv in
-            TeamsTileObservation(name: kv.key, area: kv.value.area, orderIndex: i,
-                                 isSpeaking: kv.value.speaking, isMe: kv.value.isMe, unmuted: kv.value.unmuted)
-        }
-        return (tiles, ordered.map { $0.key })
-    }
-
-    /// Reads the Teams People/Participants-panel roster: each row's AXDescription/
-    /// AXTitle is `"<Name>, …roles…, Muted/Unmuted"` (see parseTeamsRosterRow).
-    /// This is the only reliable per-participant REMOTE mute source — present only
-    /// when the panel is open; returns [] otherwise. `selfName` (from the self
-    /// tile) flags the local user's row. Mirrors `zoomNativeRoster`.
-    private func teamsRosterEntries(in window: AXUIElement, selfName: String?) -> [ZoomRosterEntry] {
-        var byName: [String: ZoomRosterEntry] = [:]
+    /// The Teams self-name hint across ALL the app's windows: the meeting window
+    /// often lacks the profile button (it lives on the home window), so scan each
+    /// window until the "Profile picture of <Name>." label resolves. Cheap direct
+    /// walk (desc/title only), pure parse in SpeakerCore.
+    private func teamsSelfHintAcrossWindows(_ app: AXUIElement) -> String? {
+        var found: String?
         var n = 0
-        func rec(_ el: AXUIElement, _ depth: Int) {
-            if n >= maxNodesPerWindow || depth > maxDepth { return }
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if found != nil || n >= maxNodesPerWindow || d > maxDepth { return }
             n += 1
-            for attr in ["AXDescription", "AXTitle", "AXValue"] {
-                guard let raw = axString(el, attr), let row = parseTeamsRosterRow(raw) else { continue }
-                // Keep one entry per name; prefer an explicit unmuted reading.
-                if byName[row.name] == nil {
-                    let isMe = selfName != nil && row.name == selfName
-                    byName[row.name] = ZoomRosterEntry(name: row.name, unmuted: row.unmuted, isMe: isMe)
+            for attr in ["AXDescription", "AXTitle"] {
+                if let s = axString(el, attr), let name = teamsSelfNameFromProfileLabel(s) {
+                    found = name; return
                 }
-                break
             }
-            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found != nil { return } }
         }
-        rec(window, 0)
-        return Array(byName.values)
+        // Per-WINDOW budget: the label lives on the home window, and a large
+        // meeting-window tree must not exhaust a shared cap before we reach it.
+        for window in axArray(app, "AXWindows") {
+            n = 0
+            rec(window, 0)
+            if found != nil { break }
+        }
+        return found
     }
 
-    /// Lowercased concatenation of a tile subtree's AX text + the union of its
-    /// AXDOMClassList tokens (bounded) — the surface the Teams rules match.
-    private func tileTextAndClasses(_ tile: AXUIElement) -> (text: String, classes: Set<String>) {
-        var parts: [String] = []
-        var classes = Set<String>()
-        var n = 0
-        func rec(_ el: AXUIElement, _ depth: Int) {
-            if n >= 800 || depth > 40 { return }
-            n += 1
-            for attr in ["AXDescription", "AXValue", "AXTitle"] {
-                if let s = axString(el, attr), !s.isEmpty { parts.append(s) }
+    /// Converts a Teams window's AX subtree into the platform-free `TeamsAXNode`
+    /// tree that `SpeakerCore.teamsExtractWindow` consumes — the ONLY Teams AX
+    /// read. All tile/self/mute/roster/call-gate decisions live in the pure
+    /// extractor so the fixture replay in SpeakerCoreSelfTest exercises the
+    /// shipping logic byte-for-byte. Bounded like every other window walk.
+    private func teamsWindowNode(_ window: AXUIElement) -> TeamsAXNode {
+        var visited = 0
+        func rec(_ el: AXUIElement, _ depth: Int) -> TeamsAXNode {
+            visited += 1
+            let frame = axFrame(el)
+            var children: [TeamsAXNode] = []
+            if visited < maxNodesPerWindow && depth < maxDepth {
+                for c in axArray(el, "AXChildren") {
+                    if visited >= maxNodesPerWindow { break }
+                    children.append(rec(c, depth + 1))
+                }
             }
-            for t in axClassList(el) { classes.insert(t) }
-            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
+            return TeamsAXNode(
+                role: axString(el, "AXRole"), subrole: axString(el, "AXSubrole"),
+                desc: axString(el, "AXDescription"), title: axString(el, "AXTitle"),
+                value: axString(el, "AXValue"), classes: axClassList(el),
+                x: frame.map { Double($0.minX) }, y: frame.map { Double($0.minY) },
+                w: frame.map { Double($0.width) }, h: frame.map { Double($0.height) },
+                children: children)
         }
-        rec(tile, 0)
-        // Teams packs each participant's mute / self / video state into an
-        // AXMenuItem ANCESTOR's AXDescription ("<Name>, video is on, muted, Context
-        // menu is available") that sits ABOVE the video-frame tile — OUTSIDE the
-        // subtree scanned above. Climb up and fold in ancestor descriptions (+ their
-        // classes) up to that menu-item row, else remote mute / self are never read.
-        var cur = axParent(tile)
-        var up = 0
-        while let el = cur, up < 8 {
-            if let d = axString(el, "AXDescription"), !d.isEmpty {
-                parts.append(d)
-                for t in axClassList(el) { classes.insert(t) }
-                if d.lowercased().contains("context menu") { break } // the tile's menu-item row
-            }
-            cur = axParent(el)
-            up += 1
-        }
-        return (parts.joined(separator: " ").lowercased(), classes)
+        return rec(window, 0)
     }
 }
