@@ -10,21 +10,32 @@ public struct MeetTileObservation: Equatable, Sendable {
     /// DOM/reading order among tiles (stable-ish per layout).
     public var orderIndex: Int
     /// Whether the tile's AXDOMClassList matched `MeetSpeakerRules` (strict
-    /// `kssMZb`). Measured vs Recall's VAD ground truth: ~83% precision / 89% recall
-    /// for a remote, but ~14% recall for self (your own tile gets no ring) — so it's
-    /// a corroborating signal for remotes only, never the speaking source for self.
-    /// See docs/meet-active-speaker-no-hardcoded-css.md.
+    /// `kssMZb` — the active-speaker ring). Measured vs Recall's VAD ground truth:
+    /// ~83% precision / 89% recall for a remote, ~14% for self (your tile gets no
+    /// ring). LIVE-CORRECTED 2026-07-03: `kssMZb` is NOT dead — it is ABSENT in a
+    /// 2-person call (Meet draws no ring for 2 people) but PRESENT in AX for 3+
+    /// people, on the sticky last-active speaker's tile. So VAD-gate it (this
+    /// resolver does): while VAD says speech the ring tile is the current speaker.
+    /// See docs/meet-active-speaker-no-hardcoded-css.md + memory meet-ax-speaker-signals-3person.
     public var classSpeaking: Bool
-    /// Whether this is the local user's tile (a "(You)" label in its subtree) —
-    /// so audio-direction attribution can separate self from remotes.
+    /// Whether this tile carries `AXFocused`. LIVE-VERIFIED 2026-07-03: Meet marks
+    /// the PROMOTED/spotlit tile with `AXFocused:true` (the spotlit tile had it,
+    /// self did not). A clean token-free boolean for "which tile is the main one"
+    /// = the active speaker in Auto/spotlight layout; complements the geometry
+    /// ratio (no threshold needed). Never set on the self tile in practice.
+    public var isFocused: Bool
+    /// Whether this is the local user's tile. NOTE (2026-07-03): the `(You)` label
+    /// is GONE from the current-build AX tree, so the scanner must resolve self by
+    /// name-matching the signed-in account, not by "(You)" — see AccessibilityScanner.
     public var isMe: Bool
 
     public init(name: String, area: Double, orderIndex: Int, classSpeaking: Bool,
-                isMe: Bool = false) {
+                isFocused: Bool = false, isMe: Bool = false) {
         self.name = name
         self.area = area
         self.orderIndex = orderIndex
         self.classSpeaking = classSpeaking
+        self.isFocused = isFocused
         self.isMe = isMe
     }
 }
@@ -33,8 +44,9 @@ public struct MeetTileObservation: Equatable, Sendable {
 /// as speech with no `.cssClass` hits (and `.someoneFloor` gaps).
 public enum MeetSpeakerSignal: String, Sendable, Equatable {
     case none          // no speech (VAD gate closed)
-    case geometry      // a clearly promoted/spotlit tile — durable, class-free
-    case cssClass      // the rotating AXDOMClassList class — brittle, remote-only corroboration
+    case cssClass      // kssMZb active-speaker ring (present in AX for 3+ people)
+    case focused       // AXFocused promoted/spotlit tile — clean token-free boolean
+    case geometry      // a clearly promoted/spotlit tile by area ratio — class-free
     case someoneFloor  // speech, but no tile attributable
 }
 
@@ -96,9 +108,24 @@ public func meetActiveSpeaker(
     //    only guesses from tile SIZE, which is wrong whenever the biggest tile
     //    isn't the speaker — e.g. you pin yourself (large, camera off) while a
     //    remote talks in a small corner tile (the reported spotlight-self layout).
-    let ringNames = tiles.filter { $0.classSpeaking }.map { $0.name }
+    //    `!isMe` is defense-in-depth (self is mic-attributed separately, like the
+    //    focused/geometry paths below): even if a self tile ever carried the ring
+    //    — or a remote-config rule matched a self class — we must not name self as
+    //    the active speaker. Overlap-safe: a self ring alongside a remote ring
+    //    still returns the remote.
+    let ringNames = tiles.filter { $0.classSpeaking && !$0.isMe }.map { $0.name }
     if !ringNames.isEmpty {
         return MeetSpeakerResult(names: ringNames, via: .cssClass)
+    }
+
+    // 2b) AXFocused promoted tile — Meet marks the spotlit/main tile with AXFocused
+    //     (live-verified 2026-07-03). A clean token-free boolean; in Auto/spotlight
+    //     the promoted tile is the speaker. Preferred over the geometry RATIO
+    //     (which is a heuristic). Suppressed under a presentation (the shared
+    //     screen is the focused/biggest surface, not a speaker); never self.
+    if !presentationActive,
+       let focused = tiles.first(where: { $0.isFocused && !$0.isMe }) {
+        return MeetSpeakerResult(names: [focused.name], via: .focused)
     }
 
     // 3) Geometry — a clearly dominant tile (spotlight/speaker view) when NO ring is
