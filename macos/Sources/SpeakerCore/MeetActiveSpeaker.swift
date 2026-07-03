@@ -1,5 +1,10 @@
 import Foundation
 
+// CAPTURE NOTE (2026-07-03): the PROTOTYPE equalizer read needs the target Chrome
+// window to be genuinely frontmost or Chrome won't publish the live equalizer classes.
+// That force-activation side-effect lives in AccessibilityScanner.forceActivateForCapture
+// (this file is pure, AppKit-free logic) — see that method for the full rationale.
+
 /// One Meet participant tile observed this tick — the durable inputs to
 /// active-speaker fusion (see docs/meet-active-speaker-no-hardcoded-css.md).
 /// Geometry is rotation-proof; the class is the brittle, rotating fallback.
@@ -29,14 +34,24 @@ public struct MeetTileObservation: Equatable, Sendable {
     /// name-matching the signed-in account, not by "(You)" — see AccessibilityScanner.
     public var isMe: Bool
 
+    /// PROTOTYPE (fresh-capture 2026-07-03): whether a descendant of this tile is a
+    /// SPEAKING equalizer node — an equalizer node (`AXDOMClassList` carries an anchor
+    /// {DYfzY,IisKdb,QgSmzd}) that is NOT silent (no `gjg47c`). This is a DIRECT
+    /// per-utterance read (the equalizer animates while the person talks), unlike the
+    /// sticky/layout `kssMZb` ring — so the resolver runs it FIRST after the VAD gate.
+    /// See `meetNodeIsSpeakingEqualizer` + AccessibilityScanner's per-tile walk.
+    /// Defaults to false so every existing construction/test compiles unchanged.
+    public var equalizerSpeaking: Bool
+
     public init(name: String, area: Double, orderIndex: Int, classSpeaking: Bool,
-                isFocused: Bool = false, isMe: Bool = false) {
+                isFocused: Bool = false, isMe: Bool = false, equalizerSpeaking: Bool = false) {
         self.name = name
         self.area = area
         self.orderIndex = orderIndex
         self.classSpeaking = classSpeaking
         self.isFocused = isFocused
         self.isMe = isMe
+        self.equalizerSpeaking = equalizerSpeaking
     }
 }
 
@@ -44,6 +59,7 @@ public struct MeetTileObservation: Equatable, Sendable {
 /// as speech with no `.cssClass` hits (and `.someoneFloor` gaps).
 public enum MeetSpeakerSignal: String, Sendable, Equatable {
     case none          // no speech (VAD gate closed)
+    case equalizer     // PROTOTYPE per-tile equalizer node (absence-of-gjg47c) — direct per-utterance read
     case cssClass      // kssMZb active-speaker ring (present in AX for 3+ people)
     case focused       // AXFocused promoted/spotlit tile — clean token-free boolean
     case geometry      // a clearly promoted/spotlit tile by area ratio — class-free
@@ -66,6 +82,10 @@ public struct MeetSpeakerResult: Equatable, Sendable {
 /// Order:
 ///  1. **VAD gate** — no speech ⇒ no speaker. (Soft when audio capture is
 ///     unavailable, so Meet still works Accessibility-only.)
+///  1b. **Equalizer** (PROTOTYPE, 2026-07-03) — a per-tile equalizer node whose
+///     `AXDOMClassList` is speaking (anchor present, silence class `gjg47c` ABSENT).
+///     A DIRECT per-utterance read (animates while talking), so it leads the sticky
+///     `kssMZb` ring. Overlap-capable; excludes self.
 ///  2. **CSS ring** — strict `kssMZb`, the active-speaker ring Meet draws on the
 ///     SPEAKING remote's tile (never self). A direct who-is-speaking read, so it
 ///     leads: geometry only knows tile SIZE and picks the wrong tile when the
@@ -100,6 +120,20 @@ public func meetActiveSpeaker(
     someoneLabel: String = "Someone"
 ) -> MeetSpeakerResult {
     guard vadSpeechActive else { return MeetSpeakerResult(names: [], via: .none) }
+
+    // 1b) PROTOTYPE equalizer (fresh-capture 2026-07-03) — runs RIGHT AFTER the VAD
+    //     gate and BEFORE the kssMZb ring. The equalizer's level class is a DIRECT
+    //     per-UTTERANCE read (it animates only while the person is actually talking),
+    //     whereas `kssMZb` is the layout/STICKY last-active ring — so the equalizer
+    //     leads. Overlap-capable: names EVERY non-self tile whose equalizer is
+    //     speaking (concurrent talkers all surface). `!isMe` excludes self exactly
+    //     like the ring/focused/geometry paths (self is mic-attributed separately);
+    //     the equalizer is empirically the remote's, but the resolver must not depend
+    //     on that. Every existing path below is left intact as a fallback.
+    let equalizerNames = tiles.filter { $0.equalizerSpeaking && !$0.isMe }.map { $0.name }
+    if !equalizerNames.isEmpty {
+        return MeetSpeakerResult(names: equalizerNames, via: .equalizer)
+    }
 
     // 2) Active-speaker ring (`kssMZb`) — Meet draws it on the SPEAKING remote's
     //    tile; your own tile never gets it (confirmed live: the ring node is only
