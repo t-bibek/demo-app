@@ -129,3 +129,85 @@ The existing GitHub Actions workflow
 runs the individual suites. To gate a job on the whole flow instead, call
 `qa/run_autonomous_qa.sh --suites-only` (or `--skip-tools` to include the review
 gate but not the live audio tools, which need a browser + meeting).
+
+CI runs the **default** manifest only. The live manifest
+([`qa/qa.live.config.mjs`](qa/qa.live.config.mjs)) launches Chrome windows + the
+detector app and must **never** be referenced from CI — the review gate enforces
+this as **INV-7**.
+
+## Autonomous implement→QA→fix loop (multi-agent)
+
+For a large, verify-heavy change (the Meet **event-driven ring/focus** detector) a
+single deterministic script drives implement → QA → fix → re-verify → review to
+completion, with agents doing the reasoning and the loop logic staying pure JS. The
+script is committed at
+[`.claude/workflows/event-driven-ring-qa-loop.mjs`](.claude/workflows/event-driven-ring-qa-loop.mjs)
+so the whole run is reproducible.
+
+### The two gates (both through the `qa/` orchestrator)
+
+Every iteration runs the fast deterministic gate; only when it is green does the
+live exit gate run:
+
+```bash
+# Fast gate (every iteration): suites + review invariants INV-1..8, no live tools.
+qa/run_autonomous_qa.sh --skip-tools
+
+# Live exit gate (only after the fast gate passes): the live manifest, tools phase
+# heals audio injection, review already ran in the fast gate so it is skipped.
+QA_CONFIG=qa/qa.live.config.mjs qa/run_autonomous_qa.sh --skip-review
+```
+
+The live gate's `live-session` suite launches the 3-party rig + detector once
+([`research/meet-dom-detector/live/run-live-qa.mjs`](research/meet-dom-detector/live/run-live-qa.mjs)),
+runs `ax-events-live` / `cpu-compare-live` / `regression-live` back-to-back, and
+writes one NDJSON verdict line per scenario to
+`research/meet-dom-detector/live/live-qa-results.ndjson`; three reader suites gate on
+`"verdict":"PASS"` for their scenario (via
+[`qa/live-scenario-verdict.mjs`](qa/live-scenario-verdict.mjs)).
+
+### Flow + iteration cap
+
+`MAX_ITERS = 3` (override with `maxIters`). Each iteration: **fast QA** → on pass
+**live QA** → on pass **reviewer** (assesses *QA sufficiency*, not the product —
+decay-timing edges, missed transition types, observer-callback races that can only be
+proven with pure self-tests). A failing gate or an unresolved reviewer gap routes a
+failure report to a **fix** agent and loops back. Exit is `GREEN` (all gates green +
+no unresolved gaps) or `ITER_CAP` after 3 iterations; on `GREEN` a report is written to
+`docs/qa-report-event-driven-2026-07.md`.
+
+### Loop log (`qa/loop-log.ndjson`)
+
+Every phase appends exactly one NDJSON line so the whole history is auditable:
+
+```json
+{"iteration":0,"phase":"implement-qa","verdict":"pass","failures":[],"ts":1751600000}
+```
+
+- `iteration` — 0 for the implement phase, then 0..MAX_ITERS-1 as the loop turns.
+- `phase` — `implement-swift` | `implement-qa` | `qa-deterministic` | `qa-live` |
+  `fix` | `review` | `exit`.
+- `verdict` — `pass` | `fail` | `done` | `gaps` (and `GREEN` | `ITER_CAP` on the final
+  `exit` line).
+- `failures` — suite/invariant ids or short reviewer-gap strings.
+- `ts` — unix seconds.
+
+### Model routing
+
+Implement / fix / reviewer agents run on **Opus** (hard reasoning); the QA-runner and
+report/log agents inherit the session model (**Fable**) at low effort (mechanical: run
+the command, parse the output into the schema). The loop/routing logic itself is
+deterministic JS orchestrated from the Fable session.
+
+### Re-run it
+
+The workflow takes three args:
+
+- `planFile` — the plan the agents implement/verify against (defaults to the
+  event-driven-ring plan).
+- `maxIters` — iteration cap (default 3).
+- `skipImplement` — set `true` to skip Phase 1 and loop QA/fix/review on **existing**
+  code (e.g. after a manual tweak, or to re-verify a landed change).
+
+So `{ skipImplement: true }` re-runs just the QA/fix/review loop against whatever is
+currently in the tree.
