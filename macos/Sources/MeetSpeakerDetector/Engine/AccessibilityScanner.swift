@@ -125,6 +125,30 @@ final class AccessibilityScanner {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
+    /// CAPTURE FIX (2026-07-03) — force-activate the target process by PID before the
+    /// AX read so Chrome materializes the LIVE equalizer state.
+    ///
+    /// NOTE: the user asked for this "in MeetActiveSpeaker.swift", but that file is
+    /// PURE logic (Foundation only, unit-testable, no AppKit) — the correct home for
+    /// an activation side-effect is here in the scanner, which already owns every AX
+    /// I/O call. MeetActiveSpeaker.swift carries a one-line pointer back to this.
+    ///
+    /// The AXManualAccessibility / AXEnhancedUserInterface flags alone are NOT
+    /// sufficient: Chrome only publishes the animating equalizer classes when its
+    /// window is genuinely frontmost, and System Events' set-frontmost snaps back to a
+    /// different same-bundle background Chrome. `NSRunningApplication.activate` targets
+    /// THIS exact PID. AppKit-guarded so the SpeakerCore logic stays platform-portable.
+    static func forceActivateForCapture(pid: pid_t) {
+        #if canImport(AppKit)
+        guard let running = NSRunningApplication(processIdentifier: pid) else { return }
+        if #available(macOS 14.0, *) {
+            running.activate()
+        } else {
+            running.activate(options: [.activateIgnoringOtherApps])
+        }
+        #endif
+    }
+
     // MARK: Scan
 
     func scan() -> [ScannedWindow] {
@@ -147,6 +171,12 @@ final class AccessibilityScanner {
             if isBrowser || isNative {
                 AXUIElementSetAttributeValue(axApp, "AXManualAccessibility" as CFString, kCFBooleanTrue)
                 AXUIElementSetAttributeValue(axApp, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+                // CAPTURE FIX (2026-07-03): the AXManual/AXEnhanced flags alone are NOT
+                // enough to read the LIVE equalizer state — Chrome only materializes it
+                // when the window is genuinely frontmost. Force-activate the target PID
+                // directly (System Events "set frontmost" snaps back to a same-bundle
+                // background Chrome). See `forceActivateForCapture`.
+                Self.forceActivateForCapture(pid: app.processIdentifier)
             }
             // Native Zoom: resolve the local user's "(me)" name ONCE across all the
             // app's windows (the Participants panel may be a separate window from the
@@ -779,42 +809,113 @@ final class AccessibilityScanner {
 
         // One entry per name; keep the largest tile (the real video tile, not a
         // tiny duplicate label). Track frame for geometry + reading order.
-        struct Acc { var area: Double; var speaking: Bool; var focused: Bool; var isMe: Bool; var minY: CGFloat; var minX: CGFloat }
+        struct Acc { var area: Double; var speaking: Bool; var equalizer: Bool; var focused: Bool; var isMe: Bool; var minY: CGFloat; var minX: CGFloat }
         var byName: [String: Acc] = [:]
         var captionFrames: [CGRect] = []
         func consider(_ tile: AXUIElement, _ name: String) {
             let frame = axFrame(tile) ?? .zero
             let area = Double(frame.width * frame.height)
             let speaking = meetTileIsSpeaking(classTokens: tileClassTokens(tile), rules: meetRules)
+            let equalizer = meetTileEqualizerSpeaking(tile)
             let focused = meetTileFocused(tile)
             // Self: prefer the account name-match (the `(You)` label was removed from
             // the current-build AX tree, 2026-07-03); fall back to the legacy check.
             let isMe = meetTileIsSelf(tile) || meetNameIsSelf(name)
             if let ex = byName[name], ex.area >= area { return }
-            byName[name] = Acc(area: area, speaking: speaking, focused: focused, isMe: isMe, minY: frame.minY, minX: frame.minX)
+            byName[name] = Acc(area: area, speaking: speaking, equalizer: equalizer, focused: focused, isMe: isMe, minY: frame.minY, minX: frame.minX)
         }
 
-        // Captions first — the authoritative display name.
-        for (node, name) in captionNodes {
-            guard let tile = meetTileAncestor(of: node) else { continue }
-            captionFrames.append(axFrame(tile) ?? .zero)
-            consider(tile, name)
+        // MULTI-PATTERN STRUCTURAL ALLOWLIST (class-free + geometry-free): a name is a
+        // real participant only if corroborated by a structural signal, so browser
+        // chrome / toasts / the "More actions" overflow / "Camera is off" overlay can't
+        // be harvested even when they slip past the name blocklist. Signals (union):
+        //   P1 — the People-panel roster (viewer-independent when the panel is open).
+        //   P2 — the caption's TILE contains a per-tile mic/audio indicator or a
+        //        name-embedding control (meetTileHasParticipantEvidence).
+        //   (a control label is itself P2 evidence.)
+        // Tiles are resolved by TREE POSITION (meetTileBlock), never absolute pixels.
+        // GRACEFUL FALLBACK: if no structural signal exists anywhere (empty roster AND
+        // no tile shows evidence — e.g. a partial tree that pruned the indicators), we
+        // accept the legacy way so we never regress to zero participants.
+        let roster = Set(meetPanelRoster(in: window).map { $0.lowercased() })
+        struct Cand { let tile: AXUIElement; let name: String; let isControl: Bool; let frame: CGRect; let evidence: Bool; let inRoster: Bool }
+        var cands: [Cand] = []
+        for (isControl, list) in [(false, captionNodes), (true, controlNodes)] {
+            for (node, name) in list {
+                guard let tile = meetTileAncestor(of: node) else { continue }
+                let ev = isControl ? true : meetTileHasParticipantEvidence(tile)
+                cands.append(Cand(tile: tile, name: name, isControl: isControl,
+                                  frame: axFrame(tile) ?? .zero, evidence: ev,
+                                  inRoster: roster.contains(name.lowercased())))
+            }
         }
-        // Control labels ONLY for a tile that produced no caption (the nameless PIP
-        // tile — the reported "Wedding Thapas speaking shows Bibek" case).
-        for (node, name) in controlNodes {
-            guard let tile = meetTileAncestor(of: node) else { continue }
-            let frame = axFrame(tile) ?? .zero
-            if captionFrames.contains(where: { $0 == frame }) { continue }
-            consider(tile, name)
+        let anyStructural = !roster.isEmpty || cands.contains { $0.evidence }
+        func accept(_ c: Cand) -> Bool { !anyStructural || c.inRoster || c.evidence }
+        // Captions first — the authoritative display name.
+        for c in cands where !c.isControl && accept(c) {
+            captionFrames.append(c.frame)
+            consider(c.tile, c.name)
+        }
+        // Control labels ONLY for a tile that produced no caption (nameless PIP tile).
+        for c in cands where c.isControl && accept(c) {
+            if captionFrames.contains(where: { $0 == c.frame }) { continue }
+            consider(c.tile, c.name)
         }
 
         let ordered = byName.sorted { ($0.value.minY, $0.value.minX) < ($1.value.minY, $1.value.minX) }
         let tiles = ordered.enumerated().map { i, kv in
             MeetTileObservation(name: kv.key, area: kv.value.area, orderIndex: i,
-                                classSpeaking: kv.value.speaking, isFocused: kv.value.focused, isMe: kv.value.isMe)
+                                classSpeaking: kv.value.speaking, isFocused: kv.value.focused,
+                                isMe: kv.value.isMe, equalizerSpeaking: kv.value.equalizer)
         }
         return (tiles, ordered.map { $0.key })
+    }
+
+    /// Per-tile STRUCTURAL evidence that this is a REAL participant tile (class-free):
+    ///  (a) it holds a per-tile audio/mic INDICATOR — an equalizer-anchor node
+    ///      (`rules.equalizerAnchorClasses` = {DYfzY,IisKdb,QgSmzd}); OR
+    ///  (b) it holds a per-participant CONTROL whose AXDescription embeds a name
+    ///      ("More options for <Name>" / "Pin <Name>…" / "Mute <Name>'s microphone").
+    /// Browser chrome, toasts, the "More actions" overflow and the "Camera is off"
+    /// overlay have NEITHER, so their name-like text is rejected as a participant.
+    /// Bounded shallow walk (mirrors `meetTileEqualizerSpeaking`).
+    private func meetTileHasParticipantEvidence(_ tile: AXUIElement) -> Bool {
+        var found = false, n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if found || n >= 800 || d > 40 { return }
+            n += 1
+            let cl = Set(axClassList(el))
+            if meetRules.equalizerAnchorClasses.contains(where: { cl.contains($0) }) { found = true; return }
+            for attr in ["AXDescription", "AXTitle"] {
+                if let raw = axString(el, attr), meetParticipantNameFromControl(raw, rules: meetRules) != nil {
+                    found = true; return
+                }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found { return } }
+        }
+        rec(tile, 0)
+        return found
+    }
+
+    /// PROTOTYPE (fresh-capture 2026-07-03): true if ANY descendant of this tile is a
+    /// SPEAKING equalizer node — a node whose `AXDOMClassList` satisfies
+    /// `meetNodeIsSpeakingEqualizer` (anchor {DYfzY,IisKdb,QgSmzd} present, silence
+    /// class `gjg47c` ABSENT). Per-NODE (not the tile's unioned tokens) because the
+    /// speaking/silence classes co-live on the SAME equalizer node — unioning the
+    /// whole tile would mask the silence class when a sibling caption node lacks it.
+    /// Bounded shallow walk, mirrors `meetTileFocused`.
+    private func meetTileEqualizerSpeaking(_ tile: AXUIElement) -> Bool {
+        var found = false, n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if found || n >= 800 || d > 40 { return }
+            n += 1
+            if meetNodeIsSpeakingEqualizer(classList: axClassList(el), rules: meetRules) {
+                found = true; return
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found { return } }
+        }
+        rec(tile, 0)
+        return found
     }
 
     /// Extract a participant name from a per-tile control's accessible label. Meet
