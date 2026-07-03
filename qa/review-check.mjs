@@ -153,8 +153,10 @@ guard('INV-6 decay time-injected', () => {
 guard('INV-7 live manifest not in CI', () => {
   const ci = readOrNull('.github/workflows/meet-detector-qa.yml');
   if (ci == null) { fail('INV-7 live manifest not in CI', 'CI workflow .github/workflows/meet-detector-qa.yml is missing'); return; }
-  if (/qa\.live\.config\.mjs/.test(ci)) fail('INV-7 live manifest not in CI', 'CI references qa.live.config.mjs — the live gate would try to launch Chrome/detector in CI');
-  else pass('INV-7 live manifest not in CI', 'CI does not reference qa.live.config.mjs');
+  for (const manifest of ['qa.live.config.mjs', 'qa.teams.config.mjs']) {
+    if (new RegExp(manifest.replace(/\./g, '\\.')).test(ci)) fail('INV-7 live manifest not in CI', `CI references ${manifest} — the live gate would try to launch apps in CI`);
+    else pass('INV-7 live manifest not in CI', `CI does not reference ${manifest}`);
+  }
 });
 
 // INV-8 — the A/B flag is wired in the engine: the source handles BOTH MSD_MODE=event
@@ -175,6 +177,75 @@ guard('INV-8 A/B flag wired', () => {
   const handlesLegacy = /"legacy"|'legacy'|\.legacy\b|== *"legacy"/.test(all) || /eventDrivenMeet/.test(all); // legacy = the eventDrivenMeet=false default path
   if (handlesMode && handlesEvent && handlesLegacy) pass('INV-8 A/B flag wired', 'engine handles MSD_MODE=event and legacy');
   else fail('INV-8 A/B flag wired', `engine A/B flag incomplete (MSD_MODE:${handlesMode} event:${handlesEvent} legacy:${handlesLegacy}) — cpu-compare cannot A/B`);
+});
+
+// INV-9 — Teams speaking is CLASS-FREE (docs/teams-active-speaker-detection.md §7:
+// no passive who-is-speaking signal exists). The builtin rules must ship an EMPTY
+// speakingClasses — `vdi-frame-occlusion` (a video-placement token that shipped
+// briefly as a speaking class) must never return outside a comment — and the
+// self-test must assert the emptiness so a config regression fails loudly.
+guard('INV-9 teams class-free', () => {
+  const src = readOrNull('macos/Sources/SpeakerCore/TeamsSpeakerRules.swift');
+  if (src == null) { fail('INV-9 teams class-free', 'TeamsSpeakerRules.swift is missing'); return; }
+  const stripped = stripComments(src);
+  if (/speakingClasses:\s*\[\s*\]/.test(stripped)) pass('INV-9 teams class-free', 'builtin speakingClasses is empty');
+  else fail('INV-9 teams class-free', 'builtin speakingClasses is NOT empty — a CSS/DOM class decides Teams speaking again');
+  if (/vdi-frame-occlusion/.test(stripped)) fail('INV-9 teams class-free', 'vdi-frame-occlusion re-appeared outside a comment (it tracks video frames, not the speaker)');
+  else pass('INV-9 teams class-free', 'vdi-frame-occlusion only referenced in comments');
+  const tests = stripComments(readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '');
+  if (/speakingClasses\.isEmpty/.test(tests)) pass('INV-9 teams class-free', 'self-test asserts speakingClasses.isEmpty');
+  else fail('INV-9 teams class-free', 'no self-test asserts builtin speakingClasses.isEmpty');
+});
+
+// INV-10 — Teams attribution paths exclude the SELF tile (the exact bug INV-1/5
+// guard on Meet): the structural path must filter isMe, the geometry path must
+// refuse a self winner, and a token-on-self self-test must exist.
+guard('INV-10 teams self-exclusion', () => {
+  const src = readOrNull('macos/Sources/SpeakerCore/TeamsActiveSpeaker.swift');
+  if (src == null) { fail('INV-10 teams self-exclusion', 'TeamsActiveSpeaker.swift is missing'); return; }
+  const stripped = stripComments(src);
+  const m = /filter\s*\{([^}]*isSpeaking[^}]*)\}/.exec(stripped);
+  if (!m) fail('INV-10 teams self-exclusion', 'structural isSpeaking predicate not found (refactored? tighten the matcher)');
+  else if (/!\s*\$0\.isMe|isMe\s*==\s*false/.test(m[1])) pass('INV-10 teams self-exclusion', 'structural path excludes self');
+  else fail('INV-10 teams self-exclusion', 'structural path does NOT exclude the self tile — it can name the local user');
+  if (/isMe\s*!=\s*true/.test(stripped)) pass('INV-10 teams self-exclusion', 'geometry (promoted) excludes self');
+  else fail('INV-10 teams self-exclusion', 'geometry path does NOT exclude the self tile');
+  const tests = stripComments(readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '');
+  if (/isSpeaking:\s*true,\s*isMe:\s*true/.test(tests)) pass('INV-10 teams self-exclusion', 'a token-on-SELF self-test exists');
+  else fail('INV-10 teams self-exclusion', 'no token-on-SELF self-test (expected an isSpeaking:true, isMe:true tile asserted unnamed)');
+});
+
+// INV-11 — the Teams deterministic loop replays the REAL captured fixtures. The
+// committed distillations must exist and the self-test must load each — deleting a
+// fixture (or the loader) silently un-tests a whole matrix cell.
+guard('INV-11 teams fixture replay', () => {
+  const fixtures = [
+    'native-2p-share-cameraoff-remote',
+    'native-3p-sidegallery-share',
+    'native-home-meet-tab-negative',
+  ];
+  const tests = stripComments(readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '');
+  for (const f of fixtures) {
+    if (readOrNull(`macos/Fixtures/teams/${f}.json`) == null) fail('INV-11 teams fixture replay', `macos/Fixtures/teams/${f}.json is missing`);
+    else if (tests.includes(`loadTeamsFixture("${f}")`)) pass('INV-11 teams fixture replay', `${f} exists + replayed in the self-test`);
+    else fail('INV-11 teams fixture replay', `${f}.json exists but is never replayed by the self-test`);
+  }
+});
+
+// INV-12 — ONE Teams extractor. The scanner must consume the pure
+// SpeakerCore.teamsExtractWindow (what the fixtures replay), never a second
+// AX-side reimplementation (the drift the Meet subtree scan already solved);
+// and the pure module must stay AppKit-free or the fixture replay dies.
+guard('INV-12 teams single extractor', () => {
+  const scanner = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/Engine/AccessibilityScanner.swift') || '');
+  if (/teamsExtractWindow\s*\(/.test(scanner)) pass('INV-12 teams single extractor', 'scanner consumes SpeakerCore.teamsExtractWindow');
+  else fail('INV-12 teams single extractor', 'scanner does not call teamsExtractWindow — Teams extraction forked from the tested path');
+  if (/isTeamsParticipantTile|teamsTileObservations/.test(scanner)) fail('INV-12 teams single extractor', 'scanner still carries a second Teams tile extractor (isTeamsParticipantTile/teamsTileObservations) — drift risk');
+  else pass('INV-12 teams single extractor', 'no duplicate Teams tile extractor in the scanner');
+  const pure = stripComments(readOrNull('macos/Sources/SpeakerCore/TeamsTileExtraction.swift') || '');
+  if (!pure) fail('INV-12 teams single extractor', 'TeamsTileExtraction.swift is missing');
+  else if (/import\s+(AppKit|ApplicationServices|CoreGraphics)/.test(pure)) fail('INV-12 teams single extractor', 'TeamsTileExtraction.swift imports AX/AppKit — no longer pure/fixture-replayable');
+  else pass('INV-12 teams single extractor', 'TeamsTileExtraction.swift is Foundation-only (fixture-replayable)');
 });
 
 // --- report ---------------------------------------------------------------
