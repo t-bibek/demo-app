@@ -39,6 +39,15 @@ func intFlag(_ name: String, _ def: Int) -> Int {
     guard let i = args.firstIndex(of: name), i + 1 < args.count, let v = Int(args[i + 1]) else { return def }
     return v
 }
+func stringFlag(_ name: String) -> String? {
+    guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
+    return args[i + 1]
+}
+// --url <substring>: when several Chrome instances are open (e.g. a personal
+// Chrome + a separate --user-data-dir meeting Chrome), filter the collected web
+// areas to those whose AXURL contains this substring so the caller targets the
+// exact meeting (e.g. --url cyv-efne-fgr or --url meet.google.com).
+let urlFilter = stringFlag("--url")?.lowercased()
 // NO depth limit by default — the walk follows the tree to its natural leaves and
 // returns ALL nodes. Pass --depth N to cap it. maxNodes is only a runaway backstop
 // (against a pathological/cyclic native tree), set far above any real app.
@@ -110,6 +119,12 @@ if targetApps.isEmpty {
 }
 
 print("Forcing full a11y tree on: \(targetApps.map { "\($0.name) [\($0.kind)]" }.joined(separator: ", "))")
+// Multiple Chrome PROCESSES share the com.google.Chrome bundle id (a personal
+// Chrome + a separate --user-data-dir meeting Chrome). The meeting tab may live
+// in ANY of them, so note how many we saw — the web-area search below spans all.
+let chromeCount = targetApps.filter { $0.kind == "chrome" }.count
+if chromeCount > 1 { print("Saw \(chromeCount) browser/Chrome process(es) — searching web areas across all of them.") }
+if let f = urlFilter { print("Filtering web areas by --url substring: \"\(f)\"") }
 print("Letting the tree build…")
 usleep(600_000)   // give Chromium/Electron time to materialize the dynamic tree
 
@@ -140,60 +155,85 @@ func meetingLabel(_ url: String) -> String? {
 }
 
 var roots: [Root] = []
-for t in targetApps {
-    switch t.kind {
-    case "chrome":
-        // Root each dump at a web area (the "Chrome tab" tree), not the whole
-        // browser window — skips the browser chrome. Capture EVERY web area in
-        // EVERY window, with its owning window title, so the document-PIP window
-        // (a separate top-level window whose web area carries NO meet URL) is
-        // dumped too — that's where a popped-out meeting's tiles live.
-        struct WebRoot { let el: AXUIElement; let url: String; let winTitle: String }
-        var found: [WebRoot] = []
-        for win in AX.windows(t.ax) {
-            let wt = AX.string(win, "AXTitle") ?? ""
-            var budget = 8000
-            for area in findWebAreas(win, 0, &budget) {
-                let url = AX.urlString(area, "AXURL") ?? AX.string(area, "AXValue") ?? ""
-                found.append(WebRoot(el: area, url: url, winTitle: wt))
-            }
-        }
-        let meeting = found.filter { meetingLabel($0.url) != nil }
-        for (i, m) in meeting.enumerated() {
-            let suffix = meeting.count > 1 ? "-\(i + 1)" : ""
-            roots.append(Root(label: "chrome-\(meetingLabel(m.url)!)\(suffix)", note: m.url, el: m.el))
-        }
-        // Non-meeting web areas (incl. the URL-less document-PIP window) when chrome
-        // is the explicit target — so the PIP mini-window is captured for diagnosis.
-        if target == "chrome" {
-            let others = found.filter { meetingLabel($0.url) == nil }
-            for (i, a) in others.prefix(8).enumerated() {
-                let note = a.url.isEmpty
-                    ? "window: \(a.winTitle.isEmpty ? "(untitled — PIP?)" : a.winTitle)"
-                    : a.url
-                roots.append(Root(label: "chrome-other\(i + 1)", note: note, el: a.el))
-            }
-            if meeting.isEmpty {
-                print("⚠️  No meeting tab found — dumping \(min(others.count, 8)) other web area(s), incl. any PIP window.")
-            }
-        }
-        if found.isEmpty {
-            print("⚠️  \(t.name): no web area found. Open Meet/Zoom-web/Teams-web in a tab.")
-        }
 
-    case "zoom", "teams":
-        // Native: dump every window in full (the meeting + the Participants panel
-        // are often separate windows; the user wants all of it).
-        let wins = AX.windows(t.ax)
-        if wins.isEmpty {
-            print("⚠️  \(t.name): no windows exposed.")
+// Chrome: aggregate web areas across ALL matching Chrome PROCESSES before deciding
+// meeting-vs-other. Multiple Chrome instances share the com.google.Chrome bundle id
+// (a user's personal Chrome + a separate --user-data-dir meeting Chrome are two
+// distinct PIDs → two TargetApps). The meeting tab may live in ANY of them, so a
+// per-app decision made the tool dump the FIRST Chrome's personal tabs and print
+// "No meeting tab found" while the real meeting sat in a later Chrome process. We
+// therefore collect across every Chrome app first, and emit the warning ONCE.
+struct WebRoot { let el: AXUIElement; let url: String; let winTitle: String; let appName: String }
+var chromeFound: [WebRoot] = []
+for t in targetApps where t.kind == "chrome" {
+    // Root each dump at a web area (the "Chrome tab" tree), not the whole browser
+    // window — skips the browser chrome. Capture EVERY web area in EVERY window,
+    // with its owning window title, so the document-PIP window (a separate top-
+    // level window whose web area carries NO meet URL) is dumped too — that's
+    // where a popped-out meeting's tiles live.
+    for win in AX.windows(t.ax) {
+        let wt = AX.string(win, "AXTitle") ?? ""
+        var budget = 8000
+        for area in findWebAreas(win, 0, &budget) {
+            let url = AX.urlString(area, "AXURL") ?? AX.string(area, "AXValue") ?? ""
+            chromeFound.append(WebRoot(el: area, url: url, winTitle: wt, appName: t.name))
         }
-        for (i, win) in wins.enumerated() {
-            let title = AX.string(win, "AXTitle") ?? "(untitled)"
-            roots.append(Root(label: "\(t.kind)-native-win\(i + 1)", note: title, el: win))
-        }
+    }
+}
 
-    default: break
+if targetApps.contains(where: { $0.kind == "chrome" }) {
+    // Optional --url filter: keep only web areas whose AXURL contains the substring,
+    // so the caller can target the exact meeting when several Chrome instances are
+    // open. When it filters everything out, fall back to the unfiltered set so the
+    // tool still dumps something rather than going silent.
+    var found = chromeFound
+    if let f = urlFilter {
+        let filtered = chromeFound.filter { $0.url.lowercased().contains(f) }
+        if filtered.isEmpty {
+            print("⚠️  --url \"\(f)\" matched no web area across \(chromeCount) Chrome process(es); ignoring the filter.")
+        } else {
+            found = filtered
+        }
+    }
+
+    // Meeting web areas found in ANY Chrome process — the definitive answer to "is a
+    // meeting open", so the no-meeting warning below keys off this aggregate, not a
+    // single process.
+    let meeting = found.filter { meetingLabel($0.url) != nil }
+    for (i, m) in meeting.enumerated() {
+        let suffix = meeting.count > 1 ? "-\(i + 1)" : ""
+        roots.append(Root(label: "chrome-\(meetingLabel(m.url)!)\(suffix)", note: m.url, el: m.el))
+    }
+    // Non-meeting web areas (incl. the URL-less document-PIP window) when chrome
+    // is the explicit target — so the PIP mini-window is captured for diagnosis.
+    if target == "chrome" {
+        let others = found.filter { meetingLabel($0.url) == nil }
+        for (i, a) in others.prefix(8).enumerated() {
+            let note = a.url.isEmpty
+                ? "window: \(a.winTitle.isEmpty ? "(untitled — PIP?)" : a.winTitle) [\(a.appName)]"
+                : a.url
+            roots.append(Root(label: "chrome-other\(i + 1)", note: note, el: a.el))
+        }
+        // Only warn when NO meeting web area exists in ANY Chrome process.
+        if meeting.isEmpty {
+            print("⚠️  No meeting tab found — dumping \(min(others.count, 8)) other web area(s), incl. any PIP window.")
+        }
+    }
+    if chromeFound.isEmpty {
+        print("⚠️  No web area found in any Chrome process. Open Meet/Zoom-web/Teams-web in a tab.")
+    }
+}
+
+// Native zoom/teams: dump every window in full, per app (the meeting + the
+// Participants panel are often separate windows; the user wants all of it).
+for t in targetApps where t.kind == "zoom" || t.kind == "teams" {
+    let wins = AX.windows(t.ax)
+    if wins.isEmpty {
+        print("⚠️  \(t.name): no windows exposed.")
+    }
+    for (i, win) in wins.enumerated() {
+        let title = AX.string(win, "AXTitle") ?? "(untitled)"
+        roots.append(Root(label: "\(t.kind)-native-win\(i + 1)", note: title, el: win))
     }
 }
 
@@ -331,11 +371,109 @@ final class Walker {
     }
 }
 
-// MARK: - Readable indented text view
+// MARK: - Participant ROW / SUB-ROW marking
+//
+// A participant TILE is a node whose AXDOMClassList carries `oZRSLe` (Meet's
+// stable tile class — held across every observed class rotation). The PROMOTED
+// slot is any tile with a `kssMZb` ANCESTOR (Meet wraps the spotlit/auto-promoted
+// tile in a `kssMZb` container). Sub-rows inside a tile are tagged by role/class
+// so the structure of one tile reads at a glance:
+//   name  — AXStaticText (the name pill), or the tile's own AXDescription
+//   meter — the audio-level widget (jsname=QgSmzd / IisKdb / DYfzY / gjg47c)
+//   video — AXImage / AXVideo / the render surface
+// This lets a multi-party dump be diffed across speaker turns to see whether the
+// speaker's tile changes ORDER, becomes PROMOTED (kssMZb), grows in area, or gains
+// focused/selected — the token-free structural pattern the set-diff can't show.
+// SPEAKING itself is NOT in AX (the equalizer animation is pruned); pair with the
+// DOM capture (research/meet-dom-detector/live/pattern-capture.js) for that.
 
-func renderText(_ n: [String: Any], _ depth: Int, into out: inout String) {
+func classesOf(_ n: [String: Any]) -> [String] { (n["domClassList"] as? [String]) ?? [] }
+func isTileNode(_ n: [String: Any]) -> Bool { classesOf(n).contains("oZRSLe") }
+func hasAnyClass(_ n: [String: Any], _ toks: [String]) -> Bool {
+    let c = Set(classesOf(n)); return toks.contains { c.contains($0) }
+}
+func subRowKind(_ n: [String: Any]) -> String? {
+    let role = n["role"] as? String ?? ""
+    if hasAnyClass(n, ["QgSmzd", "IisKdb", "DYfzY", "gjg47c"]) || (n["domIdentifier"] as? String) == "QgSmzd" { return "meter" }
+    if role == "AXStaticText", (n["value"] as? String)?.isEmpty == false { return "name" }
+    if role == "AXImage" || role == "AXVideo" { return "video" }
+    return nil
+}
+
+struct TileRow {
+    var idx: Int; var name: String
+    var x: Double; var y: Double; var w: Double; var h: Double; var area: Double
+    var promoted: Bool; var focused: Bool; var selected: Bool
+}
+/// The tile's participant name: `.oZRSLe`'s own AXDescription (older builds), else
+/// the first descendant AXStaticText value (the name-pill — current build moved
+/// the name off the tile description into a nested static-text node).
+func tileName(_ n: [String: Any]) -> String {
+    if let d = n["description"] as? String, !d.isEmpty { return d }
+    var found: String?
+    func walk(_ x: [String: Any]) {
+        if found != nil { return }
+        if (x["role"] as? String) == "AXStaticText", let v = x["value"] as? String, !v.isEmpty { found = v; return }
+        if let kids = x["children"] as? [Any] { for c in kids { if let cd = c as? [String: Any] { walk(cd) } } }
+    }
+    walk(n)
+    return found ?? "?"
+}
+func collectTiles(_ n: [String: Any], _ inKss: Bool, _ rows: inout [TileRow]) {
+    let nowKss = inKss || classesOf(n).contains("kssMZb")
+    if isTileNode(n) {
+        let f = (n["frame"] as? [String: Double]) ?? [:]
+        let w = f["w"] ?? 0, h = f["h"] ?? 0
+        rows.append(TileRow(idx: rows.count, name: tileName(n),
+                            x: f["x"] ?? 0, y: f["y"] ?? 0, w: w, h: h, area: w * h,
+                            promoted: nowKss, focused: (n["focused"] as? Bool) ?? false,
+                            selected: (n["selected"] as? Bool) ?? false))
+    }
+    if let kids = n["children"] as? [Any] {
+        for c in kids { if let cd = c as? [String: Any] { collectTiles(cd, nowKss, &rows) } }
+    }
+}
+func renderTileRows(_ tree: [String: Any]) -> String {
+    var rows: [TileRow] = []
+    collectTiles(tree, false, &rows)
+    if rows.isEmpty { return "" }
+    var out = "## PARTICIPANT TILE ROWS (.oZRSLe) — DOM order; ★=promoted(kssMZb ancestor)\n"
+    out += "row  name                    x     y     w     h      area   promoted focused selected\n"
+    for r in rows {
+        out += String(format: "%-4d %-22@ %5.0f %5.0f %5.0f %5.0f %9.0f  %@ %@ %@\n",
+                      r.idx, r.name.prefix(22).description, r.x, r.y, r.w, r.h, r.area,
+                      (r.promoted ? "  ★YES " : "   -   "),
+                      (r.focused ? "  YES  " : "   -   "),
+                      (r.selected ? "  YES " : "   -  "))
+    }
+    let byArea = rows.sorted { $0.area > $1.area }
+    if byArea.count >= 2 && byArea[1].area > 0 {
+        let ratio = byArea[0].area / byArea[1].area
+        out += String(format: "→ largest tile: \"%@\" (%.2fx the next). promoted tiles: %@\n",
+                      byArea[0].name, ratio,
+                      rows.filter { $0.promoted }.map { $0.name }.joined(separator: ", "))
+    }
+    return out + "\n"
+}
+
+// MARK: - Readable indented text view (with ROW / SUB-ROW markers)
+
+final class RenderCtx { var tileNo = 0; var tileDepth = -1 }
+
+func renderText(_ n: [String: Any], _ depth: Int, _ inKss: Bool, _ ctx: RenderCtx, into out: inout String) {
     let pad = String(repeating: "  ", count: depth)
-    var parts = [n["role"] as? String ?? "?"]
+    let nowKss = inKss || classesOf(n).contains("kssMZb")
+
+    var tag = ""
+    if isTileNode(n) {
+        ctx.tileNo += 1; ctx.tileDepth = depth
+        tag = "⟦TILE #\(ctx.tileNo) \"\(tileName(n))\"\(nowKss ? " ★PROMOTED" : "")⟧ "
+    } else if ctx.tileDepth >= 0, depth > ctx.tileDepth, let k = subRowKind(n) {
+        tag = "⟦·\(k)⟧ "
+    }
+    if ctx.tileDepth >= 0, depth <= ctx.tileDepth { ctx.tileDepth = -1 }
+
+    var parts = [tag + (n["role"] as? String ?? "?")]
     if let s = n["subrole"] as? String { parts.append("[\(s)]") }
     if let id = n["domIdentifier"] as? String { parts.append("#\(id)") }
     if let cl = n["domClassList"] as? [String], !cl.isEmpty { parts.append("." + cl.joined(separator: ".")) }
@@ -351,7 +489,7 @@ func renderText(_ n: [String: Any], _ depth: Int, into out: inout String) {
         out += pad + "    all-attrs: " + attrs.keys.sorted().joined(separator: ", ") + "\n"
     }
     if let kids = n["children"] as? [Any] {
-        for c in kids { if let cd = c as? [String: Any] { renderText(cd, depth + 1, into: &out) } }
+        for c in kids { if let cd = c as? [String: Any] { renderText(cd, depth + 1, nowKss, ctx, into: &out) } }
     }
 }
 
@@ -385,8 +523,12 @@ for root in roots {
         try? data.write(to: jsonURL)
     }
 
-    var txt = "# \(root.label)\n# \(root.note)\n# \(w.count) nodes\(w.truncated ? " (TRUNCATED — raise --max-nodes/--depth)" : "")\n\n"
-    renderText(tree, 0, into: &txt)
+    var txt = "# \(root.label)\n# \(root.note)\n# \(w.count) nodes\(w.truncated ? " (TRUNCATED — raise --max-nodes/--depth)" : "")\n"
+    txt += "# NOTE: SPEAKING state is NOT in the AX tree (the equalizer animation is pruned from AX).\n"
+    txt += "# These rows expose what AX DOES carry: promoted(kssMZb) / focused / selected / geometry.\n"
+    txt += "# For live speaking ground-truth, pair with the DOM capture (research/meet-dom-detector/live/pattern-capture.js).\n\n"
+    txt += renderTileRows(tree)
+    renderText(tree, 0, false, RenderCtx(), into: &txt)
     let txtURL = outDir.appendingPathComponent("\(root.label).txt")
     try? txt.write(to: txtURL, atomically: true, encoding: .utf8)
 
