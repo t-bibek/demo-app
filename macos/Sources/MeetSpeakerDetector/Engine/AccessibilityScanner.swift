@@ -194,10 +194,16 @@ final class AccessibilityScanner {
                     Self.forceActivateForCapture(pid: app.processIdentifier)
                 }
             }
-            // Native Zoom: resolve the local user's "(me)" name ONCE across all the
-            // app's windows (the Participants panel may be a separate window from the
-            // tiles the roster is read from), then apply it to every roster below.
-            let zoomSelfHint: String? = (bundleID == "us.zoom.xos") ? zoomSelfNameHint(axApp) : nil
+            // Native Zoom: ALL the app's windows fuse into ONE ScannedWindow —
+            // main meeting window + detached Participants panel + PIP + the
+            // app-wide "(me)" self hint — via the PURE SpeakerCore extractor
+            // (zoomExtractWindow/zoomFuseWindows, the same code the fixture
+            // replay exercises). Emitting one window per app is what stops a
+            // detached panel / PIP from double-attributing into zoom::meeting.
+            if Self.nativeApps[bundleID] == .zoom {
+                if let fused = scanZoomNative(axApp) { results.append(fused) }
+                continue
+            }
             // Native Teams: the signed-in user's name from the "Profile picture of
             // <Name>." label (home window), resolved ONCE — the self signal for
             // layouts with no "Myself video" tile (solo call / roster-only panel).
@@ -296,7 +302,7 @@ final class AccessibilityScanner {
                     // (SpeakerCore.teamsExtractWindow) — the same code the fixture
                     // replay in SpeakerCoreSelfTest exercises, so the deterministic
                     // harness tests EXACTLY the shipping extraction (no drift).
-                    let ex = teamsExtractWindow(teamsWindowNode(window), rules: teamsRules,
+                    let ex = teamsExtractWindow(windowNode(window), rules: teamsRules,
                                                 selfHint: teamsSelfHint)
                     // The Teams "Meeting compact view" window is a secondary PIP-like
                     // view — call-control chrome, not participant tiles. Keep the call
@@ -335,32 +341,6 @@ final class AccessibilityScanner {
                         // over the audio mute-gate — it's the same VAD signal shown in
                         // the compact window, and avoids the ambiguous "Someone".
                         pipSpeaker = ex.speakingNote
-                    }
-                } else if platform == .zoom && isNative {
-                    // Native Zoom has no AX speaking signal — read the roster +
-                    // per-participant mute instead (see zoomNativeRoster). ACTIVE call =
-                    // the "Zoom Meeting" / "Meeting -" window (product parity); the
-                    // "Zoom Workplace"/home window is the dock app, not a call. Roster /
-                    // mic control corroborate. Post-call returns to home → gate fails →
-                    // meeting_ended.
-                    zoomRoster = zoomNativeRoster(in: window, selfHint: zoomSelfHint)
-                    let lt = title.lowercased()
-                    let isPip = zoomIsPipWindow(window)
-                    let isMeeting = zoomNativeCallActive(in: window)
-                        || lt.contains("zoom meeting") || lt.contains("meeting -")
-                        || !zoomRoster.isEmpty
-                        || collector.localUserUnmuted != nil
-                        || isPip   // minimised to PIP (any state)
-                    if !isMeeting { continue }
-                    speakers = []   // no direct speaking read on native Zoom
-                    if isPip, zoomRoster.isEmpty {
-                        // PIP thumbnail: no roster, but Zoom names the active speaker
-                        // in "Talking: <name>". Use it directly + as the participant.
-                        let pip = zoomPipContent(in: window)
-                        pipSpeaker = pip.speaker
-                        participants = dedup(pip.names + (pip.speaker.map { [$0] } ?? []))
-                    } else {
-                        participants = dedup(zoomRoster.map { $0.name })
                     }
                 } else if platform == .zoom {
                     // Zoom WEB Client. ACTIVE call = a "Leave"/"End" / participants-list
@@ -507,8 +487,7 @@ final class AccessibilityScanner {
             func rec(_ el: AXUIElement, _ d: Int) {
                 if imgName != nil || d > maxDepth { return }
                 let classes = axClassList(el)
-                if classes.contains("video-avatar__avatar-img")
-                    || classes.contains("video-avatar__avatar-title") {
+                if zoomRules.webAvatarNameClasses.contains(where: { classes.contains($0) }) {
                     for attr in ["AXDescription", "AXTitle", "AXValue"] {
                         if let raw = axString(el, attr), let clean = cleanParticipantName(raw) { imgName = clean; break }
                     }
@@ -527,12 +506,12 @@ final class AccessibilityScanner {
             if n >= maxNodesPerWindow || d > maxDepth { return }
             n += 1
             let classes = axClassList(el)
-            let isBar = classes.contains { $0.hasPrefix("speaker-bar-container__video-frame") }
-            let isBig = classes.contains { $0.hasPrefix("speaker-active-container__video-frame") }
+            let isBar = classes.contains { $0.hasPrefix(zoomRules.webFilmstripFramePrefix) }
+            let isBig = classes.contains { $0.hasPrefix(zoomRules.webBigFramePrefix) }
             if isBar || isBig {
                 if let name = tileName(el) {
                     names.append(name)
-                    if classes.contains("speaker-bar-container__video-frame--active") { barActive = name }
+                    if classes.contains(zoomRules.webActiveClass) { barActive = name }
                     else if isBig { bigActive = name }
                 }
                 return   // a tile is a leaf for our purposes; don't descend further
@@ -701,83 +680,71 @@ final class AccessibilityScanner {
 
     private func axFrame(_ el: AXUIElement) -> CGRect? { AXKit.axFrame(el) }
 
-    // MARK: Native Zoom roster (no AX speaking signal — read roster + mute)
+    // MARK: Native Zoom scan (extraction is pure — SpeakerCore)
 
-    /// Reads native Zoom's Participants-panel rows: each carries text like
-    /// "<Name>, Computer audio muted/unmuted" (verified; docs/zoom-native-detection.md).
-    /// Returns one entry per participant with mute state + a local-user ("(me)")
-    /// flag. Empty when this isn't a meeting window (e.g. the Zoom Workplace home
-    /// shell, whose rows never carry mic-state text).
-    /// The local user's name from Zoom's "(me)" marker, searched across ALL of the
-    /// app's windows — the Participants panel (which carries "(me)") is often a
-    /// DIFFERENT AXWindow than the video-tile window the roster is read from.
-    private func zoomSelfNameHint(_ app: AXUIElement) -> String? {
-        var found: String?
-        var n = 0
-        func rec(_ el: AXUIElement, _ d: Int) {
-            if found != nil || n >= maxNodesPerWindow || d > maxDepth { return }
-            n += 1
-            for attr in ["AXValue", "AXTitle", "AXDescription"] {
-                guard let raw = axString(el, attr) else { continue }
-                let low = raw.lowercased()
-                if low.contains("(me)") || low.contains(", me)") {
-                    let noParen = raw.replacingOccurrences(
-                        of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
-                    if let name = cleanParticipantName(noParen) { found = name; return }
-                }
-            }
-            for c in axArray(el, "AXChildren") { rec(c, d + 1); if found != nil { return } }
-        }
-        for window in axArray(app, "AXWindows") { rec(window, 0); if found != nil { break } }
-        return found
-    }
+    /// Config-loaded Zoom rules (roster/self/PIP text grammar + the web CSS
+    /// tokens): a Zoom release that rewords a phrase is a config drop, not a
+    /// rebuild. Loaded once per scanner.
+    private let zoomRules = ZoomSpeakerRules.resolved()
 
-    private func zoomNativeRoster(in window: AXUIElement, selfHint: String? = nil) -> [ZoomRosterEntry] {
-        var byName: [String: ZoomRosterEntry] = [:]
-        var selfName: String?
-        var n = 0
-        func rec(_ el: AXUIElement, _ depth: Int) {
-            if n >= maxNodesPerWindow || depth > maxDepth { return }
-            n += 1
-            for attr in ["AXDescription", "AXValue", "AXTitle"] {
-                guard let raw = axString(el, attr) else { continue }
-                let low = raw.lowercased()
-                // Local-user marker: Zoom labels the self row "<Name> (me)" /
-                // "(Host, me)" in the Participants panel — often a DIFFERENT node than
-                // the "computer audio" audio-status row, so capture it separately.
-                if selfName == nil, low.contains("(me)") || low.contains(", me)") {
-                    let noParen = raw.replacingOccurrences(
-                        of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
-                    if let name = cleanParticipantName(noParen) { selfName = name }
-                }
-                guard low.contains("computer audio") else { continue }
-                let isMe = low.contains("(me)") || low.contains(", me)")
-                let unmuted = low.contains("audio unmuted")
-                // Strip a trailing "(Host, me)" role tag, then let cleanParticipantName
-                // cut the ", Computer audio …" clause and reject control labels.
-                let noParen = raw.replacingOccurrences(
-                    of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
-                if let name = cleanParticipantName(noParen), byName[name] == nil {
-                    byName[name] = ZoomRosterEntry(name: name, unmuted: unmuted, isMe: isMe)
-                }
-                break
-            }
-            for c in axArray(el, "AXChildren") { rec(c, depth + 1) }
-        }
-        rec(window, 0)
-        // Mark the local user so self speech gets the real roster name (not "You")
-        // and the local user isn't miscounted as a remote (which forced "Someone").
-        // Prefer the in-window "(me)" match; else the app-wide hint (which covers a
-        // detached Participants-panel window).
-        if let resolved = selfName ?? selfHint {
-            if var e = byName[resolved] {
-                e.isMe = true
-                byName[resolved] = e
-            } else {
-                byName[resolved] = ZoomRosterEntry(name: resolved, unmuted: true, isMe: true)
+    /// Scans ALL of native Zoom's windows and fuses them into at most ONE
+    /// ScannedWindow: the roster is UNIONED across the main meeting window and
+    /// a detached Participants panel, "(me)" resolves app-wide, and the PIP's
+    /// "Talking: <name>" note only surfaces when no roster is readable — the
+    /// ladder full roster → PIP note → audio-only "Someone" (B2) unchanged.
+    /// All parsing decisions live in SpeakerCore (zoomExtractWindow /
+    /// zoomFuseWindows), so the fixture replay tests the shipping logic
+    /// byte-for-byte. Returns nil for the Zoom Workplace home shell / no call
+    /// (post-call the gate fails → the window drops → meeting_ended).
+    private func scanZoomNative(_ axApp: AXUIElement) -> ScannedWindow? {
+        let windows = axArray(axApp, "AXWindows")
+        guard !windows.isEmpty else { return nil }
+        let extractions = windows.map { zoomExtractWindow(windowNode($0), rules: zoomRules) }
+        let fusion = zoomFuseWindows(extractions, rules: zoomRules)
+
+        // The generic collector corroborates the in-call gate (the mic control
+        // → localUserUnmuted, product parity) and supplies nodeCount. Run it on
+        // the fused carrier; when fusion found no meeting evidence, probe each
+        // window for the mic control before giving up (mid-title-change ticks).
+        var collector = TreeCollector()
+        var carrierIdx = fusion.carrierIndex
+        if let i = carrierIdx {
+            walk(windows[i], depth: 0, into: &collector)
+        } else {
+            for (i, window) in windows.enumerated() {
+                var c = TreeCollector()
+                walk(window, depth: 0, into: &c)
+                if c.localUserUnmuted != nil { collector = c; carrierIdx = i; break }
             }
         }
-        return Array(byName.values)
+        guard let idx = carrierIdx else { return nil }
+
+        // PIP-only mode: no roster anywhere → the "Talking:" note names the
+        // speaker and supplies the participant; otherwise the fused roster does.
+        let participants = fusion.pipSpeaker != nil
+            ? dedup(fusion.pipNames + fusion.pipSpeaker.map { [$0] }!)
+            : dedup(fusion.roster.map { $0.name })
+
+        let title = axString(windows[idx], "AXTitle") ?? ""
+        return ScannedWindow(
+            platform: .zoom,
+            title: title.isEmpty ? Platform.zoom.label : title,
+            url: nil,
+            nodeCount: collector.nodeCount,
+            treeOk: true,   // native Zoom's tiny tree is normal and reports OK
+            speakers: [],   // no direct speaking read on native Zoom
+            participants: participants,
+            localUserUnmuted: collector.localUserUnmuted,
+            directSpeakerRead: false,
+            zoomRoster: fusion.roster,
+            meetTiles: [],
+            presentationActive: false,
+            teamsTiles: [],
+            teamsRoster: [],
+            pipSpeaker: fusion.pipSpeaker,
+            zoomWebSpeaker: nil,
+            keepAliveOnly: false
+        )
     }
 
     // MARK: Google Meet per-tile active-speaker scan
@@ -1044,92 +1011,13 @@ final class AccessibilityScanner {
             n += 1
             if let role = axString(el, "AXRole") {
                 if role == "AXButton", let desc = axString(el, "AXDescription")?.lowercased() {
-                    if desc == "end" || desc == "leave"
-                        || desc.contains("manage participants list")
-                        || desc.contains("participants list pane")
-                        || desc.contains("the participants list") {
+                    if zoomRules.webCallExactButtonLabels.contains(desc)
+                        || zoomRules.webCallButtonMarkers.contains(where: { desc.contains($0) }) {
                         active = true; return
                     }
                 }
                 if role == "AXList", let desc = axString(el, "AXDescription")?.lowercased(),
-                   desc.contains("participants list") {
-                    active = true; return
-                }
-            }
-            for c in axArray(el, "AXChildren") { rec(c, d + 1); if active { return } }
-        }
-        rec(window, 0)
-        return active
-    }
-
-    /// Zoom's Picture-in-Picture thumbnail. Verified via AXDump: it's a floating
-    /// window with SUBROLE "AXSystemDialog", a "Talking:" active-speaker indicator
-    /// and a "Show video render" button. Its title is "Zoom" when expanded but
-    /// EMPTY when collapsed, so key on the subrole + that content (not the title) —
-    /// both states then keep the call alive, and the meeting ends only once this
-    /// window closes. Its AX tree lacks the roster / Leave button / mic control the
-    /// main window exposes, so this is the only "still in the call" signal in PIP.
-    /// Reads the Zoom PIP thumbnail's content: the active speaker from its
-    /// "Talking: <name>" static text (Zoom's own VAD), plus any participant-name
-    /// label shown. Static-text only, so the "Show video render" button doesn't leak
-    /// in. `speaker` is nil when nobody is talking.
-    private func zoomPipContent(in window: AXUIElement) -> (speaker: String?, names: [String]) {
-        var speaker: String?
-        var names: [String] = []
-        var seen = Set<String>()
-        var n = 0
-        func rec(_ el: AXUIElement, _ d: Int) {
-            if n >= 800 || d > 20 { return }
-            n += 1
-            if axString(el, "AXRole") == "AXStaticText",
-               let raw = axString(el, "AXValue") ?? axString(el, "AXTitle"), !raw.isEmpty {
-                if let r = raw.range(of: "talking:", options: .caseInsensitive) {
-                    let after = String(raw[r.upperBound...]).trimmingCharacters(in: .whitespaces)
-                    if !after.isEmpty, let clean = cleanParticipantName(after) { speaker = clean }
-                } else if let clean = cleanParticipantName(raw), seen.insert(clean).inserted {
-                    names.append(clean)
-                }
-            }
-            for c in axArray(el, "AXChildren") { rec(c, d + 1) }
-        }
-        rec(window, 0)
-        return (speaker ?? names.first, names)
-    }
-
-    private func zoomIsPipWindow(_ window: AXUIElement) -> Bool {
-        guard axString(window, "AXSubrole") == "AXSystemDialog" else { return false }
-        var isPip = false
-        var n = 0
-        func rec(_ el: AXUIElement, _ d: Int) {
-            if isPip || n >= 800 || d > 20 { return }
-            n += 1
-            for attr in ["AXValue", "AXDescription", "AXHelp"] {
-                if let s = axString(el, attr)?.lowercased(),
-                   s.contains("talking") || s.contains("video render") || s.contains("show video") {
-                    isPip = true; return
-                }
-            }
-            for c in axArray(el, "AXChildren") { rec(c, d + 1); if isPip { return } }
-        }
-        rec(window, 0)
-        return isPip
-    }
-
-    /// Native Zoom in-call check: a "Leave"/"End Meeting" button in the meeting
-    /// window's controls. Complements the "Zoom Meeting" window-title signal so the
-    /// call is recognised as active even mid-title-change, and drops to inactive
-    /// (→ meeting_ended) once you leave and Zoom returns to the home window.
-    private func zoomNativeCallActive(in window: AXUIElement) -> Bool {
-        var active = false
-        var n = 0
-        func rec(_ el: AXUIElement, _ d: Int) {
-            if active || n >= maxNodesPerWindow || d > maxDepth { return }
-            n += 1
-            if let role = axString(el, "AXRole"), role == "AXButton" {
-                let label = ((axString(el, "AXTitle") ?? "") + " "
-                    + (axString(el, "AXDescription") ?? "")).lowercased()
-                if label.contains("leave meeting") || label.contains("end meeting")
-                    || label.contains("leave") {
+                   desc.contains(zoomRules.webCallListToken) {
                     active = true; return
                 }
             }
@@ -1296,12 +1184,13 @@ final class AccessibilityScanner {
         return found
     }
 
-    /// Converts a Teams window's AX subtree into the platform-free `TeamsAXNode`
-    /// tree that `SpeakerCore.teamsExtractWindow` consumes — the ONLY Teams AX
-    /// read. All tile/self/mute/roster/call-gate decisions live in the pure
-    /// extractor so the fixture replay in SpeakerCoreSelfTest exercises the
-    /// shipping logic byte-for-byte. Bounded like every other window walk.
-    private func teamsWindowNode(_ window: AXUIElement) -> TeamsAXNode {
+    /// Converts a window's AX subtree into the platform-free node tree the PURE
+    /// SpeakerCore extractors consume (`teamsExtractWindow`, `zoomExtractWindow`)
+    /// — the ONLY AX read on those paths. All tile/self/mute/roster/call-gate
+    /// decisions live in the pure extractors so the fixture replay in
+    /// SpeakerCoreSelfTest exercises the shipping logic byte-for-byte. Bounded
+    /// like every other window walk.
+    private func windowNode(_ window: AXUIElement) -> TeamsAXNode {
         var visited = 0
         func rec(_ el: AXUIElement, _ depth: Int) -> TeamsAXNode {
             visited += 1
@@ -1316,7 +1205,8 @@ final class AccessibilityScanner {
             return TeamsAXNode(
                 role: axString(el, "AXRole"), subrole: axString(el, "AXSubrole"),
                 desc: axString(el, "AXDescription"), title: axString(el, "AXTitle"),
-                value: axString(el, "AXValue"), classes: axClassList(el),
+                value: axString(el, "AXValue"), help: axString(el, "AXHelp"),
+                classes: axClassList(el),
                 x: frame.map { Double($0.minX) }, y: frame.map { Double($0.minY) },
                 w: frame.map { Double($0.width) }, h: frame.map { Double($0.height) },
                 children: children)
