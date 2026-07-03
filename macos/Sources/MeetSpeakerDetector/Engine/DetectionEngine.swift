@@ -40,6 +40,13 @@ final class DetectionEngine {
     private var meetNamed = 0        // ticks a remote/active tile was named via AX (geometry/class)
     private var meetSomeone = 0      // ticks attributed to anonymous "Someone" (speech, no AX attribution)
     private var meetClassFired = 0   // ticks the strict kssMZb class matched (rotation monitor)
+    // someoneGrace debounce: the kssMZb ring lags VAD by its own render/AX-refresh
+    // latency, so we DON'T conclude "Someone" the instant AX misses — we hold the
+    // floor for `someoneGraceMs` first, so a ring that's about to appear names the
+    // real speaker instead of flashing "Someone". `meetSomeoneUnattributedSince` is
+    // the ts speech first went unattributed in the current run (nil = attributed/silent).
+    private var meetSomeoneUnattributedSince: Int?
+    private let someoneGraceMs = 750
 
     // Teams fused-resolver state (mirrors Meet): last tile areas + telemetry.
     private var teamsPrevAreas: [String: Double] = [:]
@@ -237,11 +244,21 @@ final class DetectionEngine {
                 }
 
                 // Confirmed speech but AX attributed nobody and self wasn't added →
-                // anonymous floor. Only when audio confirms speech (no Someone spam
-                // when we can't even tell anyone is talking).
-                if r.via == .someoneFloor && who.isEmpty && audioReliable {
-                    add("Someone", "meet.someone")
-                    meetSomeone += 1
+                // anonymous floor, DEBOUNCED. The kssMZb ring lags VAD, so instead of
+                // concluding "Someone" the instant AX misses, hold the floor for
+                // someoneGraceMs; if a real name is attributed within that window we
+                // never emit Someone (the ring caught up). Reset the timer the moment
+                // anyone is named this tick or speech stops.
+                if !who.isEmpty || r.via == .none {
+                    meetSomeoneUnattributedSince = nil
+                } else if r.via == .someoneFloor && audioReliable {
+                    let since = meetSomeoneUnattributedSince ?? now
+                    meetSomeoneUnattributedSince = since
+                    if now - since >= someoneGraceMs {
+                        add("Someone", "meet.someone")
+                        meetSomeone += 1
+                    }
+                    // else: within grace — hold, don't emit Someone yet.
                 }
                 meetPrevAreas = Dictionary(w.meetTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
             } else if w.platform == .teams {
