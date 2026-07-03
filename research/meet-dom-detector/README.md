@@ -24,19 +24,19 @@ or the obfuscated speaking class.
 - `cdp-capture.js` — zero-dependency CDP driver to dump a live Meet DOM for verification.
 - `browser-qa/` — **real-browser QA**: `meet-sim.html` (faithful Meet-DOM simulator with real CSS
   animations), `dom-detector.js` (the real DOM detector), `run-browser-qa.js` (headless-Chrome CDP
-  runner) → **33/33** with real `getComputedStyle`/`getBoundingClientRect`.
+  runner) → **34/34** with real `getComputedStyle`/`getBoundingClientRect`.
 - `live/` — **live multi-party rig** (fake-audio tone + observer/speaker instances). See `live/README.md`.
 
 ## Run
 ```bash
 node research/meet-dom-detector/test.js                       # Node logic harness (23/23)
-node research/meet-dom-detector/browser-qa/run-browser-qa.js  # real-browser QA (33/33)
+node research/meet-dom-detector/browser-qa/run-browser-qa.js  # real-browser QA (34/34)
 # live capture (Chrome started with --remote-debugging-port=9222):
 node research/meet-dom-detector/cdp-capture.js 9222 > live-meet.html
 ```
 
 ## Status
-Validated in a **real browser** across all layouts (33/33) and against real captured DOM incl. a real
+Validated in a **real browser** across all layouts (34/34) and against real captured DOM incl. a real
 class **and** jscontroller rotation. Real-browser QA caught + fixed a genuine bug (a generic
 computed-outline ring read that false-fired on every tile). **Pending:** a live 2-person call
 (captions OFF) via `live/` to confirm `data-audio-level` / the QgSmzd widget per-tile across

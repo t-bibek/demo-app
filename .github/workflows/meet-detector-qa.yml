@@ -3,7 +3,7 @@ name: meet-detector-qa
 # Gate the Meet DOM active-speaker detector on its two proven harnesses so a
 # detector.js / fixtures.js edit can't regress silently.
 #   Job A — Node logic harness (baseline 23/23)
-#   Job B — real-browser QA in headless Chrome (baseline 33/33)
+#   Job B — real-browser QA in headless Chrome (baseline 34/34)
 # See docs/meet-dom-speaking-detection.md §4.
 
 on:
@@ -34,7 +34,7 @@ jobs:
         run: npm test   # exits non-zero if any scenario fails (baseline 23/23)
 
   browser-qa:
-    name: Real-browser QA (33/33)
+    name: Real-browser QA (34/34)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,4 +50,4 @@ jobs:
         env:
           CI: 'true'
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-        run: npm run test:browser   # exits non-zero if any scenario fails (baseline 33/33)
+        run: npm run test:browser   # exits non-zero if any scenario fails (baseline 34/34)

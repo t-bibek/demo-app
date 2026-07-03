@@ -152,9 +152,11 @@ Hardened after an **adversarial review panel** (5 agents, 51 findings): fixed a 
 false-positive (silent token-free widget named via the class fall-through), tightened the
 predicate (square-dot/segmented-strip/icon-font classes closed), added the WAAPI read, made
 bars authoritative over the silence-class, and fixed hold-state hygiene. Node **23/23** and
-real-browser **33/33** now include five structure-first scenarios (token-free discovery,
+real-browser **34/34** now include six structure-first scenarios (token-free discovery,
 hidden-muted widget, out-of-tile animating lookalike, no-bars level-class, hidden-junk vs
-geometry) plus a silent-token-free and a hidden-stale-class regression.
+geometry, and a **WAAPI-only** animation guard) plus a silent-token-free and a
+hidden-stale-class regression. (2026-07-03 QA-review pass: added the WAAPI-only browser
+scenario + hardened the Swift resolver — see §4.)
 
 ### ✅ LIVE END-TO-END CONFIRMED via BlackHole (2026-07-03)
 Closed the live audio leg. With BlackHole 2ch as a virtual mic streaming speech clips into a guest,
@@ -234,7 +236,7 @@ Two levels; both green.
   (5 real captured-DOM + 2 real external current-widget + 15 synthetic), incl. surviving a class rotation,
   the real `jscontroller` rotation, and **structure-only anchoring with every token rotated away**
   (plus hidden-widget-not-anchored).
-- **Real-browser QA** — [`research/meet-dom-detector/browser-qa/run-browser-qa.js`](../research/meet-dom-detector/browser-qa/run-browser-qa.js): **33/33**
+- **Real-browser QA** — [`research/meet-dom-detector/browser-qa/run-browser-qa.js`](../research/meet-dom-detector/browser-qa/run-browser-qa.js): **34/34**
   in headless Chrome against a faithful Meet-DOM simulator with **real `getComputedStyle`/`getBoundingClientRect`**
   (so the class-independent structural read — §2.6 — is genuinely exercised). Covers grid, spotlight
   (indicator + geometry), PiP, full-screen, muted (no FP), nobody-speaking, screen-share

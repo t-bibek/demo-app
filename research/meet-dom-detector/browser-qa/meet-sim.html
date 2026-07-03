@@ -48,6 +48,23 @@
       if (opts.hidden) w.style.display = 'none';
       return w;
     }
+    if (opts.waapi) {
+      // WAAPI-only variant (adversarial-review find 2026-07-03): a token-free
+      // structural widget whose bars animate via element.animate() — NOT CSS
+      // @keyframes — so getComputedStyle(bar).animationName === 'none'. ONLY the
+      // detector's getAnimations({subtree:true}) union can see it. Guards against a
+      // silent total failure if Google migrates Meet's equalizer to the Web
+      // Animations API (element.animate() never reflects into computed animationName).
+      w.className = 'ZZstructZZ';                       // structural shape, NO 'zspeak' (no CSS anim)
+      for (var q = 0; q < 3; q++) {
+        var qb = document.createElement('div'); qb.className = 'zbar'; w.appendChild(qb);
+        if (speaking) qb.animate(
+          [{ transform: 'translateY(0)' }, { transform: 'translateY(-2px)' }, { transform: 'translateY(0)' }],
+          { duration: 500, iterations: Infinity });
+      }
+      if (opts.hidden) w.style.display = 'none';
+      return w;
+    }
     w.setAttribute('jscontroller', opts.jscontroller || 'ES310d');
     w.setAttribute('jsname', 'QgSmzd');
     w.setAttribute('jsaction', 'r31gIf:wfi2bd');
@@ -199,6 +216,13 @@
     { id: 'nobars-level-class', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
       specs: [{ name: 'Alice', speaking: true, widgetOpts: { noBars: true } },
               { name: 'Bob', speaking: false, widgetOpts: { noBars: true } }] },
+    // Adversarial-review find (2026-07-03): bars animating via the Web Animations
+    // API (element.animate()) instead of CSS @keyframes — getComputedStyle(bar)
+    // .animationName is 'none', so ONLY getAnimations({subtree:true}) catches it.
+    // Speaking Alice must be named; the silent (un-animated) Bob must not.
+    { id: 'waapi-only-animation', ctx: { vad: true }, expect: { names: ['Alice'], via: 'audioIndicator' },
+      specs: [{ name: 'Alice', speaking: true, widgetOpts: { waapi: true } },
+              { name: 'Bob', speaking: false, widgetOpts: { waapi: true } }] },
     // Adversarial-review find (2026-07-03): a widget hidden mid-speech can retain
     // a STALE speaking class/animation (computed styles resolve inside
     // display:none subtrees!). Hidden jsname widgets must never name anyone.

@@ -193,7 +193,7 @@ speech-oracle scorer), plus the shipped engine in `MeetSpeakerDetector` / `Speak
   INSIDE `[data-participant-id]` tiles; speaking = bar computed-animation **or** a running WAAPI
   animation in the subtree; jsname is a supplement (`__ctx.structOnly` disables it, `__ctx.holdMs`
   bridges gaps). `window.__meetParticipants()` = pid-keyed roster with token-free **self** detection
-  (mirrored `<video>` + no-equalizer). Node **23/23**, real-browser **33/33**.
+  (mirrored `<video>` + no-equalizer). Node **23/23**, real-browser **34/34**.
 - **Adversarial panel (5 agents, 51 findings)** hardened it: closed a Node silent-widget false-positive
   (bars now decide, no class fall-through), the square-dot/segmented-strip predicate holes, the
   WAAPI-migration blind spot, and hold-state leakage. Full triage in
