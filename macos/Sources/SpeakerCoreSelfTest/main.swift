@@ -186,6 +186,34 @@ check(!meetTileIsSpeaking(classTokens: ["FTMc0c", "OFfHfd", "urlhDe"]), "silent 
 check(!meetTileIsSpeaking(classTokens: []), "empty -> not speaking")
 check(meetTileIsSpeaking(classTokens: ["xyz"], rules: MeetSpeakerRules(speakingClasses: ["xyz"], version: "test")), "custom remote-config ruleset works")
 
+// MARK: Meet equalizer node rule (PROTOTYPE — fresh-capture 2026-07-03).
+// A node is a SPEAKING equalizer iff it carries an anchor {DYfzY,IisKdb,QgSmzd}
+// AND does NOT carry the silence class "gjg47c". Absence-of-gjg47c is the durable
+// rule; the level tokens (OgVli/HX2H7/Oaajhc/wEsLMd) only corroborate. Fixtures are
+// the REAL dumps from the finding.
+print("Meet equalizer node rule:")
+check(!meetNodeIsSpeakingEqualizer(classList: ["DYfzY", "cYKTje", "gjg47c"]),
+      "SILENCE classlist (has gjg47c) -> not speaking")
+check(meetNodeIsSpeakingEqualizer(classList: ["DYfzY", "cYKTje", "Oaajhc", "sxlEM"]),
+      "GUEST speaking classlist (DYfzY anchor, no gjg47c) -> speaking")
+check(meetNodeIsSpeakingEqualizer(classList: ["IisKdb", "GF8M7d", "HX2H7", "KUNJSe", "x9nQ6", "VeFZv"]),
+      "HOST speaking classlist (IisKdb anchor, no gjg47c) -> speaking")
+check(meetNodeIsSpeakingEqualizer(classList: ["QgSmzd", "wEsLMd"]),
+      "QgSmzd anchor + overlap token, no gjg47c -> speaking")
+check(!meetNodeIsSpeakingEqualizer(classList: ["oZRSLe"]),
+      "non-equalizer classlist (no anchor) -> not speaking")
+check(!meetNodeIsSpeakingEqualizer(classList: []),
+      "empty classlist -> not speaking")
+// Overridable via config (mirror the speakingClasses override test above).
+check(meetNodeIsSpeakingEqualizer(classList: ["ZZanchor"],
+        rules: MeetSpeakerRules(speakingClasses: ["kssMZb"],
+            equalizerAnchorClasses: ["ZZanchor"], equalizerSilenceClass: "ZZsilent", version: "test")),
+      "custom equalizer anchor works (no custom silence token -> speaking)")
+check(!meetNodeIsSpeakingEqualizer(classList: ["ZZanchor", "ZZsilent"],
+        rules: MeetSpeakerRules(speakingClasses: ["kssMZb"],
+            equalizerAnchorClasses: ["ZZanchor"], equalizerSilenceClass: "ZZsilent", version: "test")),
+      "custom equalizer silence token suppresses speaking")
+
 // MARK: Zoom native mute-gate attribution (B1)
 print("Zoom mute-gate:")
 // 1:1, both unmuted, remote talking (system audio up, mic quiet) -> name the remote.
@@ -344,6 +372,74 @@ let mtSelfDominant = [
 ]
 equal(meetActiveSpeaker(tiles: mtSelfDominant, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
       "self is the dominant tile -> geometry skips self -> Someone floor")
+
+// 11) PROTOTYPE equalizer path (fresh-capture 2026-07-03). Runs right after the VAD
+//     gate, BEFORE the kssMZb ring — the equalizer level class is a DIRECT
+//     per-utterance read; kssMZb is layout/sticky. Overlap-capable; excludes self.
+// 11a) non-self tile w/ equalizerSpeaking + VAD on -> named via .equalizer.
+let mtEq = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: false, equalizerSpeaking: true),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: false, equalizerSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtEq, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "equalizer speaking tile -> named")
+equal(meetActiveSpeaker(tiles: mtEq, prevAreas: [:], vadSpeechActive: true).via, .equalizer,
+      "equalizer speaking tile -> via .equalizer")
+// VAD gate still governs: silence -> nobody, even with a live equalizer read.
+equal(meetActiveSpeaker(tiles: mtEq, prevAreas: [:], vadSpeechActive: false).names, [],
+      "vad silent -> no speaker even with equalizerSpeaking")
+// 11b) equalizer on the SELF tile is NOT named (self is mic-attributed).
+let mtEqSelf = [
+    MeetTileObservation(name: "Me",  area: 10_000, orderIndex: 0, classSpeaking: false, isMe: true, equalizerSpeaking: true),
+    MeetTileObservation(name: "Bob", area: 10_000, orderIndex: 1, classSpeaking: false, equalizerSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtEqSelf, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "equalizer on SELF only -> not named (falls through to Someone floor)")
+equal(meetActiveSpeaker(tiles: mtEqSelf, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
+      "equalizer on SELF only -> via someoneFloor (self is mic-attributed)")
+// 11c) two non-self tiles w/ equalizerSpeaking -> BOTH named (overlap).
+let mtEqOverlap = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: false, equalizerSpeaking: true),
+    MeetTileObservation(name: "Carol", area: 10_000, orderIndex: 1, classSpeaking: false, equalizerSpeaking: true),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 2, classSpeaking: false, equalizerSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtEqOverlap, prevAreas: [:], vadSpeechActive: true).names.sorted(), ["Alice", "Carol"],
+      "concurrent equalizers -> both non-self tiles named (overlap)")
+// 11d) equalizer BEATS kssMZb: a .equalizer tile + a classSpeaking tile both present
+//      -> the equalizer tile leads (direct per-utterance read > sticky ring).
+let mtEqVsClass = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: false, equalizerSpeaking: true),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: true,  equalizerSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtEqVsClass, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "equalizer beats kssMZb ring (equalizer leads)")
+equal(meetActiveSpeaker(tiles: mtEqVsClass, prevAreas: [:], vadSpeechActive: true).via, .equalizer,
+      "equalizer + ring both present -> via .equalizer")
+
+// MARK: Meet participant control-label extraction (CLASS-FREE + GEOMETRY-FREE allowlist,
+// panel-open capture 2026-07-03). The per-participant control's AXDescription embeds the
+// name and is the structural allowlist for a real participant; browser chrome has none.
+print("Meet participant control-label:")
+equal(meetParticipantNameFromControl("More options for Guest Alpha"), "Guest Alpha", "'More options for X' -> name")
+equal(meetParticipantNameFromControl("Pin Bob Smith to your main screen"), "Bob Smith", "'Pin X to your main screen' -> name")
+equal(meetParticipantNameFromControl("Mute Guest Bravo's microphone"), "Guest Bravo", "'Mute X's microphone' -> name")
+check(meetParticipantNameFromControl("Leave call") == nil, "control-bar 'Leave call' -> nil")
+check(meetParticipantNameFromControl("Turn off microphone") == nil, "'Turn off microphone' -> nil")
+check(meetParticipantNameFromControl("Contributors 3") == nil, "panel header 'Contributors 3' -> nil")
+check(meetParticipantNameFromControl("") == nil, "empty label -> nil")
+check(meetParticipantNameFromControl("More options for (You)") == nil, "'(You)' rejected via cleanParticipantName")
+// Live-observed false-positive leaks (2026-07-03) — interim blocklist guards until
+// the structural allowlist lands.
+check(cleanParticipantName("More actions") == nil, "meet 'More actions' overflow rejected")
+check(cleanParticipantName("Camera is off") == nil, "meet 'Camera is off' overlay rejected")
+check(cleanParticipantName("Adjust view") == nil, "meet 'Adjust view' control rejected")
+// Meet Adjust-view layout-menu option labels (transient leak, live-QA 2026-07-03):
+check(cleanParticipantName("Auto") == nil, "meet layout 'Auto' rejected")
+check(cleanParticipantName("Tiled") == nil, "meet layout 'Tiled' rejected")
+check(cleanParticipantName("Sidebar") == nil, "meet layout 'Sidebar' rejected")
+check(cleanParticipantName("Hide tiles without video") == nil, "meet 'Hide tiles without video' rejected")
+// Guard the exact-match: a real name that merely CONTAINS a layout word still passes.
+check(cleanParticipantName("Auti Sharma") == "Auti Sharma", "real name 'Auti Sharma' not clipped by 'auto'")
 
 // MARK: Meet speech_on/speech_off events — VALIDATE the event pipeline against
 // the DOM detector's LIVE-VERIFIED semantics (2026-07-03, structure-only run:
