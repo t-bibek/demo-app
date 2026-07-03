@@ -51,44 +51,32 @@ public struct TeamsSpeakerRules: Codable, Sendable, Equatable {
     }
 
     /// Built-in defaults. Self/mute tokens are PROVEN literal strings from
-    /// Recall's `@recallai/desktop-sdk` v2.0.19 binary. The is-speaking determinant
-    /// is NOT yet established — and deliberately conservative here:
+    /// Recall's `@recallai/desktop-sdk` v2.0.19 binary. Speaking is CLASS-FREE
+    /// by verdict (docs/teams-active-speaker-detection.md §7): Teams exposes NO
+    /// who-is-speaking signal to a passive observer, so:
     ///
-    ///  - NO confirmed speaking class. `vdi-frame-occlusion` correlated with a
-    ///    remote's speech in ONE camera-on run, but VDI frame-occlusion is a
-    ///    video-rectangle PLACEMENT token — it likely tracks the video tile, not
-    ///    the speaking state (the binary has no `aria_*_speaking` token, only
-    ///    `roster_muted/unmuted`). Treating it as "speaking" was unproven, so it is
-    ///    NOT shipped. Re-add via config only after the R4 probe confirms it tracks
-    ///    the SPEAKER (not just any active video). See docs/teams-probe.md.
-    ///  - Teams exposes no text speaking-marker on the video stage (the markers
-    ///    below never fired live; kept only as a harmless secondary check). The
-    ///    real determinant is opaque + LOCALIZED (binary: `TEAMS - determine
-    ///    locale`), i.e. likely a localized aria-label, not a fixed class.
-    ///  - OPEN QUESTION (R1/R3): a camera-INDEPENDENT signal may exist that we
-    ///    have NOT ruled out — the People-panel per-row voice-level indicator, and
-    ///    an aria-live announcement channel (`aria_announce_video_on` proves one
-    ///    exists). Until probed, the engine uses VAD + mute-gate (proven), with
-    ///    mic for self.
+    ///  - `speakingClasses` ships EMPTY. `vdi-frame-occlusion` (shipped here
+    ///    2026-07-01, now REMOVED) is a video-rectangle PLACEMENT token — it
+    ///    tracks any active video frame, not the speaker — and the whole vdi-*
+    ///    family plus the obfuscated ring tokens tried before it (___1vvhwjq,
+    ///    fn8mz29, f1ky4vpe, frwhdur, ftevtku, f1qyaz97, f14rmoke, fm03cl5,
+    ///    f3ve9t9) ROTATE per Teams build. Nothing is speaker-specific, so
+    ///    nothing ships; a future PROVEN token is a `teams-rules.json` config
+    ///    drop, never a release.
+    ///  - The text markers below never fire on the video stage (§7 needle hunt:
+    ///    " is active speaker" appears in NO AX attribute) — they stay only as
+    ///    the same config hook. The live speaking path is the engine's VAD +
+    ///    roster mute-gate, plus Teams' own "<name> is speaking" note (a text
+    ///    note read by `teamsExtractWindow`, not a class).
     ///
     /// All config-overridable (`teams-rules.json`).
     public static let builtin = TeamsSpeakerRules(
         speakingTextMarkers: ["is active speaker", "active speaker", "is speaking", ", speaking"],
-        // Active-speaker className. `vdi-frame-occlusion` is the video-frame
-        // occlusion token that tracked the speaking remote in camera-on runs —
-        // enabled here as the "for now" class signal (mirrors the Windows engine's
-        // TeamsSpeakingClass). The OLD obfuscated speaking-ring tokens tried
-        // previously (from the `swift run MeetProbe teams` oracle-diff token set;
-        // they ROTATE every Teams build, so re-derive with the probe before use):
-        //   ___1vvhwjq, fn8mz29, f1ky4vpe, frwhdur, ftevtku, f1qyaz97, f14rmoke,
-        //   fm03cl5, f3ve9t9
-        // Also seen but rejected — `vdi-occlusion` / `vdi-dynamic-occlusion` sit on
-        // EVERY video tile (not speaker-specific), so they'd mark everyone speaking.
-        speakingClasses: ["vdi-frame-occlusion"],
+        speakingClasses: [],
         selfTokens: ["calling_is_me_video", "myself video", "(you)"],
         mutedTokens: ["aria_calling_roster_muted", ", muted"],
         unmutedTokens: ["aria_calling_roster_unmuted", ", unmuted"],
-        version: "2026-07-01-vdi-frame-occlusion"
+        version: "2026-07-03-class-free"
     )
 }
 

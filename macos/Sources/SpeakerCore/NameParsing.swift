@@ -20,7 +20,15 @@ private let nameCutSeparators = [
 
 /// Extracts a clean participant name from a raw accessibility string, or nil if
 /// the string isn't a plausible person name.
-public func cleanParticipantName(_ raw: String) -> String? {
+///
+/// `structuralAnchor: true` = the CALLER already proved the string is a
+/// participant row (a Teams AXMenuItem tile / roster row with a context-menu
+/// affordance, a "Myself video" self tile). The ALL-CAPS token heuristic is
+/// skipped then — it exists to reject un-anchored chrome (USD, FAQ, OFF), but
+/// it also rejected real shouty display names ("BIDHEYAK THAPA", live-captured
+/// fixture 20260701-180520). Every other filter (chrome labels, digits,
+/// stopwords, sentences) still applies.
+public func cleanParticipantName(_ raw: String, structuralAnchor: Bool = false) -> String? {
     var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if s.isEmpty { return nil }
 
@@ -54,7 +62,7 @@ public func cleanParticipantName(_ raw: String) -> String? {
     s = s.replacingOccurrences(of: #"\s*\([^)]*\)\s*$"#, with: "", options: .regularExpression)
     s = s.trimmingCharacters(in: CharacterSet(charactersIn: " ,\u{2019}'"))
 
-    return isLikelyPersonName(s) ? s : nil
+    return isLikelyPersonName(s, structuralAnchor: structuralAnchor) ? s : nil
 }
 
 /// True when `text` carries a "this tile/participant is speaking" marker.
@@ -69,7 +77,8 @@ public func isSpeakingMarker(_ text: String) -> Bool {
 }
 
 /// Cheap heuristic to reject UI chrome / window titles / URLs.
-public func isLikelyPersonName(_ s: String) -> Bool {
+/// `structuralAnchor` — see `cleanParticipantName`; skips only the ALL-CAPS rule.
+public func isLikelyPersonName(_ s: String, structuralAnchor: Bool = false) -> Bool {
     let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
     guard t.count >= 2, t.count <= 50 else { return false }
     // Structural junk (mirrors the product's isPlausibleName): real names never
@@ -83,10 +92,14 @@ public func isLikelyPersonName(_ s: String) -> Bool {
     // A display name is at most a few words; long runs are sentences / toasts.
     let words = t.split(whereSeparator: { $0.isWhitespace })
     if words.count > 6 { return false }
-    // Reject ALL-CAPS tokens of 3+ letters (USD, FAQ, OFF, VOIP…): labels, not names.
-    for w in words {
-        let letters = String(w.filter { $0.isLetter })
-        if letters.count >= 3, letters == letters.uppercased() { return false }
+    // Reject ALL-CAPS tokens of 3+ letters (USD, FAQ, OFF, VOIP…): labels, not
+    // names — EXCEPT under a structural anchor, where shouty real display names
+    // ("BIDHEYAK THAPA") are already proven to be participant rows.
+    if !structuralAnchor {
+        for w in words {
+            let letters = String(w.filter { $0.isLetter })
+            if letters.count >= 3, letters == letters.uppercased() { return false }
+        }
     }
     let lower = t.lowercased()
 

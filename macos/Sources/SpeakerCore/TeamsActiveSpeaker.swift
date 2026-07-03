@@ -74,13 +74,18 @@ public func teamsActiveSpeaker(
     guard vadSpeechActive else { return TeamsSpeakerResult(names: [], via: .none) }
 
     // 2) Structural is-speaking (mirrors Recall's scan; supports multiple tiles).
-    let speaking = tiles.filter { $0.isSpeaking }.map { $0.name }
+    //    SELF-EXCLUDED, like the Meet ring path: a config'd rule matching the self
+    //    tile must never name the local user — self is mic-attributed separately.
+    let speaking = tiles.filter { $0.isSpeaking && !$0.isMe }.map { $0.name }
     if !speaking.isEmpty {
         return TeamsSpeakerResult(names: speaking, via: .structural)
     }
 
-    // 3) Geometry fallback — a clearly dominant overlay tile (opt-in).
-    if useGeometry, let promoted = teamsPromotedTile(tiles) {
+    // 3) Geometry fallback — a clearly dominant overlay tile (opt-in). Never
+    //    returns the SELF tile (mirrors meetActiveSpeaker): a big pinned
+    //    self-view is not evidence you're speaking.
+    if useGeometry, let promoted = teamsPromotedTile(tiles),
+       tiles.first(where: { $0.name == promoted })?.isMe != true {
         return TeamsSpeakerResult(names: [promoted], via: .geometry)
     }
 

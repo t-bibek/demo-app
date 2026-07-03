@@ -70,6 +70,8 @@ public func parseTeamsRosterRow(_ raw: String) -> (name: String, unmuted: Bool)?
     // Reject standalone status icons ("Muted"/"Unmuted" with no name) and the
     // bulk-action / header rows ("Mute all", "In this meeting, 2 total…").
     guard !["muted", "unmuted", "mute", "unmute"].contains(name.lowercased()) else { return nil }
-    guard isLikelyPersonName(name) else { return nil }
+    // Anchored: the context-menu / mic-word guard above already proved this is a
+    // participant row, so shouty display names (all-caps) are not rejected.
+    guard isLikelyPersonName(name, structuralAnchor: true) else { return nil }
     return (name, unmuted)
 }
