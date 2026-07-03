@@ -260,6 +260,91 @@ equal(meetActiveSpeaker(tiles: mtSpotlight, prevAreas: [:], vadSpeechActive: tru
 equal(meetActiveSpeaker(tiles: mtClass, prevAreas: [:], vadSpeechActive: true, presentationActive: true).names, ["Alice"],
       "presentation on + class match -> class still names the speaker")
 
+// 6) AXFocused promoted-tile signal (live-verified 2026-07-03: Meet marks the
+//    spotlit tile with AXFocused). Cleaner than the geometry ratio.
+let mtFocused = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: false, isFocused: true),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: false, isFocused: false),
+]
+equal(meetActiveSpeaker(tiles: mtFocused, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "AXFocused tile -> named (equal geometry, no ring)")
+equal(meetActiveSpeaker(tiles: mtFocused, prevAreas: [:], vadSpeechActive: true).via, .focused,
+      "AXFocused tile -> via .focused")
+// kssMZb ring beats AXFocused (ring is the active-speaker signal; focus may be a pin)
+let mtRingVsFocus = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: false, isFocused: true),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: true,  isFocused: false),
+]
+equal(meetActiveSpeaker(tiles: mtRingVsFocus, prevAreas: [:], vadSpeechActive: true).names, ["Bob"],
+      "kssMZb ring beats AXFocused")
+// AXFocused on the SELF tile is NOT named (self is mic-driven)
+let mtFocusSelf = [
+    MeetTileObservation(name: "Me",  area: 10_000, orderIndex: 0, classSpeaking: false, isFocused: true, isMe: true),
+    MeetTileObservation(name: "Bob", area: 10_000, orderIndex: 1, classSpeaking: false, isFocused: false),
+]
+equal(meetActiveSpeaker(tiles: mtFocusSelf, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "AXFocused on SELF -> not named (falls to Someone floor)")
+// presentation suppresses AXFocused too (the shared screen is the focused surface)
+equal(meetActiveSpeaker(tiles: mtFocused, prevAreas: [:], vadSpeechActive: true, presentationActive: true).via, .someoneFloor,
+      "presentation on -> AXFocused suppressed -> Someone floor")
+
+// 7) SELF-EXCLUSION on the ring path (adversarial-review find 2026-07-03). The
+//    ring (kssMZb) is empirically never on the self tile, but the resolver must
+//    not DEPEND on that: a self ring (or a remote-config rule matching a self
+//    class) must never name the local user — self is mic-attributed separately,
+//    exactly like the focused/geometry paths. Regression guard: before the fix
+//    the ring filter lacked `!isMe` and this returned ["Me"].
+let mtRingSelfOnly = [
+    MeetTileObservation(name: "Me",  area: 10_000, orderIndex: 0, classSpeaking: true, isMe: true),
+    MeetTileObservation(name: "Bob", area: 10_000, orderIndex: 1, classSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtRingSelfOnly, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "ring on SELF only -> not named (falls to Someone floor)")
+equal(meetActiveSpeaker(tiles: mtRingSelfOnly, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
+      "ring on SELF only -> via someoneFloor (self is mic-attributed)")
+// Overlap-safe: self ring + remote ring -> only the REMOTE is named.
+let mtRingSelfPlusRemote = [
+    MeetTileObservation(name: "Me",    area: 10_000, orderIndex: 0, classSpeaking: true, isMe: true),
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 1, classSpeaking: true),
+]
+equal(meetActiveSpeaker(tiles: mtRingSelfPlusRemote, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "ring on self + remote -> only remote named (self excluded)")
+
+// 8) Concurrent ring speakers (overlap) -> ALL non-self ring tiles named. Guards
+//    the set-return at line 111 (every prior fixture had exactly one ring tile).
+let mtRingOverlap = [
+    MeetTileObservation(name: "Alice", area: 10_000, orderIndex: 0, classSpeaking: true),
+    MeetTileObservation(name: "Carol", area: 10_000, orderIndex: 1, classSpeaking: true),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 2, classSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtRingOverlap, prevAreas: [:], vadSpeechActive: true).names.sorted(), ["Alice", "Carol"],
+      "concurrent rings -> both remotes named (overlap)")
+
+// 9) Geometry promote is a RATIO threshold (>= 1.5x the next tile). Assert BOTH
+//    sides of the boundary so a Meet tile-sizing change can't silently slip past.
+let mtGeomBelow = [   // 1.49x -> NOT dominant -> Someone floor
+    MeetTileObservation(name: "Alice", area: 14_900, orderIndex: 0, classSpeaking: false),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtGeomBelow, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "geometry 1.49x (below 1.5x) -> not promoted -> Someone floor")
+let mtGeomAt = [      // exactly 1.5x -> promoted
+    MeetTileObservation(name: "Alice", area: 15_000, orderIndex: 0, classSpeaking: false),
+    MeetTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, classSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtGeomAt, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
+      "geometry exactly 1.5x -> promoted")
+equal(meetActiveSpeaker(tiles: mtGeomAt, prevAreas: [:], vadSpeechActive: true).via, .geometry,
+      "geometry 1.5x -> via geometry")
+
+// 10) A big PINNED self tile is not evidence you're speaking: geometry skips self.
+let mtSelfDominant = [
+    MeetTileObservation(name: "Me",  area: 200_000, orderIndex: 0, classSpeaking: false, isMe: true),
+    MeetTileObservation(name: "Bob", area: 10_000,  orderIndex: 1, classSpeaking: false),
+]
+equal(meetActiveSpeaker(tiles: mtSelfDominant, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+      "self is the dominant tile -> geometry skips self -> Someone floor")
+
 // MARK: Meet speech_on/speech_off events — VALIDATE the event pipeline against
 // the DOM detector's LIVE-VERIFIED semantics (2026-07-03, structure-only run:
 // single speakers named turn-wise 0.88-0.92, BOTH overlapping speakers named
