@@ -60,10 +60,30 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
     public var webFilmstripFramePrefix: String
     /// Big speaker-view tile class prefix (fallback when no filmstrip).
     public var webBigFramePrefix: String
-    /// The active-speaker modifier class on the filmstrip tile.
+    /// Gallery-view tile class prefix (NEW — the gallery layout, previously
+    /// unhandled; the `--active` modifier marks the speaker here too).
+    public var webGalleryFramePrefix: String
+    /// The active-speaker modifier class on the filmstrip tile. LEGACY exact
+    /// class (equals `webFilmstripFramePrefix + webActiveModifier`) — kept so old
+    /// zoom-rules.json overrides that set it still work; active detection now
+    /// generalizes across the three prefix families via `webActiveModifier`.
     public var webActiveClass: String
+    /// The active-speaker modifier SUFFIX (NEW). A tile is the active speaker when
+    /// its classList carries `<prefix>--active` for ANY of {filmstrip, big/speaker,
+    /// gallery}. Generalizes the single legacy `webActiveClass`.
+    public var webActiveModifier: String
     /// Classes anchoring a tile's display-name node (avatar img alt / title).
     public var webAvatarNameClasses: [String]
+    /// Per-tile name-span container class (NEW — the `video-avatar__avatar-footer`
+    /// label, always present when the camera is on). Appended to the name sources.
+    public var webAvatarFooterClass: String
+    /// Per-tile MUTE class (NEW — `video-avatar__avatar-footer--view-mute-computer`
+    /// present when that tile's mic is muted).
+    public var webMuteFooterClass: String
+    /// Local self-mute BUTTON markers (NEW — the toolbar mic control reads "mute my
+    /// microphone" when unmuted, "unmute my microphone" when muted). Used to
+    /// cross-validate the self tile's mute state for self-exclusion.
+    public var webSelfMuteButtonMarkers: [String]
     /// In-call gate, web: EXACT AXButton descriptions ("end", "leave").
     public var webCallExactButtonLabels: [String]
     /// In-call gate, web: AXButton description substrings (participants-list
@@ -71,6 +91,12 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
     public var webCallButtonMarkers: [String]
     /// In-call gate, web: AXList description substring.
     public var webCallListToken: String
+
+    /// Optional locale-override table (NEW — B5). Maps a locale code ("de", "es",
+    /// …) to a PARTIAL rules override applied over `builtin` by `resolved(locale:)`.
+    /// A Zoom UI in another language becomes a config drop, not a code change.
+    /// Absent in older zoom-rules.json (defaulted [:]).
+    public var locales: [String: PartialZoomRules]
 
     /// Provenance (date or remote-config version).
     public var version: String
@@ -88,11 +114,17 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
                 pipContentMarkers: [String],
                 webFilmstripFramePrefix: String,
                 webBigFramePrefix: String,
+                webGalleryFramePrefix: String,
                 webActiveClass: String,
+                webActiveModifier: String,
                 webAvatarNameClasses: [String],
+                webAvatarFooterClass: String,
+                webMuteFooterClass: String,
+                webSelfMuteButtonMarkers: [String],
                 webCallExactButtonLabels: [String],
                 webCallButtonMarkers: [String],
                 webCallListToken: String,
+                locales: [String: PartialZoomRules] = [:],
                 version: String) {
         self.audioStatusMarker = audioStatusMarker
         self.unmutedToken = unmutedToken
@@ -107,11 +139,17 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
         self.pipContentMarkers = pipContentMarkers
         self.webFilmstripFramePrefix = webFilmstripFramePrefix
         self.webBigFramePrefix = webBigFramePrefix
+        self.webGalleryFramePrefix = webGalleryFramePrefix
         self.webActiveClass = webActiveClass
+        self.webActiveModifier = webActiveModifier
         self.webAvatarNameClasses = webAvatarNameClasses
+        self.webAvatarFooterClass = webAvatarFooterClass
+        self.webMuteFooterClass = webMuteFooterClass
+        self.webSelfMuteButtonMarkers = webSelfMuteButtonMarkers
         self.webCallExactButtonLabels = webCallExactButtonLabels
         self.webCallButtonMarkers = webCallButtonMarkers
         self.webCallListToken = webCallListToken
+        self.locales = locales
         self.version = version
     }
 
@@ -134,12 +172,18 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
         pipContentMarkers: ["talking", "video render", "show video"],
         webFilmstripFramePrefix: "speaker-bar-container__video-frame",
         webBigFramePrefix: "speaker-active-container__video-frame",
+        webGalleryFramePrefix: "gallery-video-container__video-frame",
         webActiveClass: "speaker-bar-container__video-frame--active",
+        webActiveModifier: "--active",
         webAvatarNameClasses: ["video-avatar__avatar-img", "video-avatar__avatar-title"],
+        webAvatarFooterClass: "video-avatar__avatar-footer",
+        webMuteFooterClass: "video-avatar__avatar-footer--view-mute-computer",
+        webSelfMuteButtonMarkers: ["mute my microphone", "unmute my microphone"],
         webCallExactButtonLabels: ["end", "leave"],
         webCallButtonMarkers: ["manage participants list", "participants list pane",
                                "the participants list"],
         webCallListToken: "participants list",
+        locales: [:],
         version: "2026-07-04-initial"
     )
 
@@ -162,12 +206,56 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
         pipContentMarkers = try c.decodeIfPresent([String].self, forKey: .pipContentMarkers) ?? b.pipContentMarkers
         webFilmstripFramePrefix = try c.decodeIfPresent(String.self, forKey: .webFilmstripFramePrefix) ?? b.webFilmstripFramePrefix
         webBigFramePrefix = try c.decodeIfPresent(String.self, forKey: .webBigFramePrefix) ?? b.webBigFramePrefix
+        webGalleryFramePrefix = try c.decodeIfPresent(String.self, forKey: .webGalleryFramePrefix) ?? b.webGalleryFramePrefix
         webActiveClass = try c.decodeIfPresent(String.self, forKey: .webActiveClass) ?? b.webActiveClass
+        webActiveModifier = try c.decodeIfPresent(String.self, forKey: .webActiveModifier) ?? b.webActiveModifier
         webAvatarNameClasses = try c.decodeIfPresent([String].self, forKey: .webAvatarNameClasses) ?? b.webAvatarNameClasses
+        webAvatarFooterClass = try c.decodeIfPresent(String.self, forKey: .webAvatarFooterClass) ?? b.webAvatarFooterClass
+        webMuteFooterClass = try c.decodeIfPresent(String.self, forKey: .webMuteFooterClass) ?? b.webMuteFooterClass
+        webSelfMuteButtonMarkers = try c.decodeIfPresent([String].self, forKey: .webSelfMuteButtonMarkers) ?? b.webSelfMuteButtonMarkers
         webCallExactButtonLabels = try c.decodeIfPresent([String].self, forKey: .webCallExactButtonLabels) ?? b.webCallExactButtonLabels
         webCallButtonMarkers = try c.decodeIfPresent([String].self, forKey: .webCallButtonMarkers) ?? b.webCallButtonMarkers
         webCallListToken = try c.decodeIfPresent(String.self, forKey: .webCallListToken) ?? b.webCallListToken
+        locales = try c.decodeIfPresent([String: PartialZoomRules].self, forKey: .locales) ?? b.locales
         version = try c.decodeIfPresent(String.self, forKey: .version) ?? b.version
+    }
+}
+
+/// A PARTIAL native-Zoom rules override used by the locale table (B5): only the
+/// fields a translated Zoom UI changes need to be set; everything else inherits
+/// the resolving base. Every field optional so a locale entry stays a minimal
+/// config drop (e.g. just `unmutedToken` + `mutedToken` in German). Codable — it
+/// is stored inline in zoom-rules.json's `locales` map.
+public struct PartialZoomRules: Codable, Sendable, Equatable {
+    public var audioStatusMarker: String?
+    public var unmutedToken: String?
+    public var mutedToken: String?
+    public var selfTokens: [String]?
+    public var participantsPanelToken: String?
+    public var accountPresenceTokens: [String]?
+    public var accountSuffixToken: String?
+    public var meetingTitleTokens: [String]?
+    public var leaveButtonTokens: [String]?
+    public var pipTalkingPrefix: String?
+    public var pipContentMarkers: [String]?
+
+    public init(audioStatusMarker: String? = nil, unmutedToken: String? = nil,
+                mutedToken: String? = nil, selfTokens: [String]? = nil,
+                participantsPanelToken: String? = nil,
+                accountPresenceTokens: [String]? = nil, accountSuffixToken: String? = nil,
+                meetingTitleTokens: [String]? = nil, leaveButtonTokens: [String]? = nil,
+                pipTalkingPrefix: String? = nil, pipContentMarkers: [String]? = nil) {
+        self.audioStatusMarker = audioStatusMarker
+        self.unmutedToken = unmutedToken
+        self.mutedToken = mutedToken
+        self.selfTokens = selfTokens
+        self.participantsPanelToken = participantsPanelToken
+        self.accountPresenceTokens = accountPresenceTokens
+        self.accountSuffixToken = accountSuffixToken
+        self.meetingTitleTokens = meetingTitleTokens
+        self.leaveButtonTokens = leaveButtonTokens
+        self.pipTalkingPrefix = pipTalkingPrefix
+        self.pipContentMarkers = pipContentMarkers
     }
 }
 
@@ -183,6 +271,80 @@ extension ZoomSpeakerRules {
             let rules = try? JSONDecoder().decode(ZoomSpeakerRules.self, from: data)
         else { return .builtin }
         return rules
+    }
+
+    /// Resolve rules for a given locale (B5): merge the locale's PARTIAL override
+    /// (from the `locales` table) over this base, field by field (an unset partial
+    /// field inherits the base). An unknown / nil locale returns the base
+    /// unchanged. Prefer role/structure anchors over text wherever possible; this
+    /// is the escape hatch for the text that genuinely IS localized.
+    public func resolved(locale: String?) -> ZoomSpeakerRules {
+        guard let locale, let p = locales[locale] else { return self }
+        var r = self
+        if let v = p.audioStatusMarker { r.audioStatusMarker = v }
+        if let v = p.unmutedToken { r.unmutedToken = v }
+        if let v = p.mutedToken { r.mutedToken = v }
+        if let v = p.selfTokens { r.selfTokens = v }
+        if let v = p.participantsPanelToken { r.participantsPanelToken = v }
+        if let v = p.accountPresenceTokens { r.accountPresenceTokens = v }
+        if let v = p.accountSuffixToken { r.accountSuffixToken = v }
+        if let v = p.meetingTitleTokens { r.meetingTitleTokens = v }
+        if let v = p.leaveButtonTokens { r.leaveButtonTokens = v }
+        if let v = p.pipTalkingPrefix { r.pipTalkingPrefix = v }
+        if let v = p.pipContentMarkers { r.pipContentMarkers = v }
+        return r
+    }
+
+    /// The three tile-container class prefixes (filmstrip / speaker / gallery)
+    /// whose `<prefix>--active` marks the active speaker on the web surface.
+    public var webFramePrefixes: [String] {
+        [webFilmstripFramePrefix, webBigFramePrefix, webGalleryFramePrefix]
+    }
+
+    /// True when a tile's classList marks it as the ACTIVE speaker: it carries the
+    /// legacy exact `webActiveClass` OR `<prefix>--active` for ANY frame family.
+    /// Generalizes the single hardcoded filmstrip class to speaker + gallery views.
+    public func webTileIsActive(classList: [String]) -> Bool {
+        if classList.contains(webActiveClass) { return true }
+        let set = Set(classList)
+        for prefix in webFramePrefixes where !prefix.isEmpty {
+            if set.contains(prefix + webActiveModifier) { return true }
+        }
+        return false
+    }
+
+    /// The tile-container surface family a classList belongs to ("filmstrip" /
+    /// "speaker" / "gallery"), or nil if it is not a tile container. Telemetry
+    /// (per-view accuracy) — the active read never depends on it.
+    public func webTileSurface(classList: [String]) -> String? {
+        if classList.contains(where: { $0.hasPrefix(webFilmstripFramePrefix) }) { return "filmstrip" }
+        if classList.contains(where: { $0.hasPrefix(webBigFramePrefix) }) { return "speaker" }
+        if !webGalleryFramePrefix.isEmpty,
+           classList.contains(where: { $0.hasPrefix(webGalleryFramePrefix) }) { return "gallery" }
+        return nil
+    }
+
+    /// True when a tile's classList carries the per-tile computer-mute class.
+    public func webTileMuted(classList: [String]) -> Bool {
+        !webMuteFooterClass.isEmpty && classList.contains(webMuteFooterClass)
+    }
+
+    /// Interpret the local mic-control label for self-mute cross-validation: the
+    /// button reads "unmute my microphone" when you ARE muted, "mute my
+    /// microphone" when you are unmuted. Returns true=unmuted / false=muted / nil
+    /// when the text isn't the self mic control.
+    public func webSelfUnmuted(_ lowercased: String) -> Bool? {
+        // Order matters: "unmute" contains "mute", so test the unmute phrasing
+        // (⇒ muted) first, then the mute phrasing (⇒ unmuted).
+        for m in webSelfMuteButtonMarkers where !m.isEmpty {
+            let low = m.lowercased()
+            if low.contains("unmute"), lowercased.contains(low) { return false }
+        }
+        for m in webSelfMuteButtonMarkers where !m.isEmpty {
+            let low = m.lowercased()
+            if !low.contains("unmute"), lowercased.contains(low) { return true }
+        }
+        return nil
     }
 
     /// True when lowercased text carries a local-user marker ("(me)" — and

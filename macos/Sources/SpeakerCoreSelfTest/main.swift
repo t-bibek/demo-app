@@ -1770,5 +1770,252 @@ equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: false, localName: "Yo
                            remoteActive: true, remoteUnmutedNames: []),
       ["Someone"], "panel closed / empty roster: remote speech -> honest 'Someone' (B2)")
 
+// =====================================================================
+// MARK: Zoom WEB event mode (plan A1/A5) — active-moved diff + self-exclusion +
+// transition disambiguation. Chromium is AX-silent on class flips, so the diff +
+// TransitionConfidence are unit-tested with NO AX (mirrors the Meet/Teams edge tests).
+// =====================================================================
+print("Zoom web event mode — active diff + snapshot + transition:")
+// Pure snapshot/diff (A5 appear/move/disappear/no-edge-on-loss/first-snapshot/multi).
+equal(zoomWebEdgesFromDiff(prev: nil, next: ZoomWebTileSnapshot(activeHolders: ["Alice"]), at: 100).map { $0.to },
+      ["Alice"], "diff: first snapshot with a holder -> one active-moved edge")
+equal(zoomWebEdgesFromDiff(prev: nil, next: ZoomWebTileSnapshot(activeHolders: ["Alice"]), at: 100).first?.from,
+      nil, "diff: first-snapshot edge has no `from`")
+equal(zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                           next: ZoomWebTileSnapshot(activeHolders: ["Alice"]), at: 100).count, 0,
+      "diff: unchanged active -> no edge")
+do {
+    let e = zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                                 next: ZoomWebTileSnapshot(activeHolders: ["Bob"]), at: 100)
+    equal(e.map { $0.to }, ["Bob"], "diff: swap Alice->Bob -> active-moved to Bob")
+    equal(e.first?.from, "Alice", "diff: swap carries from=Alice (single prior holder)")
+}
+equal(zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                           next: ZoomWebTileSnapshot(activeHolders: []), at: 100).count, 0,
+      "diff: active going out -> NO edge (a lost highlight isn't a move)")
+equal(zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                           next: ZoomWebTileSnapshot(activeHolders: ["Alice", "Bob"]), at: 100).map { $0.to },
+      ["Bob"], "diff: multi-active linger overlap -> ONLY the newly-lit Bob (Alice not re-emitted)")
+do {
+    // 2+ prior holders (ambiguous) -> the new holder's from is nil.
+    let e = zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice", "Bob"]),
+                                 next: ZoomWebTileSnapshot(activeHolders: ["Carol"]), at: 100)
+    equal(e.map { $0.to }, ["Carol"], "diff: 2 prior -> Carol edge")
+    equal(e.first?.from, nil, "diff: ambiguous multi-prior -> from=nil")
+}
+// Snapshot self-exclusion at BUILD level (INV-15): a self-active tile is NEVER a holder.
+do {
+    let snap = ZoomWebTileSnapshot.from(tiles: [
+        ZoomWebTileObservation(name: "Me", active: true, isMe: true, surface: "filmstrip"),
+        ZoomWebTileObservation(name: "Alice", active: true, surface: "filmstrip"),
+        ZoomWebTileObservation(name: "Bob", active: false, surface: "gallery"),
+    ])
+    equal(snap.activeHolders, ["Alice"], "snapshot: self-active tile excluded, only remote is a holder")
+    check(snap.selfActive, "snapshot: self-active recorded as telemetry (selfActive)")
+    equal(snap.presentNames, ["Me", "Alice", "Bob"], "snapshot: presentNames keeps self (roster source)")
+    // A self-active tile yields no edge (the falsification a self ring can't happen).
+    equal(zoomWebEdgesFromDiff(prev: nil, next: snap, at: 100).map { $0.to }, ["Alice"],
+          "self-exclusion: self-active tile yields no self edge (only Alice)")
+}
+// Muted-tile handling: mute is carried but never affects the active holder.
+do {
+    let snap = ZoomWebTileSnapshot.from(tiles: [
+        ZoomWebTileObservation(name: "Alice", active: true, muted: false, surface: "speaker"),
+        ZoomWebTileObservation(name: "Bob", active: false, muted: true, surface: "speaker"),
+    ])
+    equal(snap.activeHolders, ["Alice"], "muted-tile: active read is independent of mute state")
+}
+// Transition disambiguation in zoomWebActiveSpeaker: two lit tiles (stale + fresh)
+// -> the fresh transition holder wins alone; a stale holder not among lit is ignored.
+do {
+    let two = ZoomWebTileSnapshot(activeHolders: ["Alice", "Bob"])
+    var tc = TransitionConfidence()
+    tc.edge(to: "Alice", at: 0)
+    tc.edge(to: "Bob", at: 1_600)
+    let stBob = ZoomWebTransitionState(holder: tc.holder, confidence: tc.holderConfidence(at: 1_600), nowMs: 1_600)
+    equal(zoomWebActiveSpeaker(snapshot: two, transition: stBob), "Bob",
+          "transition: stale Alice + fresh Bob (both lit) -> Bob wins alone")
+    let stGhost = ZoomWebTransitionState(holder: "Carol", confidence: 0.9, nowMs: 2_000)
+    equal(zoomWebActiveSpeaker(snapshot: two, transition: stGhost), "Alice",
+          "transition: holder not among lit tiles -> first lit (no phantom)")
+    equal(zoomWebActiveSpeaker(snapshot: ZoomWebTileSnapshot(activeHolders: ["Alice"]), transition: nil),
+          "Alice", "single active + no transition -> that tile")
+    equal(zoomWebActiveSpeaker(snapshot: ZoomWebTileSnapshot(activeHolders: []), transition: nil),
+          nil, "no active tile -> nil")
+}
+
+// =====================================================================
+// MARK: Zoom NATIVE PIP edge mode (plan B1) — talking-changed diff + self-exclusion.
+// =====================================================================
+print("Zoom native event mode — PIP talking diff + self-exclusion:")
+equal(ZoomNativeSnapshot.from(pipTalking: "David Thapa", selfName: "Bibek Thapa").pipTalking,
+      "David Thapa", "snapshot: remote PIP talker -> pipTalking")
+do {
+    let s = ZoomNativeSnapshot.from(pipTalking: "Bibek Thapa", selfName: "Bibek Thapa")
+    equal(s.pipTalking, nil, "snapshot: self PIP talker excluded -> pipTalking nil (INV-15)")
+    check(s.selfTalking, "snapshot: self PIP talker recorded as selfTalking telemetry")
+}
+equal(ZoomNativeSnapshot.from(pipTalking: nil, selfName: "Bibek Thapa").pipTalking, nil,
+      "snapshot: nobody talking -> nil")
+equal(zoomNativeEdgesFromDiff(prev: nil,
+        next: ZoomNativeSnapshot(pipTalking: "David Thapa"), at: 50).map { $0.to },
+      ["David Thapa"], "diff: first snapshot names a talker -> one talking-changed edge")
+equal(zoomNativeEdgesFromDiff(prev: ZoomNativeSnapshot(pipTalking: "David Thapa"),
+        next: ZoomNativeSnapshot(pipTalking: "David Thapa"), at: 50).count, 0,
+      "diff: same talker -> no edge")
+do {
+    let e = zoomNativeEdgesFromDiff(prev: ZoomNativeSnapshot(pipTalking: "David Thapa"),
+        next: ZoomNativeSnapshot(pipTalking: "Guest Alpha"), at: 50)
+    equal(e.map { $0.to }, ["Guest Alpha"], "diff: talker change -> talking-changed to Guest Alpha")
+    equal(e.first?.from, "David Thapa", "diff: talker change carries from")
+}
+equal(zoomNativeEdgesFromDiff(prev: ZoomNativeSnapshot(pipTalking: "David Thapa"),
+        next: ZoomNativeSnapshot(), at: 50).count, 0,
+      "diff: talker going to nobody -> NO edge (a lost talker isn't a move)")
+// Self-exclusion end to end: a PIP that flips to self yields no edge.
+equal(zoomNativeEdgesFromDiff(
+        prev: ZoomNativeSnapshot.from(pipTalking: "David Thapa", selfName: "Bibek Thapa"),
+        next: ZoomNativeSnapshot.from(pipTalking: "Bibek Thapa", selfName: "Bibek Thapa"),
+        at: 50).count, 0,
+      "self-exclusion: PIP flips to self -> no edge (self talker excluded at build)")
+
+// =====================================================================
+// MARK: SchmittVad hysteresis (plan B4) — time-injected; enter/exit boundaries,
+// spike rejection, re-enter during hangover. NO clock (INV-16).
+// =====================================================================
+print("SchmittVad hysteresis:")
+do {
+    let cfg = VadConfig(frameMs: 50, enterLevel: 0.03, exitLevel: 0.015, enterFrames: 2, hangoverMs: 400)
+    // Enter boundary: ONE loud frame is not enough (spike rejection), TWO opens.
+    var v = SchmittVad(config: cfg)
+    check(!v.ingest(rms: 0.10, atMs: 0), "enter: 1 loud frame -> still closed (spike rejected)")
+    check(v.ingest(rms: 0.10, atMs: 50), "enter: 2nd consecutive loud frame -> open")
+    // A single ding (one loud frame) between quiet frames never opens.
+    var vd = SchmittVad(config: cfg)
+    check(!vd.ingest(rms: 0.9, atMs: 0), "ding: single loud frame -> closed")
+    check(!vd.ingest(rms: 0.001, atMs: 50), "ding: next frame quiet -> run reset, still closed")
+    check(!vd.ingest(rms: 0.9, atMs: 100), "ding: lone loud again after quiet -> still closed (run was reset)")
+    // Enter run resets on a below-enter frame (must be CONSECUTIVE).
+    var vr = SchmittVad(config: cfg)
+    _ = vr.ingest(rms: 0.10, atMs: 0)      // run=1
+    _ = vr.ingest(rms: 0.02, atMs: 50)     // below enter -> run reset to 0
+    check(!vr.ingest(rms: 0.10, atMs: 100), "enter: non-consecutive loud frames -> still closed")
+    check(vr.ingest(rms: 0.10, atMs: 150), "enter: now 2 consecutive -> open")
+    // Exit hangover boundary: just-under sustained stays open; sustained >= hangover closes.
+    var ve = SchmittVad(config: cfg)
+    _ = ve.ingest(rms: 0.10, atMs: 0); _ = ve.ingest(rms: 0.10, atMs: 50)  // open
+    check(ve.active, "exit: open before quiet")
+    check(ve.ingest(rms: 0.001, atMs: 100), "exit: quiet begins (hangover origin) -> still open")
+    check(ve.ingest(rms: 0.001, atMs: 100 + 399), "exit: quiet 399ms (< hangover) -> still open")
+    check(!ve.ingest(rms: 0.001, atMs: 100 + 400), "exit: quiet sustained 400ms (>= hangover) -> closed")
+    // Re-enter during hangover: a loud frame before the hangover elapses keeps it open
+    // (the segment simply never closes) and clears the pending close.
+    var vh = SchmittVad(config: cfg)
+    _ = vh.ingest(rms: 0.10, atMs: 0); _ = vh.ingest(rms: 0.10, atMs: 50)  // open
+    _ = vh.ingest(rms: 0.001, atMs: 100)                                   // quiet starts
+    check(vh.ingest(rms: 0.10, atMs: 300), "hangover: loud frame mid-hangover -> still open (close cancelled)")
+    check(vh.ingest(rms: 0.001, atMs: 350), "hangover: quiet resumes -> still open (timer restarted from 350)")
+    check(!vh.ingest(rms: 0.001, atMs: 350 + 400), "hangover: new sustained quiet -> closes on fresh 400ms (not the cancelled earlier timer)")
+    // A pause SHORTER than the hangover keeps one utterance one segment.
+    var vp = SchmittVad(config: cfg)
+    _ = vp.ingest(rms: 0.10, atMs: 0); _ = vp.ingest(rms: 0.10, atMs: 50)  // open
+    _ = vp.ingest(rms: 0.001, atMs: 100)                                   // brief pause
+    _ = vp.ingest(rms: 0.001, atMs: 300)                                   // 200ms quiet (< 400)
+    check(vp.ingest(rms: 0.10, atMs: 350), "pause: intra-sentence pause < hangover -> still one segment")
+}
+
+// SHIPPED DEFAULT config (enterFrames=3, enter 0.006) — locks the calibration that
+// makes vad-quality-live's transient rejection robust to frame-boundary straddle. A
+// join ding is ~30-50ms of energy: at 50ms frames it can land as at most TWO
+// consecutive over-enter frames (one full frame + a boundary sliver, both over the
+// tiny 0.006 enter). enterFrames=3 rejects that 2-frame transient; real speech
+// (continuous voicing) clears 3 frames and opens.
+do {
+    let def = VadConfig()   // the shipped default the engine uses
+    equal(def.enterFrames, 3, "default enterFrames is 3 (straddle-robust transient rejection)")
+    check(def.enterLevel > 0 && def.enterLevel <= 0.01, "default enterLevel is RMS-scale (<= 0.01, not the peak-scale 0.03 that named nobody live)")
+    check(def.exitLevel < def.enterLevel, "default exit < enter (hysteresis band)")
+    // A straddling transient = exactly TWO consecutive over-enter frames, then quiet.
+    var t = SchmittVad(config: def)
+    check(!t.ingest(rms: 0.42, atMs: 0), "transient: frame 1 over enter -> still closed")
+    check(!t.ingest(rms: 0.42, atMs: 50), "transient: frame 2 (straddle tail) over enter -> STILL closed (< 3)")
+    check(!t.ingest(rms: 0.0001, atMs: 100), "transient: quiet after 2-frame burst -> run reset, never opened")
+    // Real speech = 3+ consecutive frames of energy -> opens on the 3rd.
+    var s = SchmittVad(config: def)
+    _ = s.ingest(rms: 0.05, atMs: 0)
+    check(!s.ingest(rms: 0.05, atMs: 50), "speech: 2 sustained frames -> not yet")
+    check(s.ingest(rms: 0.05, atMs: 100), "speech: 3rd sustained frame -> open")
+}
+
+// =====================================================================
+// MARK: ZoomSpeakerRules — NEW web class-anchor fields + locale table (plan A2/B5).
+// Every existing zoom-rules.json must still decode (partial-override back-compat).
+// =====================================================================
+print("ZoomSpeakerRules web anchors + locale:")
+do {
+    let zr = ZoomSpeakerRules.builtin
+    // webActiveClass back-compat: the legacy exact filmstrip class still matches.
+    check(zr.webTileIsActive(classList: ["speaker-bar-container__video-frame",
+                                         "speaker-bar-container__video-frame--active"]),
+          "webActiveClass back-compat: legacy filmstrip --active matches")
+    // Generalized --active across the three prefix families.
+    check(zr.webTileIsActive(classList: ["gallery-video-container__video-frame",
+                                         "gallery-video-container__video-frame--active"]),
+          "gallery-view --active matches (NEW prefix)")
+    check(zr.webTileIsActive(classList: ["speaker-active-container__video-frame",
+                                         "speaker-active-container__video-frame--active"]),
+          "speaker-view --active matches")
+    check(!zr.webTileIsActive(classList: ["speaker-bar-container__video-frame"]),
+          "idle tile (no --active) -> not active")
+    equal(zr.webTileSurface(classList: ["gallery-video-container__video-frame"]), "gallery",
+          "surface: gallery prefix -> 'gallery'")
+    equal(zr.webTileSurface(classList: ["speaker-bar-container__video-frame"]), "filmstrip",
+          "surface: filmstrip prefix -> 'filmstrip'")
+    check(zr.webTileSurface(classList: ["some-other-class"]) == nil, "surface: non-tile -> nil")
+    check(zr.webTileMuted(classList: ["video-avatar__avatar-footer",
+                                      "video-avatar__avatar-footer--view-mute-computer"]),
+          "per-tile mute class -> muted")
+    check(!zr.webTileMuted(classList: ["video-avatar__avatar-footer"]), "footer without mute modifier -> not muted")
+    // Self mic-control cross-validation ("unmute my microphone" = you ARE muted).
+    equal(zr.webSelfUnmuted("unmute my microphone"), false, "self mic: 'unmute my microphone' -> muted")
+    equal(zr.webSelfUnmuted("mute my microphone"), true, "self mic: 'mute my microphone' -> unmuted")
+    check(zr.webSelfUnmuted("participants list") == nil, "self mic: unrelated label -> nil")
+
+    // Round-trip incl. the new fields + a locale table.
+    var custom = zr
+    custom.webGalleryFramePrefix = "gv__frame"
+    custom.webActiveModifier = "--live"
+    custom.locales = ["de": PartialZoomRules(unmutedToken: "ton an", mutedToken: "ton aus")]
+    custom.version = "web-roundtrip"
+    if let data = try? JSONEncoder().encode(custom),
+       let back = try? JSONDecoder().decode(ZoomSpeakerRules.self, from: data) {
+        equal(back, custom, "ZoomSpeakerRules (new fields + locales) Codable round-trip")
+    } else { check(false, "ZoomSpeakerRules with new fields failed to encode/decode") }
+
+    // BACK-COMPAT: an OLD zoom-rules.json (pre-new-fields) still decodes — the new
+    // fields fall back to builtin, the locales default to empty.
+    let oldJson = #"{"selfTokens":["(me)"],"webActiveClass":"speaker-bar-container__video-frame--active","version":"old-config"}"#.data(using: .utf8)!
+    if let p = try? JSONDecoder().decode(ZoomSpeakerRules.self, from: oldJson) {
+        equal(p.webGalleryFramePrefix, zr.webGalleryFramePrefix, "old config: missing new gallery prefix -> builtin")
+        equal(p.webActiveModifier, zr.webActiveModifier, "old config: missing active modifier -> builtin")
+        equal(p.webAvatarFooterClass, zr.webAvatarFooterClass, "old config: missing footer class -> builtin")
+        equal(p.webSelfMuteButtonMarkers, zr.webSelfMuteButtonMarkers, "old config: missing self-mute markers -> builtin")
+        equal(p.locales.count, 0, "old config: no locales -> empty table")
+        check(p.webTileIsActive(classList: ["speaker-bar-container__video-frame--active"]),
+              "old config: back-compat active detection still works")
+    } else { check(false, "old zoom-rules.json (no new fields) failed to decode") }
+
+    // Locale table drives the parser (B5): a synthetic 'de' overrides the tokens.
+    var withLocale = zr
+    withLocale.locales = ["de": PartialZoomRules(
+        unmutedToken: "computer-audio aktiviert", mutedToken: "computer-audio stummgeschaltet")]
+    let de = withLocale.resolved(locale: "de")
+    equal(de.unmutedToken, "computer-audio aktiviert", "locale 'de': unmutedToken overridden")
+    equal(de.audioStatusMarker, zr.audioStatusMarker, "locale 'de': un-set field inherits base")
+    equal(de.audioStatus("bibek, computer-audio aktiviert"), true, "locale 'de': parser follows overridden token")
+    equal(withLocale.resolved(locale: nil).unmutedToken, zr.unmutedToken, "locale nil -> base unchanged")
+    equal(withLocale.resolved(locale: "fr").unmutedToken, zr.unmutedToken, "locale unknown -> base unchanged")
+}
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)
