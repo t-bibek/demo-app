@@ -247,6 +247,40 @@ bug. Live-verified 2026-07-04: Alice→Bob→overlap→silence timeline, **zero
 "Someone"**, all turns named. Limit that remains: a camera-off overlap of 2+
 unmuted remotes (no ring, no geometry) stays unattributed.
 
+### §8.1 Follow-up research — can we do BETTER than the class? (2026-07-04)
+
+We probed four "improve it" avenues against the same 3-party captures. Result:
+**the per-tile `vdi-frame-occlusion` class is the best available signal; the
+alternatives regress or don't exist.**
+
+- **Geometry (big-tile promotion) — REJECTED as a primary/fused signal.** It only
+  identifies ONE dominant speaker, ONLY in speaker/auto view, and **breaks under
+  screen-share** (the shared content becomes the big tile) and in gallery/together
+  (equal tiles). Kept as an OPT-IN corroborator only (`useGeometry`), never fused
+  in by default.
+- **"Structural, not the class" (detect the ring by node geometry) — REJECTED,
+  it FALSE-POSITIVES.** The ring IS structurally a near-tile-sized `AXGroup`
+  overlay that appears only when speaking — but so is the base video container on
+  a **filmstrip** tile in speaker view. Measured: the muted filmstrip tile carries
+  a ≥0.85×-tile overlay with NO `vdi-frame-occlusion`, so a class-free
+  "tile-sized-overlay ⇒ speaking" rule marks a SILENT participant as speaking.
+  Only the class discriminates. Locked by a regression self-test
+  (`speaker-view/bob: exactly ONE ring … the muted filmstrip tile is NOT
+  mismarked`).
+- **The "<name> is speaking" note — transient, not primary.** Absent in every
+  steady-state capture (fired once live as `teams.pip`); it reflects only THIS
+  client's rendered view. Kept as the compact-window signal, never the main one.
+- **People-panel per-row voice indicator — not found.** Panel rows expose only
+  name + mute state (`Unmuted`/`Muted` image), no speaking/voice-level element, so
+  it can't cover the camera-off gap. (Tentative: a dedicated live probe was
+  attempted but the WebView2 tree throttled; the clean solo-panel capture shows
+  only mute.)
+
+**Net:** the shipped design (per-tile `vdi-frame-occlusion`, self-excluded,
+config-drop-able) is validated as the best passive signal. The one real remaining
+gap is a **camera-off speaker** (no video frame ⇒ no ring): a single one is caught
+by the mute-gate fallback; a camera-off overlap of 2+ needs audio diarization.
+
 ---
 
 ## 7. FINAL VERDICT — investigation closed (2026-06-23) — ⚠️ SUPERSEDED BY §8

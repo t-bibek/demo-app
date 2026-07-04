@@ -698,9 +698,17 @@ if let root = loadTeamsFixture("speaker-3p-bob-speaking") {
           "speaker-view/bob: muted Alice NOT speaking")
     equal(teamsSpeakers(ex), ["Bob Speaker"],
           "speaker-view/bob: resolver names EXACTLY Bob")
-    // Bob is the promoted big tile — geometry corroborates the ring.
+    // Bob is the promoted big tile — geometry corroborates the ring HERE.
     let big = ex.tiles.max(by: { $0.area < $1.area })
     equal(big?.name, "Bob Speaker", "speaker-view/bob: the audible remote is the promoted big tile (geometry corroborates)")
+    // REGRESSION GUARD — why the ring MUST stay class-anchored, not geometric
+    // (research 2026-07-04): muted Alice is a small filmstrip tile that DOES carry
+    // a near-tile-sized AXGroup overlay (the base video container). A class-free
+    // "tile-sized overlay ⇒ speaking" heuristic would FALSE-POSITIVE her; only the
+    // vdi-frame-occlusion CLASS excludes her. Locks the design against a future
+    // "detect the ring structurally" change that would regress.
+    equal(ex.tiles.filter { $0.isSpeaking }.map { $0.name }, ["Bob Speaker"],
+          "speaker-view/bob: exactly ONE ring (class-anchored) — the muted filmstrip tile is NOT mismarked")
 } else { check(false, "fixture speaker-3p-bob-speaking.json missing") }
 
 // CELL: 2 participants × speaker/large view (screen-share stage) — the remote's

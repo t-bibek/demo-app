@@ -103,6 +103,20 @@ case "resize":
     guard err == .success else { fail("RESIZE_FAILED: \(err.rawValue)") }
     print("RESIZED \(Int(w))x\(Int(h))")
 
+case "clickpt":
+    // Synthesize a left click at absolute screen coords (for controls the AX tree
+    // exposes only as unlabeled thumbnails — e.g. the share-content picker).
+    guard args.count >= 2, let x = Double(args[0]), let y = Double(args[1]) else {
+        fail("usage: TeamsDrive clickpt <x> <y>")
+    }
+    AXKit.forceActivateForCapture(pid: app.processIdentifier)
+    usleep(400_000)
+    let pt = CGPoint(x: x, y: y)
+    let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left)
+    let up   = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,   mouseCursorPosition: pt, mouseButton: .left)
+    down?.post(tap: .cghidEventTap); usleep(60_000); up?.post(tap: .cghidEventTap)
+    print("CLICKED_PT \(Int(x)),\(Int(y))")
+
 case "find":
     guard let needle = args.first else { fail("usage: TeamsDrive find <substring>") }
     let matches = findAll(needle)
