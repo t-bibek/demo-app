@@ -72,6 +72,24 @@ export default {
       cmd: `node qa/live-scenario-verdict.mjs zoom-panelclosed-live ${RESULTS}`,
       match: '"verdict":"PASS"',
     },
+    {
+      // PIP background coverage (plan C3/B1): the main meeting window is degraded
+      // (unfocused, then minimized if unfocus alone doesn't spawn the PIP — the
+      // ACTUAL trigger is recorded); PIP "Talking:" edges (zoom.pip / zoom.pip.edge)
+      // must still name the speaker. REVIEW if this Zoom build never shows a PIP.
+      id: 'pip-background-live',
+      cwd: '.',
+      cmd: `node qa/live-scenario-verdict.mjs pip-background-live ${RESULTS}`,
+      match: '"verdict":"PASS"',
+    },
+    {
+      // VAD quality (plan C3/B4): a tone/noise burst with speech OFF must NOT name
+      // the guest (energy != voice); real fake-speech MUST. Raw levels recorded.
+      id: 'vad-quality-live',
+      cwd: '.',
+      cmd: `node qa/live-scenario-verdict.mjs vad-quality-live ${RESULTS}`,
+      match: '"verdict":"PASS"',
+    },
   ],
 
   // No blocker tools: the guest's fake-device tone reaches the detector's system

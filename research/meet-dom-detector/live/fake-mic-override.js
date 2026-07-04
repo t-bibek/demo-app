@@ -55,6 +55,33 @@ function buildOverride(wavPath, label) {
       return !!on;
     };
     window.__fakeMicToneOn = false;
+    // SAMPLE-ACCURATE short-transient tone burst train (VAD-quality probe). Schedules
+    // the whole train on the AudioContext clock so timing does NOT depend on CDP
+    // round-trips — each burst is a brief ding-like transient (pulseMs, default 40ms)
+    // that a debounced VAD (enterFrames >= 2 over 50ms frames) must reject, repeated
+    // count times with gapMs silence between. Returns the scheduled train total
+    // duration in ms so the caller can await it. Fully independent of speech gain.
+    window.__fakeMicTonePulse = function(count, pulseMs, gapMs, hz){
+      try { if (ctx.state === 'suspended') ctx.resume(); } catch(e){}
+      count = count || 12; pulseMs = pulseMs || 40; gapMs = gapMs || 300; hz = hz || 440;
+      if (!osc) { osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = hz; osc.connect(toneGain); osc.start(); }
+      else { osc.frequency.setValueAtTime(hz, ctx.currentTime); }
+      const p = pulseMs / 1000, g = gapMs / 1000;
+      let t = ctx.currentTime + 0.02;
+      toneGain.gain.cancelScheduledValues(ctx.currentTime);
+      toneGain.gain.setValueAtTime(0.0, ctx.currentTime);
+      for (let i = 0; i < count; i++) {
+        // Fast attack/decay so each burst is a genuine transient shorter than two
+        // 50ms VAD frames (rise ~5ms, hold pulseMs, fall ~5ms).
+        toneGain.gain.setValueAtTime(0.0, t);
+        toneGain.gain.linearRampToValueAtTime(0.6, t + 0.005);
+        toneGain.gain.setValueAtTime(0.6, t + 0.005 + p);
+        toneGain.gain.linearRampToValueAtTime(0.0, t + 0.005 + p + 0.005);
+        t += 0.005 + p + 0.005 + g;
+      }
+      window.__fakeMicToneOn = false;
+      return Math.round((t - ctx.currentTime) * 1000);
+    };
     ctx.decodeAudioData(b64ToBuf(B64)).then((audioBuf) => {
       let src;
       function start(){

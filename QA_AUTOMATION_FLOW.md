@@ -211,3 +211,145 @@ The workflow takes three args:
 
 So `{ skipImplement: true }` re-runs just the QA/fix/review loop against whatever is
 currently in the tree.
+
+## Autonomous loop — ZOOM (web + native) event-driven detector
+
+The same implement → QA → fix → review pattern drives the **Zoom** event-driven
+change (web observer/edge path + native PIP/talking-changed fusion + the shared
+`SchmittVad` upgrade). The loop script is committed at
+[`.claude/workflows/event-driven-zoom-qa-loop.mjs`](.claude/workflows/event-driven-zoom-qa-loop.mjs)
+(adapted from the Meet loop that went GREEN 2026-07-04). Loop logic is pure JS; the
+agents do the reasoning.
+
+> Note: the workflow file is executed **by the workflow harness**, which wraps the
+> module body in an async function and injects `args`. That is why it uses a
+> top-level `args`/`return` — running plain `node --check` on it reports an
+> "Illegal return statement" **by design** (the proven Meet workflow behaves
+> identically). It is not a standalone script and must not be lint-gated as one.
+
+### The four gates (all through the `qa/` orchestrator)
+
+Each iteration runs the fast deterministic gate; only when it is green do the three
+live gates run **in order**, stopping at the first failure:
+
+```bash
+# 1. Fast gate (every iteration): suites + review invariants INV-1..19, no live tools.
+qa/run_autonomous_qa.sh --skip-tools
+
+# 2. Live NATIVE Zoom gate: ZoomDrive host + web guest, native PIP/mute-gate/VAD scenarios.
+QA_CONFIG=qa/qa.zoom.config.mjs    qa/run_autonomous_qa.sh --skip-review
+
+# 3. Live WEB Zoom gate: native host + Chrome "Web Observer" + Guest Alpha/Bravo.
+QA_CONFIG=qa/qa.zoomweb.config.mjs qa/run_autonomous_qa.sh --skip-review
+
+# 4. Meet LIVE regression gate: proves the shared VAD swap didn't regress Meet.
+QA_CONFIG=qa/qa.live.config.mjs    qa/run_autonomous_qa.sh --skip-review
+```
+
+- **Native gate** (`qa/qa.zoom.config.mjs`): the `zoom-live-session` suite runs
+  [`qa/zoom-live/run-zoom-live-qa.mjs`](qa/zoom-live/run-zoom-live-qa.mjs) once and
+  prints `ZOOM LIVE SESSION COMPLETE`; six reader suites gate the scenarios
+  `zoom-detect-live` / `zoom-roster-live` / `zoom-mutegate-live` /
+  `zoom-panelclosed-live` (the original five) **plus** the two new plan-C3 scenarios
+  `pip-background-live` (main window degraded → PIP `Talking:` edges name the
+  speaker; the ACTUAL trigger — unfocus vs minimize — is recorded, not assumed) and
+  `vad-quality-live` (a tone burst with speech OFF must NOT name a guest; real
+  fake-speech MUST — raw levels recorded for VAD calibration). Verdicts →
+  `qa/zoom-live/zoom-live-results.ndjson`.
+- **Web gate** (`qa/qa.zoomweb.config.mjs`, `timeoutMs: 25*60_000`, `tools: []`): the
+  `zoomweb-live-session` suite runs
+  [`qa/zoomweb-live/run-zoomweb-live-qa.mjs`](qa/zoomweb-live/run-zoomweb-live-qa.mjs)
+  once and prints `ZOOMWEB LIVE SESSION COMPLETE`; five reader suites gate
+  `zoomweb-events-live` (scripted turns + a rapid ~2.7s swap block of 4 → ≥3/4
+  caught; raw per-swap dts + measured active-class linger recorded so the latency bar
+  and `TransitionConfidence` halfLife are calibrated from data, Meet's 2500ms bar as
+  precedent), `zoomweb-views-live` (speaker / gallery / screen-share filmstrip on the
+  observer client; the share sub-block may degrade to REVIEW with evidence, speaker +
+  gallery must PASS), `cpu-compare-live` (interleaved legacy/event A/B, pooled
+  medians: `eventCpu ≤ 0.6× polling` AND event full walks `< 0.5×` legacy from
+  `zoomweb_walk_stats`; REVIEW band = near-miss only), `zoomweb-silence-live`
+  (unmuted-but-silent guest 60s → ZERO web speaker attribution — the falsification
+  scenario), and `zoomweb-legacy-silent` (a ~30s detector block with **no** `MSD_MODE`
+  during the live meeting → zero `zoomweb_edge`/`zoomweb_observer`/`zoomweb_walk_stats`
+  activity while the meeting is still detected legacy — the runtime byte-silence
+  probe). Verdicts → `qa/zoomweb-live/zoomweb-live-results.ndjson`.
+
+The web rig's **topology** (no signed-in Zoom web-host profile exists): host NATIVELY
+via the proven ZoomDrive bootstrap/harvest/admit flow — refactored into the shared
+[`qa/zoom-live/zoom-host-lib.mjs`](qa/zoom-live/zoom-host-lib.mjs) so both rigs drive
+the ONE host flow — with a Chrome "Web Observer" as the OBSERVED surface the detector
+reads and Guest Alpha / Guest Bravo for 3-party dynamics. Every web guest joins with
+**speech-gain gating** ([`qa/zoomweb-live/zoomweb-guest.mjs`](qa/zoomweb-live/zoomweb-guest.mjs)
+installs the `fake-mic-override.js` getUserMedia override; `window.__fakeMicSpeak(true|false)`
+gates speech content **independently** of the mute button) — never tone+mute-toggle,
+so unmuted-silent and speaking are distinct controllable states. All web-scenario
+assertions are scoped to web-sourced signals (`zoom.web_active*` sources,
+`zoomweb_edge` NDJSON) so the co-present native host surface can't contaminate
+verdicts. `ZOOMWEB_CAPTURE_FIXTURES=1` makes the runner AXSnapshot one gallery + one
+speaker-view + one share snapshot of the observer Chrome into
+`macos/Fixtures/zoom-web/` for the Swift self-tests to replay.
+
+Every reader suite gates on `match: '"verdict":"PASS"'` with **no** `minCount` (live
+suites are absent from CI by design — **INV-17** greps CI to enforce that
+`qa.zoom.config.mjs` + `qa.zoomweb.config.mjs` are never wired into the workflow). The
+session suites print their completion marker on **every** exit path (including
+pre-flight failure — `failAll` records FAIL for every scenario first), so the reader
+suites always report a real verdict rather than hanging. Both runners fast-fail if a
+rig child process dies (they check `proc.exitCode` in every wait loop) and tear the
+rig down in `finally`.
+
+### Results files
+
+| File | Written by |
+| --- | --- |
+| `qa/zoom-live/zoom-live-results.ndjson` | native runner (one verdict line/scenario) |
+| `qa/zoomweb-live/zoomweb-live-results.ndjson` | web runner (one verdict line/scenario) |
+| `qa/zoom-live/zoom-native-edges.ndjson` | native PIP `zoom_edge`/talking-changed log |
+| `qa/zoomweb-live/zoomweb-edges.ndjson` | web `zoomweb_edge` (active-moved) log |
+| `research/meet-dom-detector/live/live-qa-results.ndjson` | Meet regression gate |
+| `docs/qa-report-zoom-event-driven.md` | Report phase, on loop exit |
+
+### Loop log (`qa/loop-log.ndjson`)
+
+Same schema as the Meet loop — every phase appends exactly one NDJSON line:
+
+```json
+{"iteration":0,"phase":"implement-qa","verdict":"pass","failures":[],"ts":1751600000}
+```
+
+- `phase` — `implement-swift` | `implement-qa` | `qa-deterministic` | `qa-live` |
+  `fix` | `review` | `exit`.
+- `verdict` — `pass` | `fail` | `done` | `gaps` (and `GREEN` | `ITER_CAP` on the final
+  `exit` line).
+- `failures` — failing suite/invariant ids or short reviewer-gap strings; `ts` — unix
+  seconds.
+
+### Iteration cap + flow
+
+`MAX_ITERS = 3` (override with `maxIters`). Each iteration: **fast QA** → on pass
+**live QA** (native → web → Meet regression, stopping at the first failure) → on pass
+**reviewer** (assesses *QA sufficiency*, not the product — linger/decay boundaries,
+view-switch races, PIP-trigger honesty, VAD hysteresis boundaries, vacuous-pass and
+calibration-gaming risks). A failing gate or an unresolved reviewer gap routes a
+failure report to a **fix** agent and loops back. Exit is `GREEN` (all four gates
+green + no unresolved gaps) or `ITER_CAP` after 3 iterations; on exit a report is
+written to `docs/qa-report-zoom-event-driven.md`.
+
+### Model routing
+
+Implement / fix / reviewer agents run on **Opus** (hard reasoning); the QA-runner and
+report/log agents inherit the session model at low effort (mechanical: run the
+command, parse the output into the schema). Threshold/latency calibration mid-loop is
+legitimate **only** with physics justification from recorded raw data (the linger /
+latency distributions the rigs record) — the reviewer adjudicates any calibration and
+treats un-justified weakening of an assertion as an unresolved gap.
+
+### Re-run it
+
+Same three args as the Meet loop:
+
+- `planFile` — the plan the agents implement/verify against (defaults to
+  `~/.claude/plans/zoom-event-driven-implementation.md`).
+- `maxIters` — iteration cap (default 3).
+- `skipImplement` — set `true` to skip Phase 1 and loop QA/fix/review on **existing**
+  code (e.g. after a manual tweak, or to re-verify a landed change).
