@@ -1410,17 +1410,105 @@ if let talk = loadZoomFixture("native-grid-2p-panelopen-talk"),
 } else { check(false, "fixture native-grid-2p-panelopen-{talk,silent}.json missing") }
 
 // CELL: LIVE 2p, panel CLOSED. Native Zoom still exposes name + mute in the GRID
-// TILE OVERLAYS (roster is NOT zeroed on 7.0.5) — but the "(me)" self marker is
-// panel-only, so self is unidentifiable. The engine's mute-gate then can't
-// exclude self and falls to the honest floor for an ambiguous count. (Live: the
-// detector logged speech_on {Someone, audio.someone} in exactly this state.)
+// TILE OVERLAYS (roster is NOT zeroed on 7.0.5), but the "(me)" self marker is
+// panel-only — so the meeting window ALONE can't identify self.
 if let closed = loadZoomFixture("native-grid-2p-panelclosed-silent") {
     let ex = zoomExtractWindow(closed)
     equal(ex.roster.map { $0.name }.sorted(), ["David Thapa", "Guest Alpha"],
           "2p/panel-closed: tile overlays still expose the roster (name+mute)")
     check(ex.roster.allSatisfy { !$0.isMe },
-          "2p/panel-closed: NO self marker in tile overlays -> self unidentifiable (documented nuance)")
+          "2p/panel-closed (meeting window alone): no '(me)' -> self not yet resolved")
+
+    // THE FIX: the home/Workplace window's profile button ("Zoom, <Name>,
+    // Available, Basic account") is an APP-WIDE self signal that survives the
+    // closed panel. Fusing it with the panel-closed meeting window resolves self
+    // WITHOUT the panel, so the single remote is NAMED (not "Someone") and self
+    // is named on mic activity.
+    if let home = loadZoomFixture("native-home-negative") {
+        let fused = zoomFuseWindows([zoomExtractWindow(closed), zoomExtractWindow(home)])
+        equal(fused.selfName, "David Thapa",
+              "2p/panel-closed + home: self resolved via the account profile button")
+        equal(fused.roster.filter { $0.isMe }.map { $0.name }, ["David Thapa"],
+              "2p/panel-closed + home: exactly one self, marked from the account name")
+        // This fixture is the SILENT capture (guest muted), so there is correctly
+        // NO unmuted remote — the point proven here is that SELF is now excluded
+        // (David isn't miscounted as a remote), and self speech gets the real name.
+        let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+        check(!fused.roster.first(where: { $0.name == "David Thapa" })!.isMe == false,
+              "2p/panel-closed + home: David is self, never a remote")
+        equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: true, localName: fused.selfName ?? "You",
+                                   remoteActive: false, remoteUnmutedNames: remotes),
+              ["David Thapa"],
+              "2p/panel-closed + home: self speech -> real name (not 'You')")
+    } else { check(false, "fixture native-home-negative.json missing") }
 } else { check(false, "fixture native-grid-2p-panelclosed-silent.json missing") }
+
+// LIVE PAIR (Zoom 7.0.5): the REAL panel-closed meeting window + the REAL home
+// window whose profile button reads "Zoom, David Thapa, In a Zoom Meeting, Basic
+// account". Fusing them names the unmuted remote with the panel CLOSED — the
+// exact fix, on captured live data (mirrors the live detector: is_local David +
+// speech_on {Guest Alpha, zoom.mute_gate}).
+if let mtg = loadZoomFixture("native-grid-2p-panelclosed-talk"),
+   let home = loadZoomFixture("native-home-inmeeting") {
+    let fused = zoomFuseWindows([zoomExtractWindow(mtg), zoomExtractWindow(home)])
+    equal(fused.selfName, "David Thapa",
+          "LIVE panel-closed + home: self resolved via 'In a Zoom Meeting' account button")
+    equal(fused.roster.filter { $0.isMe }.map { $0.name }, ["David Thapa"],
+          "LIVE panel-closed + home: exactly one self")
+    let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(remotes, ["Guest Alpha"], "LIVE panel-closed + home: single unmuted remote isolated")
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: fused.selfName ?? "You",
+                               remoteActive: true, remoteUnmutedNames: remotes),
+          ["Guest Alpha"], "LIVE panel-closed + home: remote NAMED (was 'Someone')")
+    // Meeting window ALONE (no home) still can't ID self — proves the home
+    // window is what carries the fix.
+    let alone = zoomFuseWindows([zoomExtractWindow(mtg)])
+    check(alone.selfName == nil, "LIVE panel-closed meeting alone: self still unresolved (home window supplies it)")
+} else { check(false, "fixture native-grid-2p-panelclosed-talk / native-home-inmeeting missing") }
+
+// The naming follows once self is resolved: a panel-closed call whose remote is
+// UNMUTED now NAMES that remote instead of "Someone" (self excluded via the
+// account hint). Synthetic to isolate the mute-gate consequence.
+do {
+    // meeting window, panel closed, guest UNMUTED (tile overlays, no "(me)");
+    // home window carries the account button.
+    let meetingClosed = ZoomAXNode(role: "AXWindow", title: "Zoom Meeting", children: [
+        ZoomAXNode(role: "AXTabGroup", desc: "David Thapa, Computer audio unmuted, Video on"),
+        ZoomAXNode(role: "AXTabGroup", desc: "Guest Alpha, Computer audio unmuted"),
+        ZoomAXNode(role: "AXButton", desc: "Leave"),
+    ])
+    let home = ZoomAXNode(role: "AXWindow", title: "Zoom Workplace", children: [
+        ZoomAXNode(role: "AXButton", desc: "Zoom, David Thapa, Available, Basic account"),
+    ])
+    let fused = zoomFuseWindows([zoomExtractWindow(meetingClosed), zoomExtractWindow(home)])
+    equal(fused.selfName, "David Thapa", "synthetic panel-closed: self via account hint")
+    let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(remotes, ["Guest Alpha"], "synthetic panel-closed: single unmuted remote isolated (self excluded)")
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: fused.selfName ?? "You",
+                               remoteActive: true, remoteUnmutedNames: remotes),
+          ["Guest Alpha"],
+          "synthetic panel-closed: remote speech -> NAMED 'Guest Alpha' (was 'Someone')")
+    // WITHOUT the home window (account hint absent), the old honest floor holds.
+    let noHome = zoomFuseWindows([zoomExtractWindow(meetingClosed)])
+    let remotesNoHome = noHome.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "You",
+                               remoteActive: true, remoteUnmutedNames: remotesNoHome),
+          ["Someone"],
+          "synthetic panel-closed, NO account hint: falls back to honest 'Someone' (graceful)")
+}
+
+// The account-name parser: extract the field before the presence word; reject
+// anything that isn't a profile button.
+equal(ZoomSpeakerRules.builtin.accountSelfName("Zoom, David Thapa, Available, Basic account"),
+      "David Thapa", "account button -> self name (field before presence)")
+equal(ZoomSpeakerRules.builtin.accountSelfName("Zoom, Bibek Thapa, Do not disturb, Pro account"),
+      "Bibek Thapa", "account button, 'Do not disturb' + Pro tier -> name")
+equal(ZoomSpeakerRules.builtin.accountSelfName("Zoom, David Thapa, In a Zoom Meeting, Basic account"),
+      "David Thapa", "account button MID-CALL ('In a Zoom Meeting' status) -> name (live-observed)")
+check(ZoomSpeakerRules.builtin.accountSelfName("Guest Alpha, Computer audio unmuted") == nil,
+      "a roster tile is NOT an account button (no presence + 'account')")
+check(ZoomSpeakerRules.builtin.accountSelfName("View David Thapa's profile") == nil,
+      "a per-tile profile button is NOT the account button")
 
 // CELL: LIVE PIP / minimal view — the floating AXSystemDialog is detected as PIP
 // so the call stays alive when minimized (its tree lacks the Leave button).

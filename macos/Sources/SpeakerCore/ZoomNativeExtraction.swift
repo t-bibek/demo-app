@@ -84,6 +84,10 @@ public struct ZoomWindowExtraction: Equatable, Sendable {
     /// First "(me)" line in THIS window (the panel may be a different window —
     /// fusion resolves across all of them).
     public var selfNameHint: String?
+    /// The signed-in account name from the home window's profile button — the
+    /// APP-WIDE self signal that survives a closed Participants panel (where
+    /// "(me)" is gone). Weaker than `selfNameHint`; fusion prefers "(me)".
+    public var accountSelfHint: String?
     /// Window title carries a meeting-title token ("Zoom Meeting" / "Meeting -").
     public var titleIsMeeting: Bool
     /// A Leave/End-Meeting button exists (vanishes post-call → meeting_ended).
@@ -96,10 +100,12 @@ public struct ZoomWindowExtraction: Equatable, Sendable {
     public var pipNames: [String]
 
     public init(roster: [ZoomRosterEntry] = [], selfNameHint: String? = nil,
+                accountSelfHint: String? = nil,
                 titleIsMeeting: Bool = false, callActive: Bool = false,
                 isPip: Bool = false, pipSpeaker: String? = nil, pipNames: [String] = []) {
         self.roster = roster
         self.selfNameHint = selfNameHint
+        self.accountSelfHint = accountSelfHint
         self.titleIsMeeting = titleIsMeeting
         self.callActive = callActive
         self.isPip = isPip
@@ -119,6 +125,7 @@ public func zoomExtractWindow(_ root: ZoomAXNode,
     var byName: [String: Entry] = [:]
     var order: [String] = []
     var selfName: String?
+    var accountSelf: String?
     var visited = 0
 
     func merge(name: String, unmuted: Bool?, isMe: Bool) {
@@ -183,6 +190,13 @@ public func zoomExtractWindow(_ root: ZoomAXNode,
             if label.contains(rules.participantsPanelToken) {
                 for c in n.children { collectPanelRows(c, depth + 1) }
             }
+        }
+        // App-wide self signal: the home window's profile button carries
+        // "Zoom, <Name>, Available, Basic account" — readable even with the
+        // meeting panel closed (unlike "(me)").
+        if accountSelf == nil, n.role == "AXButton", let d = n.desc,
+           let acct = rules.accountSelfName(d), let clean = cleanParticipantName(acct) {
+            accountSelf = clean
         }
         for raw in [n.desc, n.value, n.title].compactMap({ $0 }) {
             if selfName == nil, let s = parseZoomSelfLine(raw, rules: rules) { selfName = s }
@@ -260,7 +274,7 @@ public func zoomExtractWindow(_ root: ZoomAXNode,
         return ZoomRosterEntry(name: name, unmuted: e.unmuted ?? false, isMe: e.isMe)
     }
     return ZoomWindowExtraction(
-        roster: roster, selfNameHint: selfName,
+        roster: roster, selfNameHint: selfName, accountSelfHint: accountSelf,
         titleIsMeeting: rules.isMeetingTitle((root.title ?? "").lowercased()),
         callActive: callActive, isPip: isPip,
         pipSpeaker: pipSpeaker, pipNames: pipNames)
@@ -326,11 +340,21 @@ public func zoomFuseWindows(_ windows: [ZoomWindowExtraction],
     }
 
     // Self resolution (objective: self speech gets the real roster name, never
-    // "You", and self is never counted as a remote): first per-window "(me)"
-    // hit, else the external hint. Mark the matching entry; if the roster never
-    // showed the name (panel closed, hint from elsewhere), append a synthetic
-    // unmuted self entry — same semantics the old per-window read had.
-    let resolvedSelf = windows.compactMap { $0.selfNameHint }.first ?? selfHint
+    // "You", and self is never counted as a remote). Priority:
+    //   1. the panel's "(me)" row (meeting-authoritative);
+    //   2. the home window's ACCOUNT name — survives a CLOSED panel, so a
+    //      2-party call still isolates the single remote AND names self on mic;
+    //   3. an external hint.
+    // Only accept the account name if it actually matches a roster entry (so a
+    // stale home-window name from a DIFFERENT account can't mislabel a remote).
+    let panelSelf = windows.compactMap { $0.selfNameHint }.first
+    // Resolve the account name to the EXACT roster key it matches (so marking
+    // isMe never appends a case-variant duplicate).
+    let accountSelf = windows.compactMap { $0.accountSelfHint }
+        .lazy
+        .compactMap { name in byName.keys.first { $0.caseInsensitiveCompare(name) == .orderedSame } }
+        .first
+    let resolvedSelf = panelSelf ?? accountSelf ?? selfHint
     if let selfName = resolvedSelf {
         if var e = byName[selfName] {
             e.isMe = true

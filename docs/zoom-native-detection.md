@@ -333,12 +333,33 @@ fixture replay in `SpeakerCoreSelfTest` exercises byte-for-byte (the Teams
 | panel OPEN | `participant_joined` David Thapa **`is_local`** (via `"(Host, me)"`) + Guest Alpha; `speech_on {Guest Alpha, zoom.mute_gate}` (single unmuted remote NAMED) |
 | panel CLOSED | `speech_on {Someone, audio.someone}` |
 
-**Panel-closed nuance (refines §7's "panel closed → roster unavailable"):** on
-7.0.5 the **grid tile overlays still carry name + mute** when the panel is closed,
-so the roster is NOT zeroed — but the `"(me)"` self marker is **panel-only**, so
-self becomes unidentifiable and a 2-unmuted call correctly falls to the honest
-anonymous floor. The mute text still requires the panel (docked or detached) to
-read **remote** mute reliably; tile overlays are the fallback.
+**Panel-closed self, via the account button (2026-07-04 fix).** On 7.0.5 the
+grid tile overlays still carry name + mute with the panel closed, so the roster
+is NOT zeroed — but the `"(me)"` marker is **panel-only**. The self signal that
+survives is the **home/Workplace window's profile button**, whose description is
+`"Zoom, <Name>, <presence>, <tier> account"` (live: `"…, In a Zoom Meeting,
+Basic account"` mid-call). `ZoomSpeakerRules.accountSelfName` reads the name (the
+comma-field before the presence word) and `zoomFuseWindows` uses it as a
+second-priority self hint (after `"(me)"`), accepted only when it matches a
+roster entry. So a panel-closed 2-party call now **names the single remote** and
+names **self on mic activity** instead of `Someone`:
+
+```
+panel CLOSED, guest unmuted →  participant_joined David Thapa is_local:true
+                               speech_on {Guest Alpha, zoom.mute_gate}   ← was "Someone"
+```
+
+Graceful fallback: if the home window is absent (account hint gone), it reverts
+to the honest `Someone` floor. Reliable **remote** mute still needs the panel
+(docked or detached); tile overlays are the fallback for it.
+
+**Zoom WEB is a different mechanism — no self gap.** The web client (browser)
+DOES expose a per-tile speaking signal: the active tile's
+`speaker-bar-container__video-frame--active` CSS class. `zoomWebSpeakerBar` reads
+the active tile's name (self included) and the engine names it directly
+(`zoom.web_active`, VAD-gated) — so web never mute-gates and never falls to
+`Someone` for a readable tree; when YOU are the active speaker your own tile
+carries the class and you are named. The account-button fix is native-only.
 
 **Two-tier QA.** Deterministic tier: committed raw-AXSnapshot fixtures
 (`macos/Fixtures/zoom-native/*.json` — a 3-party docked-panel seed + live 2-party

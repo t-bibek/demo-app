@@ -10,7 +10,9 @@ extractors consume). Replayed per cell in `SpeakerCoreSelfTest`. Provenance:
 | `native-grid-3p-panelopen-talk.json` | ax-dump 20260625-200432 (3-party) | gallery, 3p, docked panel | phantom-`AXImage` guard, split-row P2 join, `(Host, me)` self, `", active speaker"` tolerated-not-depended-on, 2-unmuted-remote honest `Someone` |
 | `native-grid-2p-panelopen-talk.json` | LIVE 2026-07-04, guest UNMUTED | gallery, 2p, panel open | host self via `(Host, me)`, single unmuted remote → NAMED |
 | `native-grid-2p-panelopen-silent.json` | LIVE 2026-07-04, guest MUTED | gallery, 2p, panel open | talk↔silent pair: parsed output byte-identical except Guest Alpha's mute clause (no AX speaking signal) |
-| `native-grid-2p-panelclosed-silent.json` | LIVE 2026-07-04, panel closed | gallery, 2p, panel closed | tile overlays still expose name+mute; `(me)` gone → self unidentifiable |
+| `native-grid-2p-panelclosed-silent.json` | LIVE 2026-07-04, panel closed, guest muted | gallery, 2p, panel closed | tile overlays still expose name+mute; `(me)` gone → meeting window alone can't ID self |
+| `native-grid-2p-panelclosed-talk.json` | LIVE 2026-07-04, panel closed, guest unmuted | gallery, 2p, panel closed | fused with the home window → self resolved, single remote NAMED (the panel-closed fix) |
+| `native-home-inmeeting.json` | LIVE 2026-07-04, home window mid-call | home shell (self source) | profile button `"Zoom, David Thapa, In a Zoom Meeting, Basic account"` → the app-wide self name that survives a closed panel |
 | `native-pip-2p.json` | LIVE 2026-07-04, minimal view | PIP | `AXSystemDialog` + `AXRoleDescription "Video render"` → `isPip`; keeps call alive |
 | `native-home-negative.json` | LIVE 2026-07-04, post-call | home shell (negative) | not a meeting, empty roster (toolbar chrome ≠ participants) |
 

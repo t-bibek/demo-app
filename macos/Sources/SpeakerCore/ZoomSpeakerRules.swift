@@ -31,6 +31,14 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
     /// "Participants list") whose AXRows split name and mic state across SIBLING
     /// nodes (AXStaticText name + AXImage status) instead of one combined line.
     public var participantsPanelToken: String
+    /// Presence words in the home window's profile button — "Zoom, <Name>,
+    /// Available, Basic account". They anchor the APP-WIDE self name (the
+    /// signed-in account), which — unlike the meeting panel's "(me)" — is
+    /// readable even when the Participants panel is closed. The name is the
+    /// comma-field immediately BEFORE the presence word.
+    public var accountPresenceTokens: [String]
+    /// Suffix that confirms a profile-button description ("… Basic account").
+    public var accountSuffixToken: String
 
     // MARK: Native — window classification
     /// Window-title substrings that mark an in-meeting window ("Zoom Meeting",
@@ -72,6 +80,8 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
                 mutedToken: String,
                 selfTokens: [String],
                 participantsPanelToken: String,
+                accountPresenceTokens: [String],
+                accountSuffixToken: String,
                 meetingTitleTokens: [String],
                 leaveButtonTokens: [String],
                 pipTalkingPrefix: String,
@@ -89,6 +99,8 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
         self.mutedToken = mutedToken
         self.selfTokens = selfTokens
         self.participantsPanelToken = participantsPanelToken
+        self.accountPresenceTokens = accountPresenceTokens
+        self.accountSuffixToken = accountSuffixToken
         self.meetingTitleTokens = meetingTitleTokens
         self.leaveButtonTokens = leaveButtonTokens
         self.pipTalkingPrefix = pipTalkingPrefix
@@ -112,6 +124,10 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
         mutedToken: "audio muted",
         selfTokens: ["(me)", ", me)"],
         participantsPanelToken: "participants",
+        accountPresenceTokens: ["available", "busy", "away", "do not disturb",
+                                "offline", "in a meeting", "in a zoom meeting",
+                                "presenting", "be right back", "in a calendar event"],
+        accountSuffixToken: "account",
         meetingTitleTokens: ["zoom meeting", "meeting -"],
         leaveButtonTokens: ["leave meeting", "end meeting", "leave"],
         pipTalkingPrefix: "talking:",
@@ -138,6 +154,8 @@ public struct ZoomSpeakerRules: Codable, Sendable, Equatable {
         mutedToken = try c.decodeIfPresent(String.self, forKey: .mutedToken) ?? b.mutedToken
         selfTokens = try c.decodeIfPresent([String].self, forKey: .selfTokens) ?? b.selfTokens
         participantsPanelToken = try c.decodeIfPresent(String.self, forKey: .participantsPanelToken) ?? b.participantsPanelToken
+        accountPresenceTokens = try c.decodeIfPresent([String].self, forKey: .accountPresenceTokens) ?? b.accountPresenceTokens
+        accountSuffixToken = try c.decodeIfPresent(String.self, forKey: .accountSuffixToken) ?? b.accountSuffixToken
         meetingTitleTokens = try c.decodeIfPresent([String].self, forKey: .meetingTitleTokens) ?? b.meetingTitleTokens
         leaveButtonTokens = try c.decodeIfPresent([String].self, forKey: .leaveButtonTokens) ?? b.leaveButtonTokens
         pipTalkingPrefix = try c.decodeIfPresent(String.self, forKey: .pipTalkingPrefix) ?? b.pipTalkingPrefix
@@ -196,5 +214,26 @@ extension ZoomSpeakerRules {
     /// True when subtree text identifies the PIP thumbnail's content.
     public func hasPipMarker(_ lowercased: String) -> Bool {
         pipContentMarkers.contains { !$0.isEmpty && lowercased.contains($0) }
+    }
+
+    /// The signed-in account's display name from the home window's profile button
+    /// ("Zoom, <Name>, Available, Basic account") — the app-wide self signal that
+    /// survives a CLOSED Participants panel (where "(me)" is unavailable). The
+    /// name is the comma-field immediately before the presence word; nil if the
+    /// description isn't a profile button.
+    public func accountSelfName(_ raw: String) -> String? {
+        let low = raw.lowercased()
+        guard low.contains(accountSuffixToken) else { return nil }
+        let parts = raw.components(separatedBy: ",").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }
+        // The presence field CONTAINS a presence token (substring, so "In a Zoom
+        // Meeting" matches even when the status shifts mid-call). The name is the
+        // comma-field immediately before it.
+        guard let pIdx = parts.firstIndex(where: { part in
+            let l = part.lowercased()
+            return accountPresenceTokens.contains { !$0.isEmpty && l.contains($0) }
+        }), pIdx >= 1 else { return nil }
+        return parts[pIdx - 1]
     }
 }
