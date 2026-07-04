@@ -34,6 +34,7 @@ logs
 /qa/teams-live/teams-ring-probe-trace.ndjson
 /qa/teams-live/teams-ring-probe-marks.json
 /qa/teams-live/teams-throttle-trace.ndjson
+/qa/teams-live/teams-axobserve-probe.log
 node_modules/
 # Claude Code session worktrees (transient agent workspaces)
 .claude/worktrees/

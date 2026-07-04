@@ -632,6 +632,69 @@ let ttSelfDominant = [
 equal(teamsActiveSpeaker(tiles: ttSelfDominant, prevAreas: [:], vadSpeechActive: true, useGeometry: true).names, ["Someone"],
       "geometry on, SELF dominant -> not named (Someone floor, mirrors Meet)")
 
+// MARK: Teams EVENT MODE — ring snapshot/diff + rapid-swap disambiguation
+// (docs §10; the AXObserver does NOT transfer — this is the diff + TransitionConfidence
+// half, driven by the poll). The pure diff and the transition logic are unit-tested
+// here with NO AX, exactly like the Meet edge tests.
+print("Teams event mode — ring diff + transition:")
+// Pure snapshot/diff.
+equal(teamsEdgesFromDiff(prev: nil, next: TeamsTileSnapshot(ringHolders: ["Alice"]), at: 100).map { $0.to },
+      ["Alice"], "diff: silence -> Alice ringing -> one ring-gained onset")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: ["Alice"]), at: 100).count, 0,
+      "diff: unchanged ring -> no edge")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: ["Alice", "Bob"]), at: 100).map { $0.to },
+      ["Bob"], "diff: overlap onset -> ONLY the newly-ringing Bob (not Alice again)")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: []), at: 100).count, 0,
+      "diff: ring going out -> no edge (a lost ring isn't a move)")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: ["Bob"]), at: 100).map { $0.to },
+      ["Bob"], "diff: swap Alice->Bob -> ring-gained to Bob")
+// Snapshot self-exclusion: a ring on the SELF tile never becomes a holder.
+let snapMix = TeamsTileSnapshot.from(tiles: [
+    TeamsTileObservation(name: "Me", area: 1, orderIndex: 0, isSpeaking: true, isMe: true),
+    TeamsTileObservation(name: "Alice", area: 1, orderIndex: 1, isSpeaking: true),
+])
+equal(snapMix.ringHolders, ["Alice"], "snapshot: self ring excluded, only remote is a holder")
+
+// Transition disambiguation in teamsActiveSpeaker. Two lit rings (stale Alice linger +
+// fresh Bob): the transition holder Bob wins alone via .ringTransition.
+let ttStaleOverlap = [
+    TeamsTileObservation(name: "Alice", area: 10_000, orderIndex: 0, isSpeaking: true),
+    TeamsTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, isSpeaking: true),
+]
+// Drive the REAL TransitionConfidence: Alice edged at t=0, Bob edged at t=1600 (fresh).
+var tc = TransitionConfidence()
+tc.edge(to: "Alice", at: 0)
+tc.edge(to: "Bob", at: 1_600)
+let stBob = TeamsTransitionState(holder: tc.holder, confidence: tc.holderConfidence(at: 1_600), nowMs: 1_600)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stBob).names,
+      ["Bob"], "transition: stale Alice + fresh Bob -> ['Bob'] (stale linger suppressed)")
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stBob).via,
+      .ringTransition, "transition: disambiguated -> via .ringTransition")
+check(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stBob).confidence != nil,
+      "transition: .ringTransition result carries a confidence")
+// transition:nil -> today's overlap set, byte-for-byte (opt-in non-regression).
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true).names.sorted(),
+      ["Alice", "Bob"], "transition:nil -> overlap set unchanged (both named)")
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true).via,
+      .structural, "transition:nil -> via .structural (unchanged)")
+// Holder already went SILENT (not among lit tiles) -> fall through to the lit set, no phantom.
+let stGhost = TeamsTransitionState(holder: "Carol", confidence: 0.9, nowMs: 2_000)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stGhost).names.sorted(),
+      ["Alice", "Bob"], "transition: holder not among lit tiles -> overlap set (no phantom name)")
+// GENUINE overlap that the transition can't collapse: holder is one of two truly-lit —
+// mirrors Meet, the freshest holder wins; the other surfaces on its own next onset.
+let stAlice = TeamsTransitionState(holder: "Alice", confidence: 0.8, nowMs: 3_000)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stAlice).names,
+      ["Alice"], "transition: holder=Alice among lit -> ['Alice'] (freshest wins, mirrors Meet)")
+// Self holder is ignored (self-excluded), falls through to the remote overlap set.
+let stSelf = TeamsTransitionState(holder: "Me", confidence: 0.9, nowMs: 3_000)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stSelf).names.sorted(),
+      ["Alice", "Bob"], "transition: self holder ignored -> remote overlap set")
+
 // MARK: Teams pure extraction — REAL captured fixtures (macos/Fixtures/teams,
 // distilled from ax-dumps 20260701-*). The SAME teamsExtractWindow the scanner
 // ships runs here, so the deterministic loop tests the shipping extraction.

@@ -405,6 +405,62 @@ dropped via `teams-rules.json` — only built if the anchors actually break.
 
 ---
 
+## §10 — Event-driven port PROBE: the observer subscription does NOT transfer (2026-07-04)
+
+**Task:** port Meet's event-driven observer (AXObserver subscriptions + bounded diff +
+TransitionConfidence + walk/CPU instrumentation) to Teams native + web. **Prerequisite
+(ran first):** confirm empirically which AXObserver notifications actually fire as
+wake-ups in Teams' WebView2 tree during speaker handoffs — do NOT assume Meet's set
+transfers 1:1.
+
+**Probe:** `node qa/teams-live/run-teams-live-qa.mjs --observe` — a guest joins with the
+override and drives 9 real ring on/off handoffs (`__fakeMicSpeak` every 7s) while
+`AXObserve teams 74` registers **1878 per-node hooks + 8 app hooks** on the meeting
+window and logs every notification. Correlation with the toggles is the verdict.
+
+**Result — the ring is AX-SILENT.** Over 74s spanning 9 handoffs, only **10** notifications
+fired — **all `AXTitleChanged` on a single caption `AXStaticText`, all in the first 4s**
+(a transient caption/transcript element; we don't use captions anyway — [[no-caption-dependence]]).
+**Zero** `AXValueChanged`, `AXLayoutChanged`, `AXSelectedChildrenChanged`,
+`AXLiveRegionChanged`, `AXAnnouncementRequested`, or `AXUIElementDestroyed`. Only **1 of 9**
+ring toggles produced any event within 2s. The `vdi-frame-occlusion` ring flip fires **no
+AX notification at all** — Chromium marks class-token changes dirty-only ([[chromium-ax-class-changes-silent]]),
+now verified for Teams native as well as Meet.
+
+**Judgment call (proceed, don't stop):** the observer-SUBSCRIPTION half of the Meet
+pattern does not transfer — there are no notifications to ride, so an AXObserver thread
+would be pure overhead. But that is exactly why Meet's OWN primary edge source is
+`pollRefresh` (a bounded per-tick subtree re-read + diff), not the notifications. So we
+implement against what IS confirmed:
+- **TransitionConfidence rapid-swap disambiguation** — the high-value, evidence-backed
+  port. §9.1 measured ring **linger-L ≈ 1270ms**: when Alice stops and Bob starts within
+  that window, BOTH rings are lit and the naive resolver names both. Confidence prefers the
+  fresh edge (Bob) over the decayed one (Alice) while still preserving GENUINE simultaneous
+  overlap (both edges fresh). Same mechanism as Meet's `.ringTransition`.
+- **Pure snapshot/diff → edges** (`TeamsEdgeEvents.swift`) feeding the confidence, unit-tested.
+- **`teams_walk_stats` CPU/walk instrumentation** mirroring `meet_walk_stats`.
+- **No AXObserver** for Teams — probe-proven to deliver zero useful ring wake-ups; the
+  existing 500ms poll drives the bounded read + diff synchronously.
+
+This applies to Teams **native and web** identically (same Chromium class-token behavior,
+same single engine `.teams` branch). Opt-in via `MSD_TEAMS_MODE=event` (legacy full-walk is
+the byte-for-byte default, mirroring Meet's A/B discipline).
+
+**Implementation + review.** Pure diff/snapshot in `SpeakerCore/TeamsEdgeEvents.swift`
+(`teamsEdgesFromDiff` / `TeamsTileSnapshot`, self-excluded, unit-tested); `.ringTransition`
+path in `teamsActiveSpeaker`; engine wiring (`eventDrivenTeams`, per-tick diff→confidence,
+`teams_walk_stats` + `teams_edge`) in `DetectionEngine.swift`; 14 self-tests + review INV-14
+(which also GUARDS that no AXObserver is re-added for Teams). An independent review confirmed
+the port sound (self-exclusion airtight, legacy byte-for-byte, web/native parity, honest
+"no walk reduction"); its one real finding — a single shared diff origin corrupting two
+*simultaneously-readable* meetings — was fixed by keying the diff origin + confidence per
+`meetingId` (pruned each tick). Genuine simultaneous overlap collapses to the freshest
+holder only at the TICK level (the pulsing ring re-onsets the other speaker within a few
+hundred ms and `SessionTracker`'s 2s grace keeps both sessions alive), so overlap survives in
+the aggregated timeline — same contract as Meet's `.ringTransition`.
+
+---
+
 ## 7. FINAL VERDICT — investigation closed (2026-06-23) — ⚠️ SUPERSEDED BY §8
 
 > Everything in §1–6 about an AX **is-speaking** signal for Teams is **SUPERSEDED**. After live probing the native client (`com.microsoft.teams2`) and re-decoding the binary, the conclusion reversed. The mute/name/self/geometry findings stand; the *speaking* claim does not. **(2026-07-04: the "no speaking signal" verdict here is itself now superseded — see §8. `vdi-frame-occlusion`, read per-tile, IS the speaker ring.)**

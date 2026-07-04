@@ -175,7 +175,15 @@ async function hostJoinCall() {
   // Navigate: app bar "Meet" tab → a meeting-link card's "Join" → pre-join "Join now".
   await pressFirst(['Meet']);
   await sleep(2_500);
-  if (!await pressFirst(['Join'])) { log('no Join button on the Meet tab'); return false; }
+  if (!await pressFirst(['Join'])) {
+    // No scheduled/active meeting card to join — start an INSTANT meeting instead, so
+    // the live scenarios don't depend on a pre-existing meeting (prior runs end theirs).
+    log('no Join card on the Meet tab — starting "Meet now"');
+    if (!await pressFirst(['Meet now', 'Meet Now', 'Start meeting'], 3_000)) {
+      log('no Join card and no "Meet now" — cannot start a call');
+      return false;
+    }
+  }
   await sleep(6_000);
   // Pre-join screen → join. ("Join now" is the primary button; fall back to "Join".)
   await pressFirst(['Join now', 'Join'], 2_000);
@@ -481,7 +489,172 @@ async function runThrottle() {
 }
 
 // ===========================================================================
+// EVENT-DRIVEN PORT PROBE (AXObserve). Prerequisite for porting Meet's observer
+// pattern to Teams: runs AXObserve on native Teams while a guest drives REAL ring
+// on/off handoffs (speak/silence every 7s), so we can see WHICH AXObserver
+// notifications actually fire as a wake-up in Teams' WebView2 tree — empirically,
+// not by assuming Meet's set transfers 1:1. Output: notifications bucketed by type
+// + tag, correlated with the driven toggles → the confirmed wake-up event set (or
+// BLOCKED if nothing usable fires).
+const AXOBSERVE_BIN = join(MACOS, '.build', 'debug', 'AXObserve');
+const OBSERVE_LOG = join(HERE, 'teams-axobserve-probe.log');
+
+// Parse the notification token + tag out of an AXObserve line.
+const AX_NOTIF_RE = /\b(AX[A-Za-z]+Changed|AXLayoutChanged|AXAnnouncementRequested|AXLiveRegion[A-Za-z]+|AXSelectedChildrenChanged|AXMenuItemSelected|AXMenuOpened|AXFocusedUIElementChanged|AXUIElementDestroyed)\b/;
+function parseAxLine(line) {
+  const m = line.match(AX_NOTIF_RE);
+  if (!m) return null;
+  const tag = /\[LIVE\]/.test(line) ? 'LIVE' : (/\[TILE\]/.test(line) ? 'TILE' : 'other');
+  return { notif: m[1], tag };
+}
+function analyzeObserve(axLines, toggles) {
+  const parsed = axLines.map((l) => ({ ts: l.ts, ...(parseAxLine(l.line) || {}) })).filter((p) => p.notif);
+  const byType = {}, byTag = { LIVE: 0, TILE: 0, other: 0 };
+  for (const p of parsed) { byType[p.notif] = (byType[p.notif] || 0) + 1; byTag[p.tag]++; }
+  // Correlate: events within 2s AFTER each toggle = wake-ups the observer would ride.
+  const WAKE_MS = 2_000;
+  let togglesWithEvents = 0;
+  const wakeTypeCounts = {};
+  for (const t of toggles) {
+    const near = parsed.filter((p) => p.ts >= t.ts && p.ts < t.ts + WAKE_MS);
+    if (near.length) togglesWithEvents++;
+    for (const p of near) wakeTypeCounts[p.notif] = (wakeTypeCounts[p.notif] || 0) + 1;
+  }
+  const topWakeTypes = Object.entries(wakeTypeCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  // Usable = the ring transitions produced observer wake-ups on a majority of toggles,
+  // AND at least one tile/value/layout event type carried them (not just clock noise).
+  const wakeTypesUseful = topWakeTypes.filter(([n]) => /Value|Layout|Selected|LiveRegion|Announcement|Destroyed/.test(n));
+  const usable = togglesWithEvents >= Math.ceil(toggles.length * 0.5) && wakeTypesUseful.length > 0;
+  return {
+    usable, totalEvents: parsed.length, togglesTotal: toggles.length, togglesWithEvents,
+    byType, byTag, topWakeTypes, wakeTypesUseful: wakeTypesUseful.map(([n, c]) => `${n}:${c}`),
+  };
+}
+
+async function runObserve() {
+  mkdirSync(HERE, { recursive: true });
+  writeFileSync(RESULTS_NDJSON, '');
+  if (!prebuild()) { record('teams-axobserve-probe', 'FAIL', { reason: 'swift build failed' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+  if (!preflightAxTrust()) { record('teams-axobserve-probe', 'FAIL', { reason: 'Accessibility permission not granted' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+
+  let chromeGuest = null, axProc = null;
+  const toggles = [], axLines = [];
+  try {
+    if (!await hostJoinCall()) { record('teams-axobserve-probe', 'FAIL', { reason: 'host could not join a call' }); return; }
+    const det = startDetector(900);
+    await waitEvent(det, (e) => e.type === 'meeting_initialized' && isTeams(e), 60_000, 'meeting_initialized');
+    const url = await harvestInCall();
+    if (!url) { record('teams-axobserve-probe', 'REVIEW', { reason: 'no meeting URL' }); det.kill(); return; }
+    log('meeting link: ' + url);
+    chromeGuest = await joinGuest(url, { override: true });
+    await sleep(8_000); await pressFirst(['Admit'], 3_000);
+    const gj = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeams(e) && e.name === GUEST_NAME, 120_000, 'guest joined');
+    det.kill();
+    if (!gj) { record('teams-axobserve-probe', 'FAIL', { reason: 'guest never joined' }); return; }
+    const page = chromeGuest.page;
+    for (let i = 0; i < 20 && !(await guestMicReady(page)); i++) await sleep(500);
+    drive('raise'); await sleep(1_000);
+
+    // Spawn AXObserve over the whole handoff sequence.
+    const OBS_SECS = 74;
+    axProc = spawn(AXOBSERVE_BIN, ['teams', String(OBS_SECS)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let abuf = '';
+    const onA = (d) => { abuf += d.toString(); let i; while ((i = abuf.indexOf('\n')) >= 0) { const ln = abuf.slice(0, i); abuf = abuf.slice(i + 1); axLines.push({ ts: Date.now(), line: ln }); } };
+    axProc.stdout.on('data', onA); axProc.stderr.on('data', onA);
+    const axDone = new Promise((r) => axProc.on('exit', r));
+    await sleep(2_000);   // let AXObserve register its hooks
+
+    // Drive REAL ring handoffs: speak/silence every 7s (~9 transitions), re-raising
+    // Teams so its WebView2 tree stays live for the observer.
+    await setGuestSpeak(page, false); await sleep(1_500);
+    for (let i = 0; i < 9; i++) {
+      const on = i % 2 === 0;
+      await setGuestSpeak(page, on);
+      toggles.push({ i, on, ts: Date.now() });
+      log(`toggle ${i}: guest ${on ? 'SPEAK' : 'silent'}`);
+      await sampleFor(7_000, () => drive('raise'));
+    }
+    await axDone;
+
+    writeFileSync(OBSERVE_LOG, axLines.map((l) => l.line).join('\n') + '\n');
+    const summary = analyzeObserve(axLines, toggles);
+    record('teams-axobserve-probe', summary.usable ? 'PASS' : 'FAIL', summary);
+    log('OBSERVE ' + JSON.stringify(summary));
+  } finally {
+    if (axProc) { try { axProc.kill('SIGKILL'); } catch (e) {} }
+    await hostLeaveCall();
+    if (chromeGuest && chromeGuest.chrome) chromeGuest.chrome.kill();
+  }
+  console.log('TEAMS LIVE SESSION COMPLETE');
+  process.exit(0);
+}
+
+// ===========================================================================
+// EVENT-MODE LIVE QA (MSD_TEAMS_MODE=event). Validates the ported half end-to-end on
+// a real call: the per-tick ring snapshot/diff feeds TransitionConfidence and emits
+// teams_edge + teams_walk_stats. Drives RAPID handoffs (a guest toggling speak/silence
+// every ~2.2s) and asserts: (1) teams_walk_stats emitted with event_mode=true, (2)
+// teams_edge onsets fired on the ring churn, (3) the guest is still NAMED via
+// teams.ring / teams.ring.transition (attribution intact), (4) ZERO Someone / self
+// false speech. Reports the walk-count (the honest CPU story: Teams doesn't skip the
+// walk — event mode buys ACCURACY, not fewer walks).
+async function runEventQA() {
+  mkdirSync(HERE, { recursive: true });
+  writeFileSync(RESULTS_NDJSON, '');
+  if (!prebuild()) { record('teams-eventqa', 'FAIL', { reason: 'swift build failed' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+  if (!preflightAxTrust()) { record('teams-eventqa', 'FAIL', { reason: 'Accessibility permission not granted' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+
+  const det = startDetector(900, { MSD_TEAMS_MODE: 'event' });
+  let chromeGuest = null;
+  try {
+    if (!await hostJoinCall()) { record('teams-eventqa', 'FAIL', { reason: 'host could not join a call' }); return; }
+    await waitEvent(det, (e) => e.type === 'meeting_initialized' && isTeams(e), 60_000, 'meeting_initialized');
+    const url = await harvestInCall();
+    if (!url) { record('teams-eventqa', 'REVIEW', { reason: 'no meeting URL' }); return; }
+    log('meeting link: ' + url);
+    chromeGuest = await joinGuest(url, { override: true });
+    await sleep(8_000); await pressFirst(['Admit'], 3_000);
+    const gj = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeams(e) && e.name === GUEST_NAME, 120_000, 'guest joined');
+    if (!gj) { record('teams-eventqa', 'FAIL', { reason: 'guest never joined' }); return; }
+    const page = chromeGuest.page;
+    for (let i = 0; i < 20 && !(await guestMicReady(page)); i++) await sleep(500);
+    drive('raise'); await sleep(1_000);
+
+    // Rapid handoffs: speak/silence every ~2.2s to churn the ring (onset edges).
+    for (let i = 0; i < 12; i++) {
+      await setGuestSpeak(page, i % 2 === 0);
+      log(`handoff ${i}: guest ${i % 2 === 0 ? 'SPEAK' : 'silent'}`);
+      await sampleFor(2_200, () => drive('raise'));
+    }
+    await sleep(3_000);
+    det.kill(); await det.done;
+
+    const walkStats = det.events.filter((e) => e.type === 'teams_walk_stats');
+    const lastStats = walkStats[walkStats.length - 1] || null;
+    const edges = det.events.filter((e) => e.type === 'teams_edge');
+    const guestNamed = det.events.filter((e) => e.type === 'speech_on' && e.name === GUEST_NAME && /teams\.(ring|ring\.transition)/.test(e.source || ''));
+    const transitionNamed = det.events.filter((e) => e.type === 'speech_on' && e.source === 'teams.ring.transition');
+    const badSpeech = det.events.filter((e) => e.type === 'speech_on' && (e.name === 'Someone' || e.name === EXPECT_SELF));
+    const pass = !!lastStats && lastStats.event_mode === true && edges.length > 0 && guestNamed.length > 0 && badSpeech.length === 0;
+    record('teams-eventqa', pass ? 'PASS' : 'FAIL', {
+      walkStats: lastStats, edgeCount: edges.length, guestNamed: guestNamed.length,
+      transitionNamed: transitionNamed.length, badSpeech: badSpeech.length,
+      note: 'event mode buys accuracy (edges → rapid-swap disambiguation), NOT fewer walks — teams has no walk-skip (docs §10).',
+    });
+    log(`EVENTQA walkStats=${JSON.stringify(lastStats)} edges=${edges.length} guestNamed=${guestNamed.length} transitionNamed=${transitionNamed.length} bad=${badSpeech.length}`);
+  } finally {
+    await hostLeaveCall();
+    if (chromeGuest && chromeGuest.chrome) chromeGuest.chrome.kill();
+    det.kill();
+  }
+  console.log('TEAMS LIVE SESSION COMPLETE');
+  process.exit(0);
+}
+
+// ===========================================================================
 async function main() {
+  if (process.argv.includes('--observe')) return runObserve();
+  if (process.argv.includes('--eventqa')) return runEventQA();
   if (process.argv.includes('--probe')) return runProbe();
   if (process.argv.includes('--throttle')) return runThrottle();
   if (!process.argv.includes('--all')) {
