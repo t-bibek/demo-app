@@ -440,6 +440,11 @@ async function scenarioPipBackground(guestPage, guestOk) {
     isZoom(e) && e.type === 'speech_on' && e.name === GUEST_NAME);
   const degradedSources = [...new Set(degradedSpeech.map((e) => e.source))];
 
+  // MUTE this tone guest before returning: the NEXT scenario (vad-quality) needs its
+  // speech guest (Guest Bravo) to be the ONLY unmuted remote so the mute-gate names
+  // Bravo specifically instead of collapsing two unmuted remotes to "Someone".
+  try { await setGuestMuted(guestPage, true); } catch (e) {}
+
   // Restore the main window for the following scenarios (cover both minimize paths:
   // AXMinimized=false un-minimizes a programmatic minimize; ⌘⇧M toggles the hotkey
   // minimize back; raise brings the meeting frontmost).

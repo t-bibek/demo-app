@@ -200,6 +200,13 @@ final class AppModel: ObservableObject {
         if let x = env["MSD_VAD_EXIT"], let v = Double(x), v >= 0 { vad.exitLevel = v }
         if let hm = env["MSD_VAD_HANGOVER_MS"], let v = Int(hm), v >= 0 { vad.hangoverMs = v }
         cfg.vad = vad
+        // The mic stream keeps its own (higher) config — MSD_VAD_HANGOVER_MS is shared,
+        // MSD_VAD_MIC_ENTER/EXIT override just the mic bar (remote stays on MSD_VAD_ENTER/EXIT).
+        var micVad = cfg.micVad
+        if let e = env["MSD_VAD_MIC_ENTER"], let v = Double(e), v >= 0 { micVad.enterLevel = v }
+        if let x = env["MSD_VAD_MIC_EXIT"], let v = Double(x), v >= 0 { micVad.exitLevel = v }
+        if let hm = env["MSD_VAD_HANGOVER_MS"], let v = Int(hm), v >= 0 { micVad.hangoverMs = v }
+        cfg.micVad = micVad
         // Raw-RMS trace for calibration evidence (off unless asked). The live rig
         // sets MSD_VAD_TRACE=1 on the vad-quality detector to record levelSamples.
         cfg.vadTrace = (env["MSD_VAD_TRACE"] == "1")

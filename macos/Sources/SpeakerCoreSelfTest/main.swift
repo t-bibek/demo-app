@@ -1924,17 +1924,25 @@ do {
     check(vp.ingest(rms: 0.10, atMs: 350), "pause: intra-sentence pause < hangover -> still one segment")
 }
 
-// SHIPPED DEFAULT config (enterFrames=3, enter 0.006) — locks the calibration that
-// makes vad-quality-live's transient rejection robust to frame-boundary straddle. A
-// join ding is ~30-50ms of energy: at 50ms frames it can land as at most TWO
-// consecutive over-enter frames (one full frame + a boundary sliver, both over the
-// tiny 0.006 enter). enterFrames=3 rejects that 2-frame transient; real speech
-// (continuous voicing) clears 3 frames and opens.
+// SHIPPED DEFAULT config (REMOTE stream: enterFrames=3, enter 0.0018 RMS) — locks the
+// calibration re-fit to the MEASURED remote-speech RMS distribution (vad-quality-live
+// iteration 1: remote per-tick-max median 0.0039 / peak 0.0074, silence < 0.0006). The
+// FIRST estimate (0.006, a crest-factor guess) sat at the TOP of the speech band and
+// named NOBODY live; 0.0018 sits between silence and speech so remote_active fires on
+// real remote speech again. enterFrames stays 3 so vad-quality-live's transient
+// rejection is robust to frame-boundary straddle: a ~40ms tone pulse lands as at most
+// TWO consecutive over-enter frames; enterFrames=3 rejects that 2-frame transient while
+// continuous voicing clears 3 frames and opens.
 do {
-    let def = VadConfig()   // the shipped default the engine uses
+    let def = VadConfig()   // the shipped default the engine uses for the REMOTE stream
     equal(def.enterFrames, 3, "default enterFrames is 3 (straddle-robust transient rejection)")
     check(def.enterLevel > 0 && def.enterLevel <= 0.01, "default enterLevel is RMS-scale (<= 0.01, not the peak-scale 0.03 that named nobody live)")
     check(def.exitLevel < def.enterLevel, "default exit < enter (hysteresis band)")
+    // Re-fit regression guard: enter must sit BETWEEN the measured silence ceiling
+    // (~0.0006) and the median remote-speech tick-max (~0.0039), or remote speech goes
+    // unnamed again (the iteration-1 failure). This is the range the 0.006 guess violated.
+    check(def.enterLevel > 0.0006 && def.enterLevel < 0.0039,
+          "default enter is between measured silence (0.0006) and speech (0.0039) — not the 0.006 that named nobody")
     // A straddling transient = exactly TWO consecutive over-enter frames, then quiet.
     var t = SchmittVad(config: def)
     check(!t.ingest(rms: 0.42, atMs: 0), "transient: frame 1 over enter -> still closed")
@@ -1945,6 +1953,38 @@ do {
     _ = s.ingest(rms: 0.05, atMs: 0)
     check(!s.ingest(rms: 0.05, atMs: 50), "speech: 2 sustained frames -> not yet")
     check(s.ingest(rms: 0.05, atMs: 100), "speech: 3rd sustained frame -> open")
+
+    // MEASURED remote-speech replay: feed frames at the recorded median tick-max
+    // (~0.0039) — the level the pre-fix 0.006 gate could not open on. With enter 0.0018
+    // three such frames MUST open (this is the exact regression the fix targets).
+    var m = SchmittVad(config: def)
+    _ = m.ingest(rms: 0.0039, atMs: 0)
+    _ = m.ingest(rms: 0.0039, atMs: 50)
+    check(m.ingest(rms: 0.0039, atMs: 100), "measured remote speech (0.0039 RMS) opens on the 3rd frame (0.006 could NOT)")
+    // MEASURED silence (~0.0005 tick-max) must NEVER open.
+    var q = SchmittVad(config: def)
+    _ = q.ingest(rms: 0.0005, atMs: 0); _ = q.ingest(rms: 0.0005, atMs: 50)
+    check(!q.ingest(rms: 0.0005, atMs: 100), "measured silence (0.0005 RMS) stays closed (below enter)")
+}
+
+// MIC stream keeps a HIGHER bar than the remote stream — close-mic local voice reads
+// far hotter than the attenuated system tap (measured mic ambient/leakage floor
+// ~0.0107 RMS vs remote speech ~0.004). A remote-scale enter here would name the local
+// user on room noise / speaker bleed, so VadConfig.mic() sits above the ambient floor.
+do {
+    let m = VadConfig.mic()
+    check(m.enterLevel > VadConfig().enterLevel, "mic enter is HIGHER than remote enter (close-mic reads hotter)")
+    check(m.enterLevel > 0.0107, "mic enter is above the measured mic ambient/leakage floor (0.0107) — ambient never names self")
+    equal(m.enterFrames, 3, "mic enterFrames is 3 (same straddle-robust debounce)")
+    check(m.exitLevel < m.enterLevel, "mic exit < enter (hysteresis band)")
+    // Measured mic ambient (~0.0107 median) must NOT open self.
+    var a = SchmittVad(config: m)
+    _ = a.ingest(rms: 0.0107, atMs: 0); _ = a.ingest(rms: 0.0107, atMs: 50)
+    check(!a.ingest(rms: 0.0107, atMs: 100), "mic ambient (0.0107 RMS) stays closed -> self not named on room noise")
+    // Real local speech (well above the mic bar) opens.
+    var sp = SchmittVad(config: m)
+    _ = sp.ingest(rms: 0.05, atMs: 0); _ = sp.ingest(rms: 0.05, atMs: 50)
+    check(sp.ingest(rms: 0.05, atMs: 100), "local speech (0.05 RMS) opens the mic gate")
 }
 
 // =====================================================================

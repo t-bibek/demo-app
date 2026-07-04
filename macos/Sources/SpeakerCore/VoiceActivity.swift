@@ -45,44 +45,64 @@ public struct VadConfig: Equatable, Sendable {
     /// natural pauses inside a sentence so one utterance stays one segment).
     public var hangoverMs: Int
 
-    // CALIBRATION (physics, not a fudge — plan: "threshold calibration legitimate
-    // ONLY with physics justification from recorded raw data"):
+    // CALIBRATION (physics from RECORDED RAW DATA — plan: "threshold calibration
+    // legitimate ONLY with physics justification from recorded raw data"):
     //
     // The gate this replaces fired on the instantaneous SAMPLE PEAK: remote
     // `systemPeak > 0.02`, mic `micPeak > 0.04` (max|sample| in a buffer). RMS
     // (root-mean-square energy over a 50ms frame) is ALWAYS well below the sample
-    // peak of the same signal — for speech the crest factor (peak/RMS) is ~3-4, so
-    // RMS ≈ 0.25-0.35 × peak; even a pure sine has RMS = peak/√2 ≈ 0.707 × peak.
+    // peak of the same signal. The FIRST estimate (enter 0.006) was derived from a
+    // crest-factor GUESS (RMS ≈ 0.3 × peak ⇒ 0.02 × 0.3 ≈ 0.006). That guess was
+    // WRONG for this signal path, and the vad-quality-live run recorded the raw data
+    // that proves it.
     //
-    // The first live VAD run named NOBODY (qa/zoom-live: 0 speech_on where the
-    // pre-B4 peak gate named Guest Alpha 7×) because the RMS threshold was left at
-    // the PEAK-scale number (0.03 > the 0.02 peak gate it replaced). An RMS gate at
-    // 0.03 only fires on a signal whose PEAK is ~0.09-0.12 — far louder than the
-    // 0.02-peak signals the old gate (correctly) caught, so real remote speech that
-    // used to name a speaker fell silent. This is a scale error, not a tuning taste.
+    // MEASURED (qa/zoom-live vad-quality-live, iteration 1, Guest Bravo speaking via
+    // the ScreenCaptureKit system tap — 40 per-tick vad_frame samples, each the
+    // LOUDEST 50ms frame of that ~250-500ms poll tick):
+    //   remote (guest speech) per-tick-max RMS: min 0.00002, median 0.0039, max 0.0074
+    //   remote SILENCE ticks (natural pauses / muted):        0.00002 – 0.0006
+    //   mic (local room, guest muted this test)  per-tick-max: median 0.0107, max 0.0428
+    // With enter=0.006, remote cleared enter on only 5/40 ticks (and those were the
+    // tick-MAX — the per-frame values feeding the state machine are strictly lower),
+    // so `remoteVad` NEVER strung together 3 consecutive over-enter frames and
+    // remote_active stayed FALSE for the entire speaking block. Guest Bravo, the
+    // mute-gate guest, and the pip degraded-coverage speaker all went unnamed — the
+    // three iteration-1 failures share this one root cause. 0.006 sat at the TOP of
+    // the measured speech band, not between speech and silence: a scale error.
     //
-    // Re-derive from the peak-gate intent: to catch the same remote speech the
-    // 0.02 peak gate caught, RMS-enter ≈ 0.02 × 0.3 (speech crest factor) ≈ 0.006.
-    // exit ≈ 0.5 × enter gives the hysteresis band (must fall to ~half to close),
-    // which the state machine test still exercises with its own explicit config.
-    // Raw per-frame RMS is now emitted (`vad_frame` NDJSON, MSD_VAD_TRACE) so the
-    // next live run records the actual distribution and this number can be re-fit
-    // to measured speech/tone/noise RMS instead of the crest-factor estimate.
+    // RE-FIT to the measured distribution: put enter cleanly BETWEEN the ~0.0006
+    // silence ceiling and the 0.0039 median speech tick-max, LEANING LOW because the
+    // vad_frame samples are per-tick MAXima — the per-FRAME RMS the state machine
+    // actually gates on is strictly below them, and enterFrames=3 needs THREE
+    // consecutive frames over enter, so the threshold must clear the per-frame dips.
+    // enter = 0.0018 (= 3× the loudest silence tick-max 0.0006; ≈ 0.46× the median
+    // speech tick-max) — speech frames sit above it through an utterance, silence
+    // (< 0.0006) never does. exit = 0.0009 (= 0.5× enter) is the hysteresis floor,
+    // still 1.5× the silence ceiling so a genuine pause closes. To ground the next
+    // re-fit, the trace now emits per-tick min + frame count (not just the max) so the
+    // real per-frame floor is recorded. Env `MSD_VAD_ENTER/EXIT` override live.
     //
-    // enterFrames = 3 (was 2): the debounce window must EXCEED the transient it is
-    // meant to reject. A join ding / click / notification chime is ~30-50ms of energy
-    // — at 50ms frames that is 1 full frame plus a boundary sliver, i.e. up to TWO
-    // consecutive over-enter frames when it straddles a frame boundary (and enterLevel
-    // is deliberately tiny at 0.006, so even a sliver of a 0.6-amplitude burst counts).
-    // enterFrames=2 would therefore OPEN on a straddling transient — the exact false
-    // positive vad-quality-live falsifies. Requiring 3 consecutive over-enter frames
-    // ⇒ ≥ ~100-150ms of CONTINUOUS energy to open; a sub-100ms transient can span at
-    // most 2 frames and is rejected, while real speech (hundreds of ms of continuous
-    // voicing) clears 3 frames trivially. Opening latency cost is one extra 50ms frame
-    // (~150ms total) — well inside the live latency bars.
+    // Why the pre-fix 0.006 broke 3-consecutive-frame opening but 0.0018 does NOT:
+    // 0.006 sat at the TOP of the measured speech band (median tick-max 0.0039, peak
+    // 0.0074), so most 50ms speech frames were BELOW it and the enterRun kept resetting
+    // — three CONSECUTIVE over-enter frames essentially never happened, remote_active
+    // stayed false, and Guest Bravo / the mute-gate guest / the pip degraded speaker
+    // all went unnamed. At 0.0018, typical speech frames sit above the threshold so a
+    // normal utterance clears 3 consecutive frames within its first ~150ms. The opening
+    // problem was the LEVEL scale error, not the enterFrames debounce.
+    //
+    // enterFrames = 3 is KEPT (NOT lowered): the vad-quality-live tone-rejection guard
+    // depends on it AND lowering the LEVEL does not weaken that guard at all — the tone
+    // pulses are gain-driven and loud, so they clear ANY enter level; their rejection
+    // comes SOLELY from the frame-count debounce. Each ~40ms pulse spans at most TWO
+    // 50ms frames (one full + a boundary sliver); requiring THREE consecutive over-enter
+    // frames rejects the straddling 2-frame transient (ding/click/tone burst) while a
+    // real utterance — hundreds of ms of continuous voicing — clears 3 frames trivially.
+    // Dropping to 2 would OPEN on those tone pulses and name the guest on energy-without-
+    // voice — the exact false positive the scenario falsifies. Opening latency: ~150ms.
     public init(frameMs: Int = 50,
-                enterLevel: Double = 0.006,
-                exitLevel: Double = 0.003,
+                enterLevel: Double = 0.0018,
+                exitLevel: Double = 0.0009,
                 enterFrames: Int = 3,
                 hangoverMs: Int = 400) {
         self.frameMs = frameMs
@@ -90,6 +110,26 @@ public struct VadConfig: Equatable, Sendable {
         self.exitLevel = exitLevel
         self.enterFrames = enterFrames
         self.hangoverMs = hangoverMs
+    }
+
+    /// Config for the LOCAL MIC stream. The default (above) is tuned for the REMOTE
+    /// system-tap stream, which is attenuated/mixed and quiet. The mic is close-mic'd
+    /// local voice and reads much hotter, so it must NOT share the remote's low enter
+    /// or it names the local user on room noise / speaker bleed.
+    //
+    // MEASURED (same vad-quality-live run; the guest was MUTED and there was NO
+    // deliberate local speech, so these mic levels are the ambient/bleed FLOOR the
+    // gate must stay CLOSED on): mic per-tick-max RMS median 0.0107, max 0.0428. The
+    // pre-B4 mic peak gate was `micPeak > 0.04`; the max mic RMS (0.0428) sat right at
+    // that peak number, confirming the ambient floor tops out near ~0.011 typical with
+    // rare ~0.04 spikes. enter = 0.02 sits ABOVE the 0.0107 ambient median (so ambient
+    // never opens self) yet well below real close-mic local SPEECH RMS (crest factor
+    // on a 0.04+ peak voice ⇒ ~0.012+ RMS sustained, and actual talking is louder).
+    // exit = 0.01 gives the hysteresis band just under the ambient median. This
+    // preserves the pre-B4 intent (mic bar ≈ 2× the remote bar) instead of collapsing
+    // both streams onto the remote-scale enter. Env `MSD_VAD_MIC_ENTER/EXIT` override.
+    public static func mic(hangoverMs: Int = 400) -> VadConfig {
+        VadConfig(frameMs: 50, enterLevel: 0.02, exitLevel: 0.01, enterFrames: 3, hangoverMs: hangoverMs)
     }
 }
 

@@ -75,9 +75,17 @@ struct EngineConfig {
         TransitionConfidenceConfig(halfLifeMs: ZoomWebTuning.defaultHalfLifeMs)
     /// Native-Zoom PIP transition-confidence tuning (PIP "Talking:" edges).
     var zoomNativeTransition: TransitionConfidenceConfig = TransitionConfidenceConfig()
-    /// SchmittVad tuning (frame RMS hysteresis). Replaces the instantaneous-peak
-    /// gates by default; `MSD_VAD=peak` restores the peak behavior (`vadEnabled=false`).
+    /// SchmittVad tuning for the REMOTE (system-tap) stream — attenuated, mixed
+    /// meeting audio. Replaces the instantaneous-peak gates by default; `MSD_VAD=peak`
+    /// restores the peak behavior (`vadEnabled=false`). Enter/exit re-fit to measured
+    /// remote-speech RMS (see VadConfig calibration note).
     var vad: VadConfig = VadConfig()
+    /// SchmittVad tuning for the LOCAL MIC stream. The mic is CLOSE-mic'd local voice
+    /// and reads ~an order of magnitude hotter than the system tap (measured mic
+    /// ambient/leakage floor ~0.011 RMS vs remote speech ~0.004), so it keeps a HIGHER
+    /// enter bar (`VadConfig.mic()`): a low remote-scale enter here would name the local
+    /// user on room noise / speaker bleed. Env `MSD_VAD_MIC_ENTER/EXIT`.
+    var micVad: VadConfig = VadConfig.mic()
     /// Whether the shared SchmittVad drives `micActive`/`remoteActive` (default ON).
     /// MSD_VAD=peak ⇒ false ⇒ instantaneous peak gates (the pre-B4 behavior).
     var vadEnabled: Bool = true
@@ -253,8 +261,11 @@ final class DetectionEngine {
         zoomStatsStartMs = nowMs()
         zoomNativeLastReconcileMs = nowMs()
         zoomNativeTransition = TransitionConfidence(config: config.zoomNativeTransition)
-        // Shared SchmittVad instances (plan B4). Config-tuned; inert when peak mode.
-        micVad = SchmittVad(config: config.vad)
+        // SchmittVad instances (plan B4). Config-tuned; inert when peak mode. The mic
+        // stream uses its own (higher) config — close-mic local voice reads far hotter
+        // than the attenuated remote system tap, so a shared remote-scale enter would
+        // name the local user on ambient/bleed.
+        micVad = SchmittVad(config: config.micVad)
         remoteVad = SchmittVad(config: config.vad)
 
         // Open the optional edge-event log (MSD_EDGE_LOG) — meet_edge lines are
@@ -440,7 +451,14 @@ final class DetectionEngine {
             // the actual speech/tone/noise RMS distribution and re-fit enter/exit to
             // measured data (plan: calibration needs recorded raw levels).
             if config.vadTrace, !micFrames.isEmpty || !remoteFrames.isEmpty {
-                emitVadTrace(micRms: micFrames.max() ?? 0, remoteRms: remoteFrames.max() ?? 0,
+                // Record BOTH the loudest and the quietest drained frame per stream
+                // (plus how many frames the tick drained) so calibration sees the
+                // per-FRAME distribution the VAD actually gates on — not just the
+                // tick-max, which hid that speech frames dip well below enter and so
+                // never string together `enterFrames` consecutive over-enter frames.
+                emitVadTrace(micRmsMax: micFrames.max() ?? 0, micRmsMin: micFrames.min() ?? 0,
+                             remoteRmsMax: remoteFrames.max() ?? 0, remoteRmsMin: remoteFrames.min() ?? 0,
+                             micFrames: micFrames.count, remoteFrames: remoteFrames.count,
                              micActive: micBool, remoteActive: remoteBool, ts: now)
             }
         } else {
@@ -1119,11 +1137,17 @@ final class DetectionEngine {
     /// the resulting gate booleans. Stdout-only; the live rig greps `vad_frame`
     /// lines into `levelSamples` so enter/exit can be re-fit to the measured
     /// speech/tone/noise RMS distribution (plan B4 calibration evidence).
-    private func emitVadTrace(micRms: Float, remoteRms: Float,
+    private func emitVadTrace(micRmsMax: Float, micRmsMin: Float,
+                             remoteRmsMax: Float, remoteRmsMin: Float,
+                             micFrames: Int, remoteFrames: Int,
                              micActive: Bool, remoteActive: Bool, ts: Int) {
         let obj: [String: Any] = [
             "type": "vad_frame", "ts": ts,
-            "mic_rms": Double(micRms), "remote_rms": Double(remoteRms),
+            // `mic_rms`/`remote_rms` stay the per-tick MAX (back-compat with the
+            // existing `levelSamples` reader); `*_rms_min` + `*_frames` expose the
+            // per-frame floor + how many frames the VAD gated on this tick.
+            "mic_rms": Double(micRmsMax), "mic_rms_min": Double(micRmsMin), "mic_frames": micFrames,
+            "remote_rms": Double(remoteRmsMax), "remote_rms_min": Double(remoteRmsMin), "remote_frames": remoteFrames,
             "mic_active": micActive, "remote_active": remoteActive,
             "enter": config.vad.enterLevel, "exit": config.vad.exitLevel,
         ]
