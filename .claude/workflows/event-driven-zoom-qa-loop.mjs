@@ -34,8 +34,10 @@ export const meta = {
 }
 
 const REPO = '/Users/bibekthapa/projects/work/demo-app/.claude/worktrees/zoom-native-hardening'
-const PLAN = (args && args.planFile) || '/Users/bibekthapa/.claude/plans/zoom-event-driven-implementation.md'
-const MAX_ITERS = (args && args.maxIters) || 3
+// args may arrive as a JSON-encoded string depending on the caller — coerce.
+const A = (() => { try { return typeof args === 'string' ? JSON.parse(args) : (args || {}) } catch { return {} } })()
+const PLAN = A.planFile || '/Users/bibekthapa/.claude/plans/zoom-event-driven-implementation.md'
+const MAX_ITERS = A.maxIters || 3
 
 const LOG_HOWTO = (iteration, phaseName) =>
   `\n\nFinally, append exactly ONE NDJSON line to ${REPO}/qa/loop-log.ndjson (create if missing) recording the outcome: ` +
@@ -80,7 +82,7 @@ const note = (e) => {
 }
 
 // ---------------------------------------------------------------- Phase 1
-if (!(args && args.skipImplement)) {
+if (!A.skipImplement) {
   phase('Implement')
   const [sw, qi] = await parallel([
     () => agent(
