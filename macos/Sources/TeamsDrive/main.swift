@@ -103,6 +103,17 @@ case "resize":
     guard err == .success else { fail("RESIZE_FAILED: \(err.rawValue)") }
     print("RESIZED \(Int(w))x\(Int(h))")
 
+case "minimize", "unminimize":
+    // Toggle AXMinimized on the meeting window — the reliable way to make the
+    // meeting WebView UNREADABLE (throttled) for the recovery test.
+    guard let window = AXKit.axArray(axApp, "AXWindows").first(where: {
+        (AXKit.axString($0, "AXTitle") ?? "").contains("Meeting")
+    }) ?? AXKit.axArray(axApp, "AXWindows").first else { fail("NOT_FOUND: no window") }
+    let want = (cmd == "minimize") ? kCFBooleanTrue : kCFBooleanFalse
+    let err = AXUIElementSetAttributeValue(window, "AXMinimized" as CFString, want!)
+    guard err == .success else { fail("MINIMIZE_FAILED: \(err.rawValue)") }
+    print("\(cmd.uppercased())D")
+
 case "clickpt":
     // Synthesize a left click at absolute screen coords (for controls the AX tree
     // exposes only as unlabeled thumbnails — e.g. the share-content picker).

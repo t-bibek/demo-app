@@ -59,6 +59,10 @@ struct ScannedWindow {
     /// "Meeting compact view" window). The main window supplies the roster; this
     /// just prevents meeting_ended while you're minimised to it.
     var keepAliveOnly: Bool = false
+    /// The owning application's process id — tracked per window so the engine's
+    /// TeamsMeetingMemory can key a throttled meeting to its process (and a future
+    /// targeted re-read can re-reach it by pid). nil when unavailable.
+    var pid: Int32? = nil
 }
 
 /// The macOS equivalent of the original's Windows UI Automation engine.
@@ -74,6 +78,13 @@ final class AccessibilityScanner {
     /// was removed from the current-build Meet AX tree (2026-07-03), so the legacy
     /// `meetTileIsSelf` "(You)" scan no longer matches. Default "You" is a no-op.
     var meetLocalUserName: String = "You"
+
+    /// Teams meetingIds seen READABLE recently (set by DetectionEngine each tick from
+    /// `TeamsMeetingMemory`). A Teams meeting window whose WebView2 tree is throttled
+    /// (backgrounded / on another Teams section) but whose title still resolves to one
+    /// of these ids is kept alive instead of dropped — so the call survives being
+    /// unreadable and resumes the live ring once reachable. Empty ⇒ legacy behavior.
+    var teamsActiveMeetingIds: Set<String> = []
 
     /// Stage-2 CPU win (plan step 8): when the event-driven observer is live, skip the
     /// EXPENSIVE Meet per-tile sub-walk (`meetTileObservations` + panel roster) inside
@@ -190,7 +201,16 @@ final class AccessibilityScanner {
                 // So in event mode `scan()` does NOT pin Chrome frontmost each tick; the
                 // AXManual/AXEnhanced flags (idempotent, cheap) still get set. Legacy mode
                 // (skipMeetSubWalk == false) is byte-for-byte unchanged.
-                if !skipMeetSubWalk {
+                //
+                // NATIVE TEAMS is EXCLUDED from the per-tick force-activate: its speaker
+                // ring (vdi-frame-occlusion) is readable whenever the meeting view is
+                // foreground, so pulling Teams frontmost every 500ms would just steal the
+                // user's focus for no gain. Instead we LET Teams background — the meeting
+                // survives via TeamsMeetingMemory (kept alive by title/pid) and the live
+                // ring resumes the instant the user returns to it. The AXManual/AXEnhanced
+                // flags are still set so the tree is full when it IS foreground.
+                let isTeams = Self.nativeApps[bundleID] == .teams
+                if !skipMeetSubWalk && !isTeams {
                     Self.forceActivateForCapture(pid: app.processIdentifier)
                 }
             }
@@ -317,14 +337,13 @@ final class AccessibilityScanner {
                             participants = []
                             keepAliveOnly = true
                         }
-                    } else {
+                    } else if ex.callActive || !ex.roster.isEmpty
+                                || ex.tiles.contains(where: { $0.isMe }) {
                         // ACTIVE-CALL gate (product parity): a "Leave" button, a "Shared
                         // content" main landmark, or an "Attendees" outline — covers native
                         // AND web Teams. The meeting URL alone is NOT enough (…/light-
                         // meetings/launch is the launcher page before joining); the chat /
                         // home window lacks these too. Roster / self tile corroborate.
-                        guard ex.callActive || !ex.roster.isEmpty
-                                || ex.tiles.contains(where: { $0.isMe }) else { continue }
                         teamsTiles = ex.tiles
                         // Remote mute from the People-panel roster (panel open only —
                         // the one dependable source); the tile rows carry it otherwise.
@@ -337,6 +356,20 @@ final class AccessibilityScanner {
                         // note is NOT used here (it names only one and is usually
                         // absent); it stays the compact-window signal above.
                         pipSpeaker = nil
+                    } else if teamsActiveMeetingIds.contains(
+                                meetingId(platform: .teams, url: nil, title: title)) {
+                        // THROTTLED but KNOWN-ACTIVE: the WebView2 tree came back empty
+                        // (Teams is backgrounded / on another section), but this window's
+                        // title still resolves to a meetingId we saw READABLE recently, so
+                        // the call is still up — keep it alive (empty tiles/roster; the
+                        // engine holds the last-known roster from TeamsMeetingMemory) so it
+                        // doesn't age out, and resume the live ring the instant it's
+                        // reachable again. Without this, minimising Teams ended the meeting.
+                        speakers = []
+                        participants = []
+                        keepAliveOnly = true
+                    } else {
+                        continue
                     }
                 } else if platform == .zoom && isNative {
                     // Native Zoom has no AX speaking signal — read the roster +
@@ -405,7 +438,8 @@ final class AccessibilityScanner {
                     teamsRoster: teamsRoster,
                     pipSpeaker: pipSpeaker,
                     zoomWebSpeaker: zoomWebSpeaker,
-                    keepAliveOnly: keepAliveOnly
+                    keepAliveOnly: keepAliveOnly,
+                    pid: app.processIdentifier
                 ))
             }
         }

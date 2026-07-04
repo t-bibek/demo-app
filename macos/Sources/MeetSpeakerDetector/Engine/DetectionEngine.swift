@@ -81,6 +81,15 @@ final class DetectionEngine {
     // 2+ unmuted remotes). Held for someoneGraceMs before the honest "Someone",
     // so Teams' own lagging "<name> is speaking" note can name the speaker first.
     private var teamsSomeoneUnattributedSince: Int?
+    // Per-meeting memory so a Teams call SURVIVES its WebView2 tree throttling when
+    // backgrounded: readable ticks record the roster + last-readable time keyed by
+    // meetingId (title-derived, stable even while throttled); throttled ticks keep
+    // the meeting alive from it and the roster persists until the ring resumes.
+    private var teamsMemory = TeamsMeetingMemory()
+    // Keep a throttled meeting alive for up to this long after its last READABLE
+    // read (window existence is the real gate; this just bounds trust in a stale
+    // roster so a genuinely-ended call eventually clears). 5 min.
+    private let teamsMemoryTtlMs = 300_000
 
     // Event-driven Meet (plan steps 5–8). All inert unless `config.eventDrivenMeet`.
     private var meetObserver: MeetTileObserver?
@@ -239,6 +248,10 @@ final class DetectionEngine {
         }
 
         scanner.meetLocalUserName = config.localUserName   // for name-based self-tile ID (the AX `(You)` label was removed)
+        // Tell the scanner which Teams meetings were readable recently, so it keeps a
+        // now-THROTTLED (backgrounded) meeting window alive instead of dropping it.
+        teamsMemory.prune(nowMs: now, maxAgeMs: teamsMemoryTtlMs)
+        scanner.teamsActiveMeetingIds = teamsMemory.activeIds(nowMs: now, ttlMs: teamsMemoryTtlMs)
 
         // EVENT-DRIVEN MEET (plan step 7). Drain the observer's edges → feed the
         // transition confidence → build the per-tick transition state the resolver
@@ -307,10 +320,17 @@ final class DetectionEngine {
         var chipMeetings = Set<String>()
         for var w in scanned {
             let wMid = meetingId(platform: w.platform, url: w.url, title: w.title)
-            // Keep-alive-only windows (the Teams compact / PIP view) hold the meeting
-            // open but contribute no speakers or roster — snapshot them (empty) so the
-            // meeting doesn't end, then skip attribution.
+            // Keep-alive-only windows (the Teams compact / PIP view, OR a throttled
+            // backgrounded meeting) hold the meeting open but contribute no live
+            // speakers — snapshot them so the meeting doesn't end, then skip
+            // attribution. For a THROTTLED Teams meeting, replay the last-known roster
+            // from TeamsMeetingMemory so participants persist (no false leave churn)
+            // until the ring resumes.
             if w.keepAliveOnly {
+                if w.platform == .teams, w.participants.isEmpty, let mem = teamsMemory.entry(wMid) {
+                    w.participants = mem.participants
+                    w.teamsRoster = mem.roster
+                }
                 snapshots.append(meetingSnapshot(for: w, meetingId: wMid, speaking: [], now: now))
                 if chipMeetings.insert(wMid).inserted {
                     windowInfos.append(EngineWindowInfo(
@@ -551,6 +571,12 @@ final class DetectionEngine {
             }
 
             let mid = wMid
+            // A READABLE Teams meeting (has tiles or roster this tick) refreshes the
+            // memory so a later throttled tick keeps it alive with this roster.
+            if w.platform == .teams, !(w.teamsTiles.isEmpty && w.teamsRoster.isEmpty) {
+                teamsMemory.observeReadable(meetingId: mid, roster: w.teamsRoster,
+                                            participants: w.participants, pid: w.pid, nowMs: now)
+            }
             for name in who {
                 let pid = participantId(meetingId: mid, name: name)
                 tracker.pulse(w.platform, name, now,

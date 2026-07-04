@@ -711,6 +711,39 @@ if let root = loadTeamsFixture("speaker-3p-bob-speaking") {
           "speaker-view/bob: exactly ONE ring (class-anchored) — the muted filmstrip tile is NOT mismarked")
 } else { check(false, "fixture speaker-3p-bob-speaking.json missing") }
 
+// MARK: TeamsMeetingMemory — a call SURVIVES its window becoming unreadable
+// (backgrounded / WebView2-throttled). Readable ticks record the roster keyed by
+// the title-derived meetingId; throttled ticks keep the meeting alive from it and
+// the ring resumes on recovery. Pure + time-injected.
+print("TeamsMeetingMemory (unreadable/backgrounded recovery):")
+do {
+    var mem = TeamsMeetingMemory()
+    let mid = "teams::meetingwithbibekthapa"
+    let roster = [ZoomRosterEntry(name: "Alice Talker", unmuted: true, isMe: false),
+                  ZoomRosterEntry(name: "Bibek Thapa", unmuted: true, isMe: true)]
+    // t=1000: readable — record roster + pid.
+    mem.observeReadable(meetingId: mid, roster: roster,
+                        participants: ["Alice Talker", "Bibek Thapa"], pid: 4242, nowMs: 1000)
+    equal(mem.entry(mid)?.participants, ["Alice Talker", "Bibek Thapa"], "readable tick -> roster remembered")
+    equal(mem.entry(mid)?.pid, 4242, "readable tick -> pid remembered")
+    // t=2000: THROTTLED (window title still resolves to mid) — still within TTL, so
+    // the scanner would keep it alive.
+    check(mem.activeIds(nowMs: 2000, ttlMs: 300_000).contains(mid),
+          "throttled 1s later -> meeting still ACTIVE (kept alive, not dropped)")
+    equal(mem.entry(mid)?.roster.first(where: { $0.isMe })?.name, "Bibek Thapa",
+          "throttled -> last-known roster (incl. self) persists")
+    // Long throttle past the TTL -> no longer kept alive (a genuinely-ended call clears).
+    check(!mem.activeIds(nowMs: 1000 + 300_001, ttlMs: 300_000).contains(mid),
+          "throttled past TTL -> meeting clears (no phantom call forever)")
+    // Recovery: a fresh readable tick refreshes lastReadable + roster.
+    mem.observeReadable(meetingId: mid, roster: roster, participants: ["Alice Talker", "Bibek Thapa", "Bob Speaker"], pid: 4242, nowMs: 305_000)
+    equal(mem.entry(mid)?.participants.count, 3, "recovery -> roster refreshed from the live tree")
+    check(mem.activeIds(nowMs: 305_500, ttlMs: 300_000).contains(mid), "recovery -> active again")
+    // prune drops stale entries.
+    mem.prune(nowMs: 305_000 + 300_001, maxAgeMs: 300_000)
+    equal(mem.count, 0, "prune -> stale meeting evicted")
+}
+
 // CAMERA-OFF SPEAKERS — the ring is CAMERA-INDEPENDENT (live-verified 2026-07-04,
 // SUPERSEDES the earlier "no video frame ⇒ no ring" limitation). A camera-off
 // speaker's AVATAR tile still carries vdi-frame-occlusion, and camera-off OVERLAP
