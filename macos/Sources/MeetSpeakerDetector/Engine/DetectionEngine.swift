@@ -77,6 +77,19 @@ final class DetectionEngine {
     private var teamsStructural = 0  // ticks named via the AX is-speaking token (Recall-style)
     private var teamsNamed = 0       // ticks named via audio-direction fallback
     private var teamsSomeone = 0     // ticks attributed to anonymous "Someone"
+    // Teams someoneGrace twin: ts remote speech first went unattributable (0 or
+    // 2+ unmuted remotes). Held for someoneGraceMs before the honest "Someone",
+    // so Teams' own lagging "<name> is speaking" note can name the speaker first.
+    private var teamsSomeoneUnattributedSince: Int?
+    // Per-meeting memory so a Teams call SURVIVES its WebView2 tree throttling when
+    // backgrounded: readable ticks record the roster + last-readable time keyed by
+    // meetingId (title-derived, stable even while throttled); throttled ticks keep
+    // the meeting alive from it and the roster persists until the ring resumes.
+    private var teamsMemory = TeamsMeetingMemory()
+    // Keep a throttled meeting alive for up to this long after its last READABLE
+    // read (window existence is the real gate; this just bounds trust in a stale
+    // roster so a genuinely-ended call eventually clears). 5 min.
+    private let teamsMemoryTtlMs = 300_000
 
     // Event-driven Meet (plan steps 5–8). All inert unless `config.eventDrivenMeet`.
     private var meetObserver: MeetTileObserver?
@@ -235,6 +248,10 @@ final class DetectionEngine {
         }
 
         scanner.meetLocalUserName = config.localUserName   // for name-based self-tile ID (the AX `(You)` label was removed)
+        // Tell the scanner which Teams meetings were readable recently, so it keeps a
+        // now-THROTTLED (backgrounded) meeting window alive instead of dropping it.
+        teamsMemory.prune(nowMs: now, maxAgeMs: teamsMemoryTtlMs)
+        scanner.teamsActiveMeetingIds = teamsMemory.activeIds(nowMs: now, ttlMs: teamsMemoryTtlMs)
 
         // EVENT-DRIVEN MEET (plan step 7). Drain the observer's edges → feed the
         // transition confidence → build the per-tick transition state the resolver
@@ -303,10 +320,17 @@ final class DetectionEngine {
         var chipMeetings = Set<String>()
         for var w in scanned {
             let wMid = meetingId(platform: w.platform, url: w.url, title: w.title)
-            // Keep-alive-only windows (the Teams compact / PIP view) hold the meeting
-            // open but contribute no speakers or roster — snapshot them (empty) so the
-            // meeting doesn't end, then skip attribution.
+            // Keep-alive-only windows (the Teams compact / PIP view, OR a throttled
+            // backgrounded meeting) hold the meeting open but contribute no live
+            // speakers — snapshot them so the meeting doesn't end, then skip
+            // attribution. For a THROTTLED Teams meeting, replay the last-known roster
+            // from TeamsMeetingMemory so participants persist (no false leave churn)
+            // until the ring resumes.
             if w.keepAliveOnly {
+                if w.platform == .teams, w.participants.isEmpty, let mem = teamsMemory.entry(wMid) {
+                    w.participants = mem.participants
+                    w.teamsRoster = mem.roster
+                }
                 snapshots.append(meetingSnapshot(for: w, meetingId: wMid, speaking: [], now: now))
                 if chipMeetings.insert(wMid).inserted {
                     windowInfos.append(EngineWindowInfo(
@@ -336,6 +360,8 @@ final class DetectionEngine {
                 // OWN VAD (Zoom "Talking: <name>", Teams "<name> is speaking"). Trust
                 // it over the mute-gate / anonymous floor.
                 add(pip, w.platform == .zoom ? "zoom.pip" : "teams.pip")
+                // The note named the speaker — the Someone floor is attributed.
+                if w.platform == .teams { teamsSomeoneUnattributedSince = nil }
             } else if w.platform == .meet {
                 // LEGACY vs EVENT tile source. Legacy: the scanner's full per-tile
                 // sub-walk (counted as one `full_walk` per Meet scan for the A/B
@@ -437,47 +463,62 @@ final class DetectionEngine {
                     w.participants = Array(roster)
                 }
             } else if w.platform == .teams {
-                // Teams (new client) exposes NO AX is-speaking signal — proven live
-                // (state/geometry/announcements all empty) and in Recall's binary
-                // (its " is active speaker" check is inert; it uses VAD). So attribute
-                // by AUDIO DIRECTION + MUTE, exactly like native Zoom: mic = you,
-                // system audio = a remote, gated by per-participant mute. Remote mute
-                // comes from the People-panel ROSTER (the only reliable source —
-                // requires the panel open); local mute from the self tile/roster.
-                // `teamsActiveSpeaker` stays as a config-driven hook (speakingClasses
-                // is empty today) but never fires, so this is the live path.
-                // See docs/teams-active-speaker-detection.md §7.
-                let vad = audioReliable ? (micActive || remoteActive) : true
-                let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: vad)
+                // Teams (new client) DOES expose a per-speaker RING —
+                // `vdi-frame-occlusion` on the active remote's tile subtree, Teams'
+                // OWN VAD (live-verified 2026-07-04, 3-party co-variance; supersedes
+                // the old §7 "no signal" verdict). The pure extractor reads it
+                // STRUCTURALLY per tile, so `teamsActiveSpeaker` names the speaking
+                // remote(s) directly — overlap-capable, self-excluded. Audio/mute is
+                // now only a fallback (camera-off speaker) + the local-user mic path.
+                // See docs/teams-active-speaker-detection.md.
+                let readable = !w.teamsTiles.isEmpty
+                // Ring is Teams' VAD → trusted directly (vadSpeechActive: true).
+                let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: true)
                 if r.via == .structural {
-                    for n in r.names { add(n, "teams.structural") }   // only if a config'd class ever matches
+                    for n in r.names { add(n, "teams.ring") }   // remote speaker(s) via vdi-frame-occlusion
                     teamsStructural += 1
-                } else if audioReliable {
-                    // Prefer the People-panel ROSTER for mute (reliable per-remote,
-                    // panel-open); fall back to per-tile mute when the panel is closed.
+                }
+                if audioReliable {
+                    // Mute source: the People-panel ROSTER (reliable per-remote,
+                    // panel-open) else per-tile mute.
                     let roster = w.teamsRoster
                     let meRoster = roster.first(where: { $0.isMe })
                     let meTile = w.teamsTiles.first(where: { $0.isMe })
                     let localUnmuted = meRoster?.unmuted ?? meTile?.unmuted ?? (w.localUserUnmuted ?? false)
-                    let localName = meRoster?.name ?? meTile?.name ?? config.localUserName
-                    let remotes = roster.isEmpty
-                        ? w.teamsTiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
-                        : roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
-                    let names = zoomMuteGateSpeakers(
-                        micActive: micActive, localUnmuted: localUnmuted, localName: localName,
-                        remoteActive: remoteActive, remoteUnmutedNames: remotes)
-                    // Drop the ambiguous remote floor ("Someone") for Teams entirely:
-                    // Teams' own "<name> is speaking" note (read as pipSpeaker above) is
-                    // the authoritative active-speaker signal — it just lags the audio
-                    // by a beat. Emitting "Someone" in that gap flashes a spurious
-                    // speaker right before the real name resolves. Keep only NAMED
-                    // mute-gate results (when the roster is readable).
-                    for n in names where n != "Someone" {
-                        add(n, "teams.mute_gate"); teamsNamed += 1
+                    // SELF via mic — the self tile carries no speaker ring (it has
+                    // vdi-dynamic-occlusion), so the local user is named from the mic
+                    // when unmuted, exactly like Meet's self path. Use ONLY the
+                    // resolved real name (self tile / roster) — never the "You"
+                    // placeholder, which otherwise split self into two speakers
+                    // ("You" + the real name) across ticks where the self tile wasn't
+                    // readable (mirrors the Meet self-name rule).
+                    let localName = meRoster?.name ?? meTile?.name
+                    if micActive && localUnmuted, let ln = localName { add(ln, "teams.self_mic") }
+                    // Camera-off remote fallback: the ring needs a video frame, so if
+                    // it named no remote yet there IS remote audio, mute-gate a SINGLE
+                    // unmuted remote (2+ stays ambiguous → we don't guess).
+                    if r.via != .structural && remoteActive {
+                        let remotes = roster.isEmpty
+                            ? w.teamsTiles.filter { !$0.isMe && ($0.unmuted ?? true) }.map { $0.name }
+                            : roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+                        if remotes.count == 1 { add(remotes[0], "teams.mute_gate"); teamsNamed += 1 }
                     }
                 }
-                // else: no audio capture and no class → emit nothing (don't spam
-                // "Someone" when we can't even confirm there's speech).
+                // "Someone" ONLY when the tree is UNREADABLE (no tiles —
+                // backgrounded/WebView2-throttled) yet remote audio is present.
+                // Foreground-readable NEVER yields "Someone": the ring names the
+                // speaker, so a foreground "Someone" is a bug by definition. Debounced
+                // like Meet so a one-tick read gap can't flash it.
+                if !who.isEmpty || readable || !(audioReliable && remoteActive) {
+                    teamsSomeoneUnattributedSince = nil
+                } else {
+                    let since = teamsSomeoneUnattributedSince ?? now
+                    teamsSomeoneUnattributedSince = since
+                    if now - since >= someoneGraceMs {
+                        add("Someone", "teams.someone")
+                        teamsSomeone += 1
+                    }
+                }
                 teamsPrevAreas = Dictionary(w.teamsTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
             } else if w.directSpeakerRead {
                 // Meet (kssMZb class) / Zoom web ("active speaker" marker): the UI
@@ -530,6 +571,12 @@ final class DetectionEngine {
             }
 
             let mid = wMid
+            // A READABLE Teams meeting (has tiles or roster this tick) refreshes the
+            // memory so a later throttled tick keeps it alive with this roster.
+            if w.platform == .teams, !(w.teamsTiles.isEmpty && w.teamsRoster.isEmpty) {
+                teamsMemory.observeReadable(meetingId: mid, roster: w.teamsRoster,
+                                            participants: w.participants, pid: w.pid, nowMs: now)
+            }
             for name in who {
                 let pid = participantId(meetingId: mid, name: name)
                 tracker.pulse(w.platform, name, now,

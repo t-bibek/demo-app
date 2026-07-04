@@ -8,7 +8,11 @@
 // this script and gates on match '"verdict":"PASS"' + exit code. REVIEW/FAIL/missing
 // all exit non-zero so the orchestrator flags them.
 //
-//   node qa/live-scenario-verdict.mjs <scenario>
+//   node qa/live-scenario-verdict.mjs <scenario> [results.ndjson]
+//
+// The optional second arg points at a different results file (repo-relative) —
+// the Teams live gate (qa/qa.teams.config.mjs) reuses this reader against
+// qa/teams-live/teams-live-results.ndjson. Default stays the Meet results file.
 // ---------------------------------------------------------------------------
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -16,10 +20,12 @@ import { dirname, resolve, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
-const NDJSON = join(REPO, 'research', 'meet-dom-detector', 'live', 'live-qa-results.ndjson');
+const NDJSON = process.argv[3]
+  ? resolve(REPO, process.argv[3])
+  : join(REPO, 'research', 'meet-dom-detector', 'live', 'live-qa-results.ndjson');
 
 const scenario = process.argv[2];
-if (!scenario) { console.error('usage: node qa/live-scenario-verdict.mjs <scenario>'); process.exit(2); }
+if (!scenario) { console.error('usage: node qa/live-scenario-verdict.mjs <scenario> [results.ndjson]'); process.exit(2); }
 
 if (!existsSync(NDJSON)) {
   console.error(`live results NDJSON missing: ${NDJSON} — run the live-session suite first`);

@@ -201,9 +201,102 @@ grep -rinE "teams" demo-app/Sources/SpeakerCore/PlatformDetection.swift demo-app
 
 ---
 
-## 7. FINAL VERDICT — investigation closed (2026-06-23)
+## 8. REOPENED — there IS a speaking signal after all (2026-07-04) ⚠️ SUPERSEDES §7
 
-> Everything in §1–6 about an AX **is-speaking** signal for Teams is **SUPERSEDED**. After live probing the native client (`com.microsoft.teams2`) and re-decoding the binary, the conclusion reversed. The mute/name/self/geometry findings stand; the *speaking* claim does not.
+> §7 (below) said Teams exposes NO who-is-speaking signal. **That is wrong for the
+> current build.** A fresh 3-party live co-variance run found a clean per-speaker
+> signal that the earlier probe dismissed. §7's *mute/name/self* findings still
+> stand; its *"no speaking signal"* verdict does not.
+
+**The signal: `vdi-frame-occlusion`** — a DOM class Teams puts on the active
+speaker's video-tile subtree. The earlier investigation rejected the `vdi-*`
+family because a **whole-tree** scan finds `vdi-occlusion` on many non-tile groups
+and `vdi-dynamic-occlusion` on the self tile. The fix is to read it
+**STRUCTURALLY**: locate each participant TILE first (its `AXMenuItem` +
+context-menu affordance), then look for `vdi-frame-occlusion` **inside that tile's
+subtree only**. Read that way it is exactly the speaker ring.
+
+**Co-variance proof** (host Bibek + guests Alice + Bob, mics toggled via CDP;
+captures in `macos/Fixtures/teams/gallery-3p-*` + `speaker-3p-*`):
+
+| audible | Alice tile | Bob tile | self tile |
+|---|---|---|---|
+| Alice only | **vdi-frame-occlusion** | — | vdi-dynamic-occlusion |
+| Bob only | — | **vdi-frame-occlusion** | vdi-dynamic-occlusion |
+| both | **vdi-frame-occlusion** | **vdi-frame-occlusion** | vdi-dynamic-occlusion |
+| silence | — | — | vdi-dynamic-occlusion |
+
+It tracks audio in BOTH gallery and speaker view; overlap marks both; silence
+marks none; the self tile never carries it (it has `-dynamic-`, and we also flag
+`isMe`). In speaker/auto view the active speaker is additionally promoted to the
+big main-stage tile (geometry corroboration). The co-occurring Griffel hashes
+(`___1vvhwjq`, `fn8mz29`, `f1ky4vpe`, `frwhdur`, `ftevtku`, `f1qyaz97`,
+`f14rmoke`, `fm03cl5`, `f3ve9t9`) are the ROTATING ring-animation classes and are
+deliberately NOT relied on; `vdi-frame-occlusion` is the durable semantic token
+(a rotation → a `teams-rules.json` config drop).
+
+**How the engine uses it:** `teamsExtractWindow` sets each tile's `isSpeaking`
+from a bounded per-tile subtree scan (`teamsTileSubtreeSpeaks`);
+`teamsActiveSpeaker` returns the lit-ring NON-SELF tiles (overlap-capable) as
+Teams' own VAD, ahead of our audio gate; the engine tags them `teams.ring`. The
+local user has no ring (self tile) → named from the mic (`teams.self_mic`). A
+camera-OFF speaker has no video frame → mute-gate fallback (`teams.mute_gate`).
+**"Someone" is now emitted ONLY when the tree is unreadable** (backgrounded /
+WebView2-throttled) with remote audio — a foreground "Someone" is treated as a
+bug. Live-verified 2026-07-04: Alice→Bob→overlap→silence timeline, **zero
+"Someone"**, all turns named. Limit that remains: a camera-off overlap of 2+
+unmuted remotes (no ring, no geometry) stays unattributed.
+
+### §8.1 Follow-up research — can we do BETTER than the class? (2026-07-04)
+
+We probed four "improve it" avenues against the same 3-party captures. Result:
+**the per-tile `vdi-frame-occlusion` class is the best available signal; the
+alternatives regress or don't exist.**
+
+- **Geometry (big-tile promotion) — REJECTED as a primary/fused signal.** It only
+  identifies ONE dominant speaker, ONLY in speaker/auto view, and **breaks under
+  screen-share** (the shared content becomes the big tile) and in gallery/together
+  (equal tiles). Kept as an OPT-IN corroborator only (`useGeometry`), never fused
+  in by default.
+- **"Structural, not the class" (detect the ring by node geometry) — REJECTED,
+  it FALSE-POSITIVES.** The ring IS structurally a near-tile-sized `AXGroup`
+  overlay that appears only when speaking — but so is the base video container on
+  a **filmstrip** tile in speaker view. Measured: the muted filmstrip tile carries
+  a ≥0.85×-tile overlay with NO `vdi-frame-occlusion`, so a class-free
+  "tile-sized-overlay ⇒ speaking" rule marks a SILENT participant as speaking.
+  Only the class discriminates. Locked by a regression self-test
+  (`speaker-view/bob: exactly ONE ring … the muted filmstrip tile is NOT
+  mismarked`).
+- **The "<name> is speaking" note — transient, not primary.** Absent in every
+  steady-state capture (fired once live as `teams.pip`); it reflects only THIS
+  client's rendered view. Kept as the compact-window signal, never the main one.
+- **People-panel per-row voice indicator — not found.** Panel rows expose only
+  name + mute state (`Unmuted`/`Muted` image), no speaking/voice-level element.
+- **The "<name> is speaking" note names remotes but is NOT reliable.** It CAN name
+  a remote (fired once live), but a tight (0.3 s) + loose poll across two speakers
+  found it in the main window ZERO times, and a full-tree grep found no such node.
+  It surfaces only in the compact/PIP view, naming one dominant speaker. So it
+  can't name "all participants" and isn't a primary signal — kept as the
+  compact-window fallback only.
+- **The ring is CAMERA-INDEPENDENT — the "camera-off gap" does NOT exist.**
+  (Live-verified 2026-07-04, correcting the earlier assumption.) A camera-off
+  speaker's AVATAR tile still carries `vdi-frame-occlusion` (desc drops
+  "video is on" but the P1 context-menu anchor still admits it), and camera-off
+  OVERLAP marks BOTH avatars. Fixtures: `gallery-3p-camoff-alice-speaking`,
+  `gallery-3p-camoff-both-speaking`. So the ring names camera-off speakers too —
+  no diarization needed for that case.
+
+**Net:** the shipped design (per-tile `vdi-frame-occlusion`, self-excluded,
+config-drop-able) is validated as the best passive signal, and it is camera- AND
+layout-independent. The ONLY remaining limit is an UNREADABLE tree
+(backgrounded/WebView2-throttled) — then, and only then, remote audio falls to the
+honest "Someone".
+
+---
+
+## 7. FINAL VERDICT — investigation closed (2026-06-23) — ⚠️ SUPERSEDED BY §8
+
+> Everything in §1–6 about an AX **is-speaking** signal for Teams is **SUPERSEDED**. After live probing the native client (`com.microsoft.teams2`) and re-decoding the binary, the conclusion reversed. The mute/name/self/geometry findings stand; the *speaking* claim does not. **(2026-07-04: the "no speaking signal" verdict here is itself now superseded — see §8. `vdi-frame-occlusion`, read per-tile, IS the speaker ring.)**
 
 **Microsoft Teams exposes NO who-is-speaking signal to a passive observer — via the macOS AX tree or any other passive channel.** Established by FIVE independent lines of evidence:
 
