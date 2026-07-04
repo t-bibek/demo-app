@@ -32,3 +32,4 @@
 {"iteration":2,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783182400}
 {"iteration":2,"phase":"qa-live","verdict":"fail","failures":["native:zoom-mutegate-live","native:pip-background-live","native:vad-quality-live"],"ts":1783182743}
 {"phase":"exit","verdict":"ITER_CAP","iteration":3,"ts":1783182920}
+{"iteration":3,"phase":"fix","verdict":"done","failures":["guest-audio-injection"],"ts":1783186368}

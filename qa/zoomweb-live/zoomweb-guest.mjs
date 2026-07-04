@@ -166,9 +166,13 @@ export async function joinZoomWebGuest({ port, name, seat, inviteUrl, joinTimeou
 
 // Gate a guest's SPEECH GAIN — independent of mute. true = emit real decoded
 // speech; false = silence (unmuted-but-silent = the falsification state).
+// Turning speech ON also force-resumes the AudioContext: a backgrounded/gesture-less
+// context can be 'suspended', which freezes the whole graph and transmits SILENCE
+// (outbound RTP audioLevel = 0) even with fakeMicOn=true — the intermittent
+// "guest audio never flows" bug (fixed live 2026-07-04). __fakeMicResume is idempotent.
 export async function setGuestSpeak(page, on) {
   try {
-    await page.evalJs(`window.__fakeMicSpeak && window.__fakeMicSpeak(${on ? 'true' : 'false'})`);
+    await page.evalJs(`(() => { if (${on ? 'true' : 'false'} && window.__fakeMicResume) window.__fakeMicResume(); return window.__fakeMicSpeak ? window.__fakeMicSpeak(${on ? 'true' : 'false'}) : null; })()`);
     return true;
   } catch (e) { return false; }
 }

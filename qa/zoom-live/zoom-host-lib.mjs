@@ -101,16 +101,54 @@ export function preflightSignedIn() {
 export async function bootstrapMeeting(log = () => {}) {
   spawnSync('open', ['-b', 'us.zoom.xos']); await sleep(6000);
   drive('raise'); await sleep(1500);
-  if (meetingWindowPresent()) { log('already in a meeting'); return true; }
+  // "already in a meeting" must mean REALLY joined (roster/audio readable), NOT just the
+  // preview window up — the green-room preview's window ALSO matches meetingWindowPresent().
+  if (reallyInMeeting()) { log('already in a meeting'); return true; }
   const started = await pressFirst(
     ['Start a new meeting with video on', 'Start new meeting', 'New meeting', 'New Meeting'], {}, 2000, log);
   if (!started && process.env.ZOOM_PMI) spawnSync('open', [`zoommtg://zoom.us/start?confno=${process.env.ZOOM_PMI}`]);
   else if (!started) return false;
-  await sleep(8000);
-  // "Start a new meeting with video on" opens a PREVIEW dialog — press "Start".
-  await pressFirst(['Start'], { args: ['--window', 'Zoom Meeting'] }, 3000, log);
-  for (let i = 0; i < 20; i++) { if (meetingWindowPresent()) return true; await sleep(3000); }
-  return false;
+  await sleep(4000);
+  // A PRIOR meeting that never cleanly ended (host client killed without pressing "End
+  // meeting for all") keeps running SERVER-side; Zoom then blocks "Start new meeting"
+  // with a "You have a meeting that is currently in-progress" modal. Live evidence
+  // 2026-07-04: this recurs across runs and wedges the whole gate. Recover by REJOINING
+  // that meeting (it is ours) so this run has a live meeting to drive; the finally-block
+  // teardown then ends it for real. Cancel the modal, rejoin via ZOOM_MEETING_URL if we
+  // have one, else press the home "Join meeting".
+  if (drive('find', 'currently in-progress').ok) {
+    log('prior meeting still in-progress server-side — rejoining it');
+    await pressFirst(['Cancel'], {}, 800, log);
+    if (process.env.ZOOM_MEETING_URL) { spawnSync('open', [process.env.ZOOM_MEETING_URL]); await sleep(6000); await pressFirst(['Join', 'Open Zoom Workplace', 'Open zoom.us'], { args: ['--window', 'Zoom Meeting'] }, 2000, log); }
+    else { await pressFirst(['Join meeting', 'Join Meeting'], {}, 1500, log); }
+  }
+  await sleep(4000);
+  // "Start a new meeting" opens a PREVIEW/green-room dialog whose window title also
+  // matches "Zoom Meeting", so meetingWindowPresent() goes true on the PREVIEW while the
+  // meeting has NOT joined. Live evidence (2026-07-04): one fixed-delay "Start" press
+  // often lands before the preview's button renders, leaving the meeting stuck on the
+  // preview → cmd-I invite harvest + waiting-room admit both fail → guests never flow
+  // audio. Press "Start" REPEATEDLY until the meeting is REALLY live (computer audio
+  // joined), dismissing any one-off modal that could steal the join.
+  for (let i = 0; i < 24; i++) {
+    if (reallyInMeeting()) return true;
+    await pressFirst(['Start'], { args: ['--window', 'Zoom Meeting'] }, 1500, log);
+    await pressFirst(['OK', 'Got it', 'Continue'], {}, 500, log);
+    await sleep(2500);
+  }
+  return reallyInMeeting();
+}
+
+// REALLY in a meeting, distinct from the green-room PREVIEW window (which shares the
+// "Zoom Meeting" title AND carries its own "… currently unmuted" mic control, so those
+// signals do NOT distinguish preview from joined). The ONE reliable distinguisher: the
+// preview has a "Start" (join) button and the joined meeting does not. So: a meeting
+// window exists AND there is no preview "Start" button left to press.
+export function reallyInMeeting() {
+  if (!meetingWindowPresent()) return false;
+  const previewStart = drive('find', 'Start').out.split('\n')
+    .some((l) => /text="Start"/.test(l) && /window="[^"]*Zoom Meeting/.test(l));
+  return !previewStart;
 }
 
 // --- Invite-URL harvest: ⌘I → Copy invite link → pbpaste (clipboard restored) ----
@@ -163,6 +201,23 @@ export async function admitLoop({ targetCount = 2, waitMs = 90_000 } = {}, log =
 }
 
 // --- End / leave the meeting (teardown; called in finally). -----------------------
+// MUST reliably end, else the meeting keeps running SERVER-side and the NEXT run's
+// "Start new meeting" is blocked by the in-progress modal (recurring live-rig wedge).
+// "End" is a TWO-step flow (End → confirm "End meeting for all"), and the meeting
+// toolbar auto-hides, so raise + retry, then VERIFY the meeting window is gone.
 export async function endMeeting(log = () => {}) {
-  try { await pressFirst(['End meeting for all', 'End Meeting for All', 'Leave meeting', 'Leave'], {}, 800, log); } catch (e) {}
+  for (let i = 0; i < 6; i++) {
+    if (!meetingWindowPresent()) return true;
+    drive('raise'); await sleep(400);
+    // Open the End/Leave control ON the meeting window (bare "End" substring-matches the
+    // Workplace calendar button, so scope to the meeting window and prefer the full
+    // destructive labels). Then confirm the two-step "End meeting for all" popup.
+    await pressFirst(['End meeting for all', 'End Meeting for All', 'Leave meeting', 'Leave Meeting'],
+      { args: ['--window', 'Zoom Meeting'] }, 1000, log);
+    await pressFirst(['End', 'Leave'], { args: ['--window', 'Zoom Meeting'] }, 1000, log);
+    // Confirm popup (may be a separate small window).
+    await pressFirst(['End meeting for all', 'End Meeting for All', 'Leave meeting', 'Leave', 'Yes'], {}, 1000, log);
+    await sleep(1500);
+  }
+  return !meetingWindowPresent();
 }

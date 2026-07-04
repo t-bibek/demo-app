@@ -210,10 +210,34 @@ async function bootstrapMeeting() {
   if (!started && process.env.ZOOM_PMI) spawnSync('open', [`zoommtg://zoom.us/start?confno=${process.env.ZOOM_PMI}`]);
   else if (!started) return false;
   await sleep(8000);
-  // Preview "Start" (join with video) if shown.
-  await pressFirst(['Start'], { args: ['--window', 'Zoom Meeting'] }, 3000);
-  for (let i = 0; i < 20; i++) { if (meetingWindowPresent()) return true; await sleep(3000); }
-  return false;
+  // "Start a new meeting" opens a PREVIEW/green-room dialog whose window ALSO matches
+  // "Zoom Meeting" (title "<name>'s Zoom Meeting") — so meetingWindowPresent() alone is
+  // NOT enough: it goes true on the preview while the meeting has not actually joined.
+  // Live evidence (2026-07-04): a single fixed-delay "Start" press often lands before
+  // the preview's button renders, leaving the meeting stuck on the preview → cmd-I
+  // invite harvest and waiting-room admit both fail → guests "never flow" audio. So
+  // press "Start" REPEATEDLY until the REAL meeting is live, which we detect by the
+  // meeting having joined computer audio (rosterVisible / the "computer audio" tab).
+  // Distinguish the joined meeting from the green-room PREVIEW: the preview shares the
+  // "Zoom Meeting" window title AND has its own "… currently unmuted" mic control, so
+  // only the presence of a preview "Start" (join) button separates them — a joined
+  // meeting has none.
+  const reallyInMeeting = () => {
+    if (!meetingWindowPresent()) return false;
+    const previewStart = drive('find', 'Start').out.split('\n')
+      .some((l) => /text="Start"/.test(l) && /window="[^"]*Zoom Meeting/.test(l));
+    return !previewStart;
+  };
+  for (let i = 0; i < 24; i++) {
+    if (reallyInMeeting()) return true;
+    // Press the preview's "Start" (join) each round in case it rendered late; harmless
+    // once we're already in the meeting (no "Start" button there).
+    await pressFirst(['Start'], { args: ['--window', 'Zoom Meeting'] }, 1500);
+    // Dismiss any one-off modal (e.g. a tip / "OK") that can steal the join.
+    await pressFirst(['OK', 'Got it', 'Continue'], {}, 500);
+    await sleep(2500);
+  }
+  return reallyInMeeting();
 }
 
 // --- Invite-URL harvest: ⌘I → Copy invite link → pbpaste (clipboard restored) ----
@@ -307,12 +331,15 @@ async function scenarioDetectRoster(det, guestOk) {
 async function scenarioMuteGate(det, guestPage, guestOk) {
   if (!guestPage || !guestOk) { record('zoom-mutegate-live', 'REVIEW', { reason: guestPage ? 'guest never admitted (waiting room / rig)' : 'no guest (ZOOM_SKIP_GUEST)' }); return; }
   panelToggle(); await sleep(2500); // panel open so self is identified via "(me)"
-  // (a) guest UNMUTED + tone → named by the mute-gate.
-  await setGuestMuted(guestPage, false); await sleep(3000);
+  // (a) guest UNMUTED + REAL SPEECH → named by the mute-gate. Guest Alpha carries the
+  // fake-mic-override, so drive its speech gain on (independent of the mute button); the
+  // decoded voice reaches the system tap as genuine energy (the fake-device tone did not).
+  await setGuestMuted(guestPage, false); await setGuestSpeak(guestPage, true); await sleep(3000);
   const idxA = det.events.length;
   const namedGuest = await waitEvent(det,
     (e) => e.type === 'speech_on' && e.name === GUEST_NAME && /mute_gate/.test(e.source || ''), 25_000, 'guest named');
-  // (b) guest MUTED → no speech_on naming the guest.
+  // (b) guest MUTED → no speech_on naming the guest. Mute the Zoom mic (the real gate
+  // under test); speech gain can stay on — a muted mic transmits nothing regardless.
   await setGuestMuted(guestPage, true); await sleep(4000);
   const idxB = det.events.length;
   await sleep(6000);
@@ -327,7 +354,7 @@ async function scenarioPanelClosed(det, guestPage) {
   panelToggle(); await sleep(2500);
   if (rosterVisible()) { panelToggle(); await sleep(2500); } // ensure CLOSED
   const closedVerified = !rosterVisible();
-  if (guestPage) { await setGuestMuted(guestPage, false); await sleep(3000); }
+  if (guestPage) { await setGuestMuted(guestPage, false); await setGuestSpeak(guestPage, true); await sleep(3000); }
   const idx = det.events.length;
   await sleep(10_000);
   const speech = recentSpeech(det, idx);
@@ -395,8 +422,9 @@ async function scenarioPipBackground(guestPage, guestOk) {
   // lines are captured while the main tree is degraded.
   const det = startDetector({ seconds: 90, mode: 'event', edgeLog: EDGE_LOG });
   await sleep(4000);
-  // Guest speaks (real speech) so the PIP has a "Talking:" name to show.
-  try { await setGuestMuted(guestPage, false); } catch (e) {}
+  // Guest speaks (real speech via the fake-mic override) so the PIP has a "Talking:"
+  // name to show and the degraded-tree mute-gate has genuine remote energy to name.
+  try { await setGuestMuted(guestPage, false); await setGuestSpeak(guestPage, true); } catch (e) {}
   await sleep(2000);
 
   // Trigger probe (ordered by how faithfully each reproduces a real user gesture —
@@ -440,10 +468,11 @@ async function scenarioPipBackground(guestPage, guestOk) {
     isZoom(e) && e.type === 'speech_on' && e.name === GUEST_NAME);
   const degradedSources = [...new Set(degradedSpeech.map((e) => e.source))];
 
-  // MUTE this tone guest before returning: the NEXT scenario (vad-quality) needs its
+  // SILENCE this guest before returning: the NEXT scenario (vad-quality) needs its
   // speech guest (Guest Bravo) to be the ONLY unmuted remote so the mute-gate names
-  // Bravo specifically instead of collapsing two unmuted remotes to "Someone".
-  try { await setGuestMuted(guestPage, true); } catch (e) {}
+  // Bravo specifically instead of collapsing two unmuted remotes to "Someone". Stop
+  // both the speech gain AND mute the Zoom mic so Alpha contributes no energy.
+  try { await setGuestSpeak(guestPage, false); await setGuestMuted(guestPage, true); } catch (e) {}
 
   // Restore the main window for the following scenarios (cover both minimize paths:
   // AXMinimized=false un-minimizes a programmatic minimize; ⌘⇧M toggles the hotkey
@@ -559,7 +588,17 @@ async function main() {
 
     if (invite && process.env.ZOOM_SKIP_GUEST !== '1') {
       try {
-        guest = await joinZoomWebGuest({ port: GUEST_PORT, name: GUEST_NAME, inviteUrl: invite });
+        // Guest Alpha joins via the fake-mic-OVERRIDE speech path (seat 'alpha' →
+        // guest.wav), NOT the Chrome fake-DEVICE tone. Live probing (2026-07-04,
+        // qa/zoom-live/probe-guest-audio.mjs) proved the fake-device tone reaches the
+        // meeting as ~digital-silence (remote RMS ~3e-6 at the system tap — Zoom's
+        // noise-suppression drops the pure beep, and the backgrounded tab suspends its
+        // WebAudio), so the mute-gate never saw energy → zoom-mutegate-live FAILed with
+        // no named speech. The override's decoded real voice transmits reliably
+        // (outbound RTP audioLevel ~0.5, remote RMS ~0.24 at the tap, named via
+        // zoom.mute_gate) and is gated by setGuestSpeak() independently of the mute
+        // button, which is exactly what the mute-gate matrix needs.
+        guest = await joinSpeechGuest({ port: GUEST_PORT, name: GUEST_NAME, seat: 'alpha', inviteUrl: invite });
         guestOk = await admitLoop();   // true only once the guest is IN the meeting
         if (!guestOk) log('WARN: guest never admitted past the waiting room — guest scenarios -> REVIEW');
         await sleep(5000);
