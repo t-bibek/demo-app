@@ -230,6 +230,8 @@ guard('INV-11 teams fixture replay', () => {
     'native-2p-share-cameraoff-remote',
     'native-3p-sidegallery-share',
     'native-home-meet-tab-negative',
+    'gallery-3p-alice-speaking',
+    'gallery-3p-camoff-both-speaking',
   ];
   const tests = stripComments(readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '');
   for (const f of fixtures) {

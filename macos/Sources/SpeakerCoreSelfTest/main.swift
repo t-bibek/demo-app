@@ -711,6 +711,30 @@ if let root = loadTeamsFixture("speaker-3p-bob-speaking") {
           "speaker-view/bob: exactly ONE ring (class-anchored) — the muted filmstrip tile is NOT mismarked")
 } else { check(false, "fixture speaker-3p-bob-speaking.json missing") }
 
+// CAMERA-OFF SPEAKERS — the ring is CAMERA-INDEPENDENT (live-verified 2026-07-04,
+// SUPERSEDES the earlier "no video frame ⇒ no ring" limitation). A camera-off
+// speaker's AVATAR tile still carries vdi-frame-occlusion, and camera-off OVERLAP
+// marks both avatars — so there is no camera-off gap. The tile desc drops
+// "video is on" ("Alice Talker (Guest), Context menu is available") but the P1
+// context-menu anchor still admits it and the per-tile ring scan still fires.
+print("Teams CAMERA-OFF ring (avatar, no video frame):")
+if let root = loadTeamsFixture("gallery-3p-camoff-alice-speaking") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(ex.participants.sorted(), ["Alice Talker", "Bibek Thapa", "Bob Speaker"],
+          "camoff/alice: roster intact (camera-off tile still admitted)")
+    equal(ex.tiles.first(where: { $0.name == "Alice Talker" })?.isSpeaking, true,
+          "camoff/alice: camera-OFF Alice's AVATAR ring lit (vdi-frame-occlusion, no video frame)")
+    equal(ex.tiles.first(where: { $0.name == "Bob Speaker" })?.isSpeaking, false,
+          "camoff/alice: muted Bob not speaking")
+    equal(teamsSpeakers(ex), ["Alice Talker"],
+          "camoff/alice: resolver names the camera-off speaker — no Someone, no mute-gate needed")
+} else { check(false, "fixture gallery-3p-camoff-alice-speaking.json missing") }
+if let root = loadTeamsFixture("gallery-3p-camoff-both-speaking") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(teamsSpeakers(ex), ["Alice Talker", "Bob Speaker"],
+          "camoff/both: camera-OFF OVERLAP -> BOTH avatars named (the case documented as the ceiling, now covered)")
+} else { check(false, "fixture gallery-3p-camoff-both-speaking.json missing") }
+
 // CELL: 2 participants × speaker/large view (screen-share stage) — the remote's
 // camera is OFF, so its tile desc has NO "video is" token ("David Tgapa (Guest),
 // muted, Context menu is available"); the OLD extractor required one and missed

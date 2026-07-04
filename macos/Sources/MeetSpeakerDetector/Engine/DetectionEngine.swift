@@ -465,11 +465,15 @@ final class DetectionEngine {
                     let meRoster = roster.first(where: { $0.isMe })
                     let meTile = w.teamsTiles.first(where: { $0.isMe })
                     let localUnmuted = meRoster?.unmuted ?? meTile?.unmuted ?? (w.localUserUnmuted ?? false)
-                    let localName = meRoster?.name ?? meTile?.name ?? config.localUserName
                     // SELF via mic — the self tile carries no speaker ring (it has
                     // vdi-dynamic-occlusion), so the local user is named from the mic
-                    // when unmuted, exactly like Meet's self path.
-                    if micActive && localUnmuted { add(localName, "teams.self_mic") }
+                    // when unmuted, exactly like Meet's self path. Use ONLY the
+                    // resolved real name (self tile / roster) — never the "You"
+                    // placeholder, which otherwise split self into two speakers
+                    // ("You" + the real name) across ticks where the self tile wasn't
+                    // readable (mirrors the Meet self-name rule).
+                    let localName = meRoster?.name ?? meTile?.name
+                    if micActive && localUnmuted, let ln = localName { add(ln, "teams.self_mic") }
                     // Camera-off remote fallback: the ring needs a video frame, so if
                     // it named no remote yet there IS remote audio, mute-gate a SINGLE
                     // unmuted remote (2+ stays ambiguous → we don't guess).

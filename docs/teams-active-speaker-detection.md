@@ -271,15 +271,26 @@ alternatives regress or don't exist.**
   steady-state capture (fired once live as `teams.pip`); it reflects only THIS
   client's rendered view. Kept as the compact-window signal, never the main one.
 - **People-panel per-row voice indicator — not found.** Panel rows expose only
-  name + mute state (`Unmuted`/`Muted` image), no speaking/voice-level element, so
-  it can't cover the camera-off gap. (Tentative: a dedicated live probe was
-  attempted but the WebView2 tree throttled; the clean solo-panel capture shows
-  only mute.)
+  name + mute state (`Unmuted`/`Muted` image), no speaking/voice-level element.
+- **The "<name> is speaking" note names remotes but is NOT reliable.** It CAN name
+  a remote (fired once live), but a tight (0.3 s) + loose poll across two speakers
+  found it in the main window ZERO times, and a full-tree grep found no such node.
+  It surfaces only in the compact/PIP view, naming one dominant speaker. So it
+  can't name "all participants" and isn't a primary signal — kept as the
+  compact-window fallback only.
+- **The ring is CAMERA-INDEPENDENT — the "camera-off gap" does NOT exist.**
+  (Live-verified 2026-07-04, correcting the earlier assumption.) A camera-off
+  speaker's AVATAR tile still carries `vdi-frame-occlusion` (desc drops
+  "video is on" but the P1 context-menu anchor still admits it), and camera-off
+  OVERLAP marks BOTH avatars. Fixtures: `gallery-3p-camoff-alice-speaking`,
+  `gallery-3p-camoff-both-speaking`. So the ring names camera-off speakers too —
+  no diarization needed for that case.
 
 **Net:** the shipped design (per-tile `vdi-frame-occlusion`, self-excluded,
-config-drop-able) is validated as the best passive signal. The one real remaining
-gap is a **camera-off speaker** (no video frame ⇒ no ring): a single one is caught
-by the mute-gate fallback; a camera-off overlap of 2+ needs audio diarization.
+config-drop-able) is validated as the best passive signal, and it is camera- AND
+layout-independent. The ONLY remaining limit is an UNREADABLE tree
+(backgrounded/WebView2-throttled) — then, and only then, remote audio falls to the
+honest "Someone".
 
 ---
 
