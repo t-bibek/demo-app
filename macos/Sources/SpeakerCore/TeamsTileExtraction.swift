@@ -13,6 +13,9 @@ import Foundation
 public struct TeamsAXNode: Codable, Sendable {
     public var role: String?
     public var subrole: String?
+    /// AXRoleDescription — native Zoom's PIP tile carries its "Video render"
+    /// marker here. Optional + defaulted so existing Teams fixtures decode.
+    public var roleDescription: String?
     public var desc: String?
     public var title: String?
     public var value: String?
@@ -27,13 +30,15 @@ public struct TeamsAXNode: Codable, Sendable {
     public var h: Double?
     public var children: [TeamsAXNode]
 
-    public init(role: String? = nil, subrole: String? = nil, desc: String? = nil,
+    public init(role: String? = nil, subrole: String? = nil, roleDescription: String? = nil,
+                desc: String? = nil,
                 title: String? = nil, value: String? = nil, help: String? = nil,
                 classes: [String] = [],
                 x: Double? = nil, y: Double? = nil, w: Double? = nil, h: Double? = nil,
                 children: [TeamsAXNode] = []) {
         self.role = role
         self.subrole = subrole
+        self.roleDescription = roleDescription
         self.desc = desc
         self.title = title
         self.value = value

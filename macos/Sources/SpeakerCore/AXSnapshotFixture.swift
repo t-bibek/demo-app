@@ -12,6 +12,7 @@ public struct AXSnapshotFixture: Decodable {
     public struct Node: Decodable {
         public var role: String?
         public var subrole: String?
+        public var roleDescription: String?
         public var title: String?
         public var desc: String?
         public var value: String?
@@ -28,7 +29,7 @@ public struct AXSnapshotFixture: Decodable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case role, subrole, title, value, help, domClassList, frame, children
+            case role, subrole, roleDescription, title, value, help, domClassList, frame, children
             case desc = "description"
         }
 
@@ -36,6 +37,7 @@ public struct AXSnapshotFixture: Decodable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             role = try c.decodeIfPresent(String.self, forKey: .role)
             subrole = try c.decodeIfPresent(String.self, forKey: .subrole)
+            roleDescription = try c.decodeIfPresent(String.self, forKey: .roleDescription)
             title = Self.lossyText(c, .title)
             desc = Self.lossyText(c, .desc)
             value = Self.lossyText(c, .value)
@@ -64,7 +66,8 @@ public struct AXSnapshotFixture: Decodable {
     }
 
     private static func node(_ n: Node) -> ZoomAXNode {
-        ZoomAXNode(role: n.role, subrole: n.subrole, desc: n.desc, title: n.title,
+        ZoomAXNode(role: n.role, subrole: n.subrole, roleDescription: n.roleDescription,
+                   desc: n.desc, title: n.title,
                    value: n.value, help: n.help, classes: n.domClassList ?? [],
                    x: n.frame?.x, y: n.frame?.y, w: n.frame?.w, h: n.frame?.h,
                    children: (n.children ?? []).map(node))

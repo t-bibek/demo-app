@@ -1204,6 +1204,7 @@ final class AccessibilityScanner {
             }
             return TeamsAXNode(
                 role: axString(el, "AXRole"), subrole: axString(el, "AXSubrole"),
+                roleDescription: axString(el, "AXRoleDescription"),
                 desc: axString(el, "AXDescription"), title: axString(el, "AXTitle"),
                 value: axString(el, "AXValue"), help: axString(el, "AXHelp"),
                 classes: axClassList(el),

@@ -1378,6 +1378,66 @@ if let root = loadZoomFixture("native-grid-3p-panelopen-talk") {
           "3p/panel-open: self named + 2-remote ambiguity stays honest 'Someone'")
 } else { check(false, "fixture native-grid-3p-panelopen-talk.json missing") }
 
+// CELL: LIVE 2-participant call (Zoom 7.0.5, 2026-07-04) — host self + a web
+// guest admitted from the waiting room. Panel OPEN: self resolves via the
+// panel's "(Host, me)" row; the single unmuted remote is named by the mute-gate
+// (matches the live detector's speech_on {Guest Alpha, zoom.mute_gate}).
+if let talk = loadZoomFixture("native-grid-2p-panelopen-talk"),
+   let silent = loadZoomFixture("native-grid-2p-panelopen-silent") {
+    let exTalk = zoomExtractWindow(talk)
+    equal(exTalk.roster.map { $0.name }.sorted(), ["David Thapa", "Guest Alpha"],
+          "2p/panel-open: exactly host + guest, no chrome")
+    equal(exTalk.roster.filter { $0.isMe }.map { $0.name }, ["David Thapa"],
+          "2p/panel-open: self is the host via '(Host, me)'")
+    let remotesTalk = zoomFuseWindows([exTalk]).roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "David Thapa",
+                               remoteActive: true, remoteUnmutedNames: remotesTalk),
+          ["Guest Alpha"], "2p/panel-open: single unmuted remote -> NAMED (live: zoom.mute_gate)")
+
+    // NO AX co-variance with speech: talk↔silent differ ONLY in Guest Alpha's
+    // mute clause (the web guest's mic was flipped between captures); the parsed
+    // structure is otherwise identical — the fixture-level proof that native Zoom
+    // exposes no speaking signal.
+    let exSilent = zoomExtractWindow(silent)
+    equal(exSilent.roster.first(where: { $0.name == "David Thapa" }),
+          exTalk.roster.first(where: { $0.name == "David Thapa" }),
+          "2p talk vs silent: self entry byte-identical (no covariance)")
+    equal(exSilent.roster.first(where: { $0.name == "Guest Alpha" })?.unmuted, false,
+          "2p silent: guest muted (the ONLY delta from talk)")
+    equal(exTalk.roster.first(where: { $0.name == "Guest Alpha" })?.unmuted, true,
+          "2p talk: guest unmuted")
+    equal(exTalk.isPip, exSilent.isPip, "2p talk vs silent: PIP flag identical (false)")
+} else { check(false, "fixture native-grid-2p-panelopen-{talk,silent}.json missing") }
+
+// CELL: LIVE 2p, panel CLOSED. Native Zoom still exposes name + mute in the GRID
+// TILE OVERLAYS (roster is NOT zeroed on 7.0.5) — but the "(me)" self marker is
+// panel-only, so self is unidentifiable. The engine's mute-gate then can't
+// exclude self and falls to the honest floor for an ambiguous count. (Live: the
+// detector logged speech_on {Someone, audio.someone} in exactly this state.)
+if let closed = loadZoomFixture("native-grid-2p-panelclosed-silent") {
+    let ex = zoomExtractWindow(closed)
+    equal(ex.roster.map { $0.name }.sorted(), ["David Thapa", "Guest Alpha"],
+          "2p/panel-closed: tile overlays still expose the roster (name+mute)")
+    check(ex.roster.allSatisfy { !$0.isMe },
+          "2p/panel-closed: NO self marker in tile overlays -> self unidentifiable (documented nuance)")
+} else { check(false, "fixture native-grid-2p-panelclosed-silent.json missing") }
+
+// CELL: LIVE PIP / minimal view — the floating AXSystemDialog is detected as PIP
+// so the call stays alive when minimized (its tree lacks the Leave button).
+if let pip = loadZoomFixture("native-pip-2p") {
+    let ex = zoomExtractWindow(pip)
+    check(ex.isPip, "PIP fixture: AXSystemDialog + content marker -> isPip")
+    check(zoomFuseWindows([ex]).inMeeting, "PIP alone keeps the call alive")
+} else { check(false, "fixture native-pip-2p.json missing") }
+
+// NEGATIVE CELL: LIVE Zoom Workplace home shell (post-call) — no roster, no
+// meeting evidence, so nothing is emitted (never starts/keeps a call).
+if let home = loadZoomFixture("native-home-negative") {
+    let fused = zoomFuseWindows([zoomExtractWindow(home)])
+    check(!fused.inMeeting, "home shell: not a meeting")
+    check(fused.roster.isEmpty, "home shell: empty roster (toolbar chrome is not participants)")
+} else { check(false, "fixture native-home-negative.json missing") }
+
 // Engine-cell semantics, panel CLOSED (roster unreadable): audio-only honesty —
 // never a fabricated name (B2).
 equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: false, localName: "You",

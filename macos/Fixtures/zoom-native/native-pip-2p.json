@@ -1,0 +1,152 @@
+{
+  "meta" : {
+    "capturedAt" : "2026-07-04T00:29:41Z",
+    "label" : "zoom-native-win1",
+    "maxDepth" : 100,
+    "maxNodes" : 40000,
+    "nodeCount" : 3,
+    "note" : "",
+    "truncated" : false
+  },
+  "tree" : {
+    "attributes" : {
+      "AXActivationPoint" : {
+        "x" : 1303,
+        "y" : 234
+      },
+      "AXCancelButton" : null,
+      "AXChildrenInNavigationOrder" : "<1 AXUIElement>",
+      "AXCloseButton" : null,
+      "AXDefaultButton" : null,
+      "AXDocument" : null,
+      "AXFocused" : false,
+      "AXFrame" : {
+        "h" : 135,
+        "w" : 240,
+        "x" : 1227,
+        "y" : 110
+      },
+      "AXFullScreen" : false,
+      "AXFullScreenButton" : null,
+      "AXGrowArea" : null,
+      "AXMain" : false,
+      "AXMinimizeButton" : null,
+      "AXMinimized" : false,
+      "AXModal" : false,
+      "AXParent" : "<AXUIElement>",
+      "AXPosition" : {
+        "x" : 1227,
+        "y" : 110
+      },
+      "AXProxy" : null,
+      "AXRole" : "AXWindow",
+      "AXRoleDescription" : "system dialog",
+      "AXSections" : "<1 AXUIElement>",
+      "AXSize" : {
+        "h" : 135,
+        "w" : 240
+      },
+      "AXSubrole" : "AXSystemDialog",
+      "AXTitle" : "",
+      "AXTitleUIElement" : null,
+      "AXToolbarButton" : null,
+      "AXZoomButton" : null
+    },
+    "childCount" : 1,
+    "children" : [
+      {
+        "attributes" : {
+          "AXChildrenInNavigationOrder" : "<1 AXUIElement>",
+          "AXDescription" : "Guest Alpha, Computer audio unmuted, Video on",
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 135,
+            "w" : 240,
+            "x" : 1227,
+            "y" : 110
+          },
+          "AXHelp" : "",
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 1227,
+            "y" : 110
+          },
+          "AXRole" : "AXTabGroup",
+          "AXRoleDescription" : "Video render",
+          "AXSize" : {
+            "h" : 135,
+            "w" : 240
+          },
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 1,
+        "children" : [
+          {
+            "attributes" : {
+              "AXDescription" : "View Guest Alpha's profile",
+              "AXEnabled" : true,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 22,
+                "w" : 75,
+                "x" : 1228,
+                "y" : 222
+              },
+              "AXHelp" : null,
+              "AXParent" : "<AXUIElement>",
+              "AXPosition" : {
+                "x" : 1228,
+                "y" : 222
+              },
+              "AXRole" : "AXButton",
+              "AXRoleDescription" : "button",
+              "AXSize" : {
+                "h" : 22,
+                "w" : 75
+              },
+              "AXTitle" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXWindow" : "<AXUIElement>"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "description" : "View Guest Alpha's profile",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 22,
+              "w" : 75,
+              "x" : 1228,
+              "y" : 222
+            },
+            "role" : "AXButton",
+            "roleDescription" : "button"
+          }
+        ],
+        "description" : "Guest Alpha, Computer audio unmuted, Video on",
+        "focused" : false,
+        "frame" : {
+          "h" : 135,
+          "w" : 240,
+          "x" : 1227,
+          "y" : 110
+        },
+        "role" : "AXTabGroup",
+        "roleDescription" : "Video render"
+      }
+    ],
+    "focused" : false,
+    "frame" : {
+      "h" : 135,
+      "w" : 240,
+      "x" : 1227,
+      "y" : 110
+    },
+    "role" : "AXWindow",
+    "roleDescription" : "system dialog",
+    "subrole" : "AXSystemDialog"
+  }
+}

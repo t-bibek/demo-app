@@ -219,7 +219,10 @@ public func zoomExtractWindow(_ root: ZoomAXNode,
         func walkPip(_ n: ZoomAXNode, _ d: Int) {
             if isPip || cVisited >= 800 || d > 20 { return }
             cVisited += 1
-            for raw in [n.value, n.desc, n.help].compactMap({ $0 }) {
+            // The minimal PIP tile carries its marker in AXRoleDescription
+            // ("Video render"); the expanded PIP has "Show video render" /
+            // "Talking:" in a button/static-text desc/value.
+            for raw in [n.value, n.desc, n.help, n.roleDescription].compactMap({ $0 }) {
                 if rules.hasPipMarker(raw.lowercased()) { isPip = true; return }
             }
             for c in n.children { walkPip(c, d + 1); if isPip { return } }
