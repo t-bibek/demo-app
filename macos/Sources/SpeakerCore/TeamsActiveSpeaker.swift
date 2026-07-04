@@ -34,18 +34,25 @@ public struct TeamsTileObservation: Equatable, Sendable {
 /// Which signal decided the Teams active speaker — for telemetry (a token
 /// rotation shows up as speech with no `.structural` hits + `.someoneFloor` gaps).
 public enum TeamsSpeakerSignal: String, Sendable, Equatable {
-    case none          // no speech (VAD gate closed)
-    case structural    // a tile's AX is-speaking token matched (mirrors Recall's scan)
-    case geometry      // a clearly promoted/spotlit overlay tile (durable, token-free)
-    case someoneFloor  // speech, but no tile attributable
+    case none           // no speech (VAD gate closed)
+    case ringTransition // rapid-swap disambiguation: a fresh onset overrode a stale lingering ring
+    case structural     // a tile's AX is-speaking token matched (mirrors Recall's scan)
+    case geometry       // a clearly promoted/spotlit overlay tile (durable, token-free)
+    case someoneFloor   // speech, but no tile attributable
 }
 
 public struct TeamsSpeakerResult: Equatable, Sendable {
     public var names: [String]
     public var via: TeamsSpeakerSignal
-    public init(names: [String], via: TeamsSpeakerSignal) {
+    /// Transition confidence that decided a `.ringTransition` attribution (nil for
+    /// every other path). Surfaced so telemetry shows WHY a fresh onset overrode a
+    /// stale ring during rapid turn-taking. Additive/defaulted — `transition: nil`
+    /// callers get nil, so all existing results compare equal.
+    public var confidence: Double?
+    public init(names: [String], via: TeamsSpeakerSignal, confidence: Double? = nil) {
         self.names = names
         self.via = via
+        self.confidence = confidence
     }
 }
 
@@ -73,12 +80,25 @@ public func teamsActiveSpeaker(
     prevAreas: [String: Double],
     vadSpeechActive: Bool,
     useGeometry: Bool = false,
-    someoneLabel: String = "Someone"
+    someoneLabel: String = "Someone",
+    transition: TeamsTransitionState? = nil
 ) -> TeamsSpeakerResult {
     // 1) Structural ring — Teams' own VAD; trusted regardless of our audio meter.
     //    SELF-EXCLUDED, like the Meet ring path.
     let speaking = tiles.filter { $0.isSpeaking && !$0.isMe }.map { $0.name }
     if !speaking.isEmpty {
+        // 1a) RAPID-SWAP DISAMBIGUATION (event mode, additive — mirrors Meet's
+        //     `.ringTransition`). During a fast handoff the just-ended speaker's ring
+        //     LINGERS (~1270ms measured, docs §9.1) and overlaps the fresh one, so the
+        //     plain overlap set below would name BOTH. If a fresh ring onset (the
+        //     transition holder) is among the currently-lit tiles, that holder alone
+        //     wins — the stale linger is suppressed. `transition == nil` (every legacy
+        //     caller/self-test) SKIPS this, so behavior is byte-for-byte unchanged; and
+        //     when the holder ISN'T among the lit tiles (it already went silent), we
+        //     fall through to the overlap set, preserving GENUINE simultaneous talk.
+        if let t = transition, let holder = t.holder, speaking.contains(holder) {
+            return TeamsSpeakerResult(names: [holder], via: .ringTransition, confidence: t.confidence)
+        }
         return TeamsSpeakerResult(names: speaking, via: .structural)
     }
 

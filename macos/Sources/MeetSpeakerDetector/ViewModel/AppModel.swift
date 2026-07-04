@@ -126,7 +126,8 @@ final class AppModel: ObservableObject {
     /// `@main` app so argv is unusable; QA A/Bs legacy vs event mode via env WITHOUT a
     /// rebuild. With NO env vars set, this returns a default `EngineConfig` (byte-for-byte
     /// legacy 500ms polling). See plan step 6.
-    ///   MSD_MODE=event|legacy      master A/B switch (default legacy)
+    ///   MSD_MODE=event|legacy      master A/B switch for Meet (default legacy)
+    ///   MSD_TEAMS_MODE=event       Teams rapid-swap disambiguation + teams_walk_stats (default legacy)
     ///   MSD_SKIP_MEET_FULLSCAN     0/1 — override the event-implied Meet sub-walk skip
     ///   MSD_RECONCILE_MS           reconcile-sweep cadence (ms)
     ///   MSD_TRANSITION_SPIKE       confidence spike (default 1.0)
@@ -134,12 +135,16 @@ final class AppModel: ObservableObject {
     ///   MSD_TRANSITION_HALFLIFE_MS confidence half-life (default 1200)
     ///   MSD_RUN_SECONDS            clean auto-exit after N seconds (0 = forever)
     ///   MSD_EDGE_LOG               append meet_edge NDJSON to this path (stdout kept)
+    ///   MSD_POLL_INTERVAL_MS       poll cadence (50–2000ms; default 500) — finer for the ring probe
+    ///   MSD_RING_TRACE=1           emit `[ringtrace]` per-tick raw Teams ring (probe/linger-L)
     static func engineConfigFromEnv() -> EngineConfig {
         let env = ProcessInfo.processInfo.environment
         var cfg = EngineConfig()
 
         let mode = (env["MSD_MODE"] ?? "").lowercased()
         cfg.eventDrivenMeet = (mode == "event")
+        // Teams rapid-swap disambiguation + instrumentation (no AXObserver — docs §10).
+        cfg.eventDrivenTeams = ((env["MSD_TEAMS_MODE"] ?? "").lowercased() == "event")
         // Event mode IMPLIES the Meet sub-walk short-circuit unless explicitly disabled
         // (the live CPU-compare suite depends on event mode eliminating the sub-walks).
         // MSD_MODE=legacy (or unset) keeps full_walks counting per scan so the A/B
@@ -161,6 +166,12 @@ final class AppModel: ObservableObject {
 
         if let rs = env["MSD_RUN_SECONDS"], let v = Int(rs), v > 0 { cfg.runSeconds = v }
         if let p = env["MSD_EDGE_LOG"], !p.isEmpty { cfg.edgeLogPath = p }
+        // MSD_POLL_INTERVAL_MS — finer sampling for the Teams ring probe (linger-L needs
+        // sub-500ms resolution). Clamped to [50, 2000]; unset keeps the 500ms default.
+        if let pi = env["MSD_POLL_INTERVAL_MS"], let v = Int(pi), v > 0 {
+            cfg.pollIntervalMs = min(2000, max(50, v))
+        }
+        cfg.ringTrace = (env["MSD_RING_TRACE"] == "1")
 
         return cfg
     }

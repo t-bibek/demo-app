@@ -46,6 +46,16 @@ export default {
       match: 'ALL PASSED',
       timeoutMs: 20 * 60_000, // first build can be slow
     },
+    {
+      // The Teams ring-probe (plan #1) verdict MATH, offline. Guards that the
+      // analysis correctly classifies a synthetic ring trace (dark-when-silent =>
+      // PASS, lit-when-silent => FAIL, ring-never-moved => inconclusive) so the
+      // live falsification run can be trusted. No live session / Chrome needed.
+      id: 'teams-ring-probe-analysis',
+      cwd: '.',
+      cmd: 'node qa/teams-live/probe-analysis.test.mjs',
+      match: 'ALL PASSED',
+    },
   ],
 
   // === Blocker tools (the "Blackbox" pattern) ==============================

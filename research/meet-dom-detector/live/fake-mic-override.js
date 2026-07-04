@@ -37,6 +37,24 @@ function buildOverride(wavPath, label) {
       return !!on;
     };
     window.__fakeMicOn = true;
+    // Independent PURE-TONE path (Teams ring probe only; the Meet rig never calls this).
+    // A tone carries audio ENERGY but no speech CONTENT, so it distinguishes a
+    // ring/VAD that keys on transmitted energy from one that keys on voice. Lazily
+    // created so no oscillator exists unless the probe asks for it. Gated by its OWN
+    // gain node, fully independent of __fakeMicSpeak's speech gain.
+    const toneGain = ctx.createGain(); toneGain.gain.value = 0.0; toneGain.connect(dest);
+    let osc = null;
+    window.__fakeMicTone = function(on, hz){
+      try { if (ctx.state === 'suspended') ctx.resume(); } catch(e){}
+      if (on && !osc) { osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = hz || 440; osc.connect(toneGain); osc.start(); }
+      const t = ctx.currentTime;
+      toneGain.gain.cancelScheduledValues(t);
+      toneGain.gain.setValueAtTime(toneGain.gain.value, t);
+      toneGain.gain.linearRampToValueAtTime(on ? 0.6 : 0.0, t + 0.05);
+      window.__fakeMicToneOn = !!on;
+      return !!on;
+    };
+    window.__fakeMicToneOn = false;
     ctx.decodeAudioData(b64ToBuf(B64)).then((audioBuf) => {
       let src;
       function start(){

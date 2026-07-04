@@ -257,6 +257,72 @@ guard('INV-12 teams single extractor', () => {
   else pass('INV-12 teams single extractor', 'TeamsTileExtraction.swift is Foundation-only (fixture-replayable)');
 });
 
+// INV-13 — the Teams FALSIFICATION PROBE + throttle/locale tooling must stay wired
+// (plan #1/#3/#4). The rig only ever produced muted/unmuted-with-tone; the probe
+// adds the unmuted-but-SILENT state and samples the RAW ring, so a ring that lit
+// for an open mic would be caught. This invariant locks the instrument, the
+// decoupled control, the offline falsification assertion, and the analysis test so
+// none can silently regress away.
+guard('INV-13 teams falsification tooling', () => {
+  const engine = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/Engine/DetectionEngine.swift') || '');
+  if (/ringTrace/.test(engine) && /\[ringtrace\]/.test(engine)) pass('INV-13 teams falsification tooling', 'engine emits the raw [ringtrace] probe instrument (MSD_RING_TRACE)');
+  else fail('INV-13 teams falsification tooling', 'engine no longer emits the [ringtrace] raw-ring instrument — the probe is blind');
+  if (/\[teamstrace\]/.test(engine)) pass('INV-13 teams falsification tooling', 'engine emits the [teamstrace] window-level throttle instrument');
+  else fail('INV-13 teams falsification tooling', 'engine no longer emits the [teamstrace] throttle instrument (plan #3)');
+
+  const appModel = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/ViewModel/AppModel.swift') || '');
+  if (/MSD_RING_TRACE/.test(appModel) && /MSD_POLL_INTERVAL_MS/.test(appModel)) pass('INV-13 teams falsification tooling', 'MSD_RING_TRACE + MSD_POLL_INTERVAL_MS wired from env');
+  else fail('INV-13 teams falsification tooling', 'the probe env hooks (MSD_RING_TRACE / MSD_POLL_INTERVAL_MS) are not parsed');
+
+  const rig = readOrNull('qa/teams-live/run-teams-live-qa.mjs') || '';
+  if (/--probe/.test(rig) && /setGuestSpeak/.test(rig) && /buildOverride/.test(rig)) pass('INV-13 teams falsification tooling', 'rig has --probe + decoupled setGuestSpeak + the getUserMedia override');
+  else fail('INV-13 teams falsification tooling', 'rig lost the --probe mode / decoupled speak / override — cannot produce unmuted-but-silent');
+  if (/--throttle/.test(rig) && /measureThrottle/.test(rig)) pass('INV-13 teams falsification tooling', 'rig has the --throttle measurement mode (plan #3)');
+  else fail('INV-13 teams falsification tooling', 'rig lost the --throttle measurement mode');
+
+  const tests = readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '';
+  if (/open-mic SILENT/.test(tests) && /ring, not the open mic/.test(tests)) pass('INV-13 teams falsification tooling', 'self-test locks unmuted-but-silent -> NOT speaking (the ring is the only namer)');
+  else fail('INV-13 teams falsification tooling', 'the unmuted-but-silent falsification assertion is gone from the self-test');
+
+  if (readOrNull('qa/teams-live/probe-analysis.test.mjs') != null) pass('INV-13 teams falsification tooling', 'offline probe/throttle analysis unit test exists');
+  else fail('INV-13 teams falsification tooling', 'qa/teams-live/probe-analysis.test.mjs (the offline verdict-math test) is missing');
+  if (readOrNull('qa/teams-live/locale-anchor-diff.mjs') != null) pass('INV-13 teams falsification tooling', 'locale anchor-diff helper exists (plan #4)');
+  else fail('INV-13 teams falsification tooling', 'qa/teams-live/locale-anchor-diff.mjs is missing');
+});
+
+// INV-14 — the Teams event-mode port (docs §10). A live probe proved Teams' WebView2
+// emits ZERO AX notifications on a ring flip, so the port is the DIFF + Transition
+// Confidence half (no AXObserver), driven by the poll. This invariant locks: the pure
+// diff/snapshot module, the .ringTransition disambiguation path, the additive opt-in
+// (legacy default byte-for-byte), the instrumentation, and the self-test — AND guards
+// against anyone re-adding an AXObserver for Teams (probe-proven useless).
+guard('INV-14 teams event mode', () => {
+  const edges = stripComments(readOrNull('macos/Sources/SpeakerCore/TeamsEdgeEvents.swift') || '');
+  if (/func\s+teamsEdgesFromDiff/.test(edges) && /struct\s+TeamsTileSnapshot/.test(edges)) pass('INV-14 teams event mode', 'pure TeamsEdgeEvents (teamsEdgesFromDiff + TeamsTileSnapshot) exists');
+  else fail('INV-14 teams event mode', 'TeamsEdgeEvents.swift lost the pure diff/snapshot — the confidence has no input');
+  if (edges && !/import\s+(AppKit|ApplicationServices|CoreGraphics)/.test(edges)) pass('INV-14 teams event mode', 'TeamsEdgeEvents.swift is Foundation-only (fixture/unit-testable)');
+  else fail('INV-14 teams event mode', 'TeamsEdgeEvents.swift is missing or imports AX/AppKit (not pure)');
+
+  const resolver = stripComments(readOrNull('macos/Sources/SpeakerCore/TeamsActiveSpeaker.swift') || '');
+  if (/case\s+ringTransition/.test(resolver) && /transition:\s*TeamsTransitionState\?/.test(resolver)) pass('INV-14 teams event mode', 'teamsActiveSpeaker has the .ringTransition rapid-swap path (additive transition: param)');
+  else fail('INV-14 teams event mode', 'teamsActiveSpeaker lost the .ringTransition disambiguation');
+
+  const engine = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/Engine/DetectionEngine.swift') || '');
+  if (/eventDrivenTeams/.test(engine) && /teams_walk_stats/.test(engine) && /teams_edge/.test(engine)) pass('INV-14 teams event mode', 'engine wires eventDrivenTeams + teams_walk_stats + teams_edge instrumentation');
+  else fail('INV-14 teams event mode', 'engine missing the Teams event-mode wiring / instrumentation');
+  // Guard: NO AXObserver for Teams (probe-proven useless — would be pure overhead).
+  if (/TeamsTileObserver|AXObserverCreate.*[Tt]eams/.test(engine)) fail('INV-14 teams event mode', 'an AXObserver was added for Teams — the live probe proved Teams fires ZERO ring notifications (docs §10); remove it');
+  else pass('INV-14 teams event mode', 'no AXObserver for Teams (correct — ring flips are AX-silent, docs §10)');
+
+  const appModel = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/ViewModel/AppModel.swift') || '');
+  if (/MSD_TEAMS_MODE/.test(appModel)) pass('INV-14 teams event mode', 'MSD_TEAMS_MODE opt-in wired (legacy default preserved)');
+  else fail('INV-14 teams event mode', 'MSD_TEAMS_MODE env opt-in is not parsed');
+
+  const tests = readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '';
+  if (/stale linger suppressed/.test(tests) && /teamsEdgesFromDiff/.test(tests)) pass('INV-14 teams event mode', 'self-test locks the diff + stale-ring disambiguation');
+  else fail('INV-14 teams event mode', 'no self-test for the Teams diff / rapid-swap disambiguation');
+});
+
 // --- report ---------------------------------------------------------------
 const bad = results.filter((r) => !r.ok);
 console.log('QA-check review — executable invariants over the checks themselves');

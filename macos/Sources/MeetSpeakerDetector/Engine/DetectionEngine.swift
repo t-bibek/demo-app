@@ -20,6 +20,13 @@ struct EngineConfig {
     /// MSD_MODE=event — subscribe the AXObserver path for Meet (edges + confidence)
     /// instead of a full AX walk every tick. false = legacy polling (default).
     var eventDrivenMeet: Bool = false
+    /// MSD_TEAMS_MODE=event — Teams rapid-swap disambiguation: per-tick ring
+    /// snapshot→diff→TransitionConfidence so a fresh onset overrides a stale lingering
+    /// ring during fast handoffs, plus `teams_walk_stats`/`teams_edge` instrumentation.
+    /// There is NO AXObserver for Teams — a live probe proved the ring flip fires ZERO
+    /// AX notifications (docs §10), so the diff runs synchronously on the existing poll.
+    /// false = legacy overlap-set behavior, byte-for-byte (default).
+    var eventDrivenTeams: Bool = false
     /// Short-circuit the expensive Meet sub-walks inside `scanner.scan()` when the
     /// observer is live (the Stage-2 CPU win). IMPLIED by event mode unless
     /// MSD_SKIP_MEET_FULLSCAN=0. Legacy mode keeps counting `full_walks` per scan so the
@@ -36,6 +43,14 @@ struct EngineConfig {
     var runSeconds: Int = 0
     /// MSD_EDGE_LOG — append `meet_edge` NDJSON to this path too (stdout mirror kept).
     var edgeLogPath: String? = nil
+    /// MSD_RING_TRACE=1 — emit a per-tick `[ringtrace]` NDJSON line carrying the RAW
+    /// Teams per-tile ring state (`vdi-frame-occlusion`), read straight off the tiles
+    /// BEFORE SessionTracker grace/hangover. This is the instrument for the
+    /// falsification probe (qa/teams-live: is the ring lit for an unmuted-but-SILENT
+    /// remote?) and for measuring ring linger-L. Inert (no output) unless set. The
+    /// trace reads the SAME `w.teamsTiles` the resolver uses, so it can't drift from
+    /// the real detection path. Default OFF.
+    var ringTrace: Bool = false
 }
 
 /// Drives the whole detection pipeline. Every poll it merges two independent
@@ -91,6 +106,18 @@ final class DetectionEngine {
     // roster so a genuinely-ended call eventually clears). 5 min.
     private let teamsMemoryTtlMs = 300_000
 
+    // Teams event mode (MSD_TEAMS_MODE=event). Per-tick ring snapshot/diff feeds
+    // TransitionConfidence for rapid-swap disambiguation (NO AXObserver — docs §10).
+    // All inert unless `config.eventDrivenTeams`. Keyed by meetingId so two
+    // SIMULTANEOUSLY-readable Teams meetings never cross-contaminate each other's diff
+    // origin / holder (pruned each tick to the meetings actually visible).
+    private var teamsTransitions: [String: TransitionConfidence] = [:]   // per-meeting confidence
+    private var teamsLastSnapshots: [String: TeamsTileSnapshot] = [:]    // per-meeting diff origin
+    private var teamsFullWalks = 0     // per-tick Teams window walks (no reduction — Teams can't skip the walk)
+    private var teamsEdgeCount = 0     // ring-onset edges fed to the confidence
+    private var teamsStatsStartMs = 0
+    private var teamsLastStatsMs = 0
+
     // Event-driven Meet (plan steps 5–8). All inert unless `config.eventDrivenMeet`.
     private var meetObserver: MeetTileObserver?
     private var meetTransition = TransitionConfidence()
@@ -139,6 +166,8 @@ final class DetectionEngine {
         meetStatsStartMs = nowMs()
         meetLastReconcileMs = nowMs()
         meetTransition = TransitionConfidence(config: config.transition)
+        teamsStatsStartMs = nowMs()
+        teamsLastStatsMs = nowMs()
 
         // Open the optional edge-event log (MSD_EDGE_LOG) — meet_edge lines are
         // appended here too, in ADDITION to the stdout/NDJSON mirror in record().
@@ -206,6 +235,7 @@ final class DetectionEngine {
             meetObserver = nil
         }
         emitWalkStats(now: nowMs())
+        emitTeamsWalkStats(now: nowMs())
         edgeLogHandle?.closeFile()
         edgeLogHandle = nil
 
@@ -318,8 +348,25 @@ final class DetectionEngine {
         // One status chip per MEETING, not per window — a call can span several
         // windows (Teams main + compact, Zoom main + PIP) that share one meeting id.
         var chipMeetings = Set<String>()
+        // Prune Teams event-mode diff state to the meetings visible THIS tick, so the
+        // per-meeting dicts can't grow across a session and a genuinely-ended meeting's
+        // stale diff origin can't resurface if its id recurs.
+        if config.eventDrivenTeams {
+            let liveTeamsMids = Set(scanned.filter { $0.platform == .teams }
+                .map { meetingId(platform: $0.platform, url: $0.url, title: $0.title) })
+            teamsLastSnapshots = teamsLastSnapshots.filter { liveTeamsMids.contains($0.key) }
+            teamsTransitions = teamsTransitions.filter { liveTeamsMids.contains($0.key) }
+        }
         for var w in scanned {
             let wMid = meetingId(platform: w.platform, url: w.url, title: w.title)
+            // Throttle-boundary instrument (MSD_RING_TRACE, plan #3): a per-tick
+            // window-level trace for EVERY Teams window — emitted here, BEFORE the
+            // keep-alive `continue`, so it captures a THROTTLED window too. Lets the
+            // supervised session time exactly when the tree goes empty after
+            // backgrounding, and whether the compact/PIP note survives the throttle.
+            if config.ringTrace && w.platform == .teams {
+                emitTeamsWindowTrace(meetingId: wMid, window: w, ts: now)
+            }
             // Keep-alive-only windows (the Teams compact / PIP view, OR a throttled
             // backgrounded meeting) hold the meeting open but contribute no live
             // speakers — snapshot them so the meeting doesn't end, then skip
@@ -472,10 +519,60 @@ final class DetectionEngine {
                 // now only a fallback (camera-off speaker) + the local-user mic path.
                 // See docs/teams-active-speaker-detection.md.
                 let readable = !w.teamsTiles.isEmpty
+                // Every readable Teams tick walks the window (teamsWindowNode) — there is
+                // NO walk-skip for Teams: the AXObserver that enables Meet's skip delivers
+                // ZERO events on a ring flip here (live probe, docs §10), so `full_walks`
+                // counts one per readable Teams window in BOTH modes (the honest CPU story
+                // — event mode adds accuracy, not a walk reduction).
+                if readable { teamsFullWalks += 1 }
+
+                // EVENT MODE (MSD_TEAMS_MODE=event): ring snapshot → diff → Transition
+                // Confidence, so a FRESH onset overrides a STALE lingering ring during a
+                // fast handoff (~1270ms ring linger measured, docs §9.1). Inert
+                // (teamsTransitionState == nil) in legacy mode ⇒ byte-for-byte overlap set.
+                var teamsTransitionState: TeamsTransitionState? = nil
+                if config.eventDrivenTeams {
+                    let mono = AXKit.monotonicMs()
+                    // Per-meeting diff origin + confidence (keyed by wMid) so two live
+                    // Teams meetings never cross-contaminate. TransitionConfidence is a
+                    // value type: copy out, mutate, store back.
+                    var tc = teamsTransitions[wMid] ?? TransitionConfidence(config: config.transition)
+                    let next = TeamsTileSnapshot.from(tiles: w.teamsTiles)
+                    for e in teamsEdgesFromDiff(prev: teamsLastSnapshots[wMid], next: next, at: mono) {
+                        tc.edge(to: e.to, at: e.atMs)
+                        teamsEdgeCount += 1
+                        recordTeamsEdge(e, confidence: tc.confidence(of: e.to, at: mono))
+                    }
+                    teamsLastSnapshots[wMid] = next
+                    if let holder = tc.holder {
+                        teamsTransitionState = TeamsTransitionState(
+                            holder: holder,
+                            confidence: tc.confidence(of: holder, at: mono),
+                            nowMs: mono)
+                    }
+                    teamsTransitions[wMid] = tc
+                    if now - teamsLastStatsMs >= config.reconcileEveryMs {
+                        teamsLastStatsMs = now
+                        emitTeamsWalkStats(now: now)
+                    }
+                }
+
                 // Ring is Teams' VAD → trusted directly (vadSpeechActive: true).
-                let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: true)
-                if r.via == .structural {
-                    for n in r.names { add(n, "teams.ring") }   // remote speaker(s) via vdi-frame-occlusion
+                let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas,
+                                           vadSpeechActive: true, transition: teamsTransitionState)
+                // Falsification-probe instrument (MSD_RING_TRACE): dump the RAW per-tile
+                // ring here, before any tracker grace, so the probe can tell whether the
+                // ring lights for an unmuted-but-silent remote and can time linger-L.
+                if config.ringTrace {
+                    emitRingTrace(meetingId: wMid, tiles: w.teamsTiles,
+                                  remoteAudio: audioReliable && remoteActive, ts: now)
+                }
+                // `.ringTransition` names the disambiguated fresh onset; `.structural` names
+                // the overlap set. Both are the ring path — tag the source so telemetry
+                // shows when a stale-ring linger was suppressed.
+                if r.via == .structural || r.via == .ringTransition {
+                    let src = r.via == .ringTransition ? "teams.ring.transition" : "teams.ring"
+                    for n in r.names { add(n, src) }
                     teamsStructural += 1
                 }
                 if audioReliable {
@@ -678,6 +775,47 @@ final class DetectionEngine {
         }
     }
 
+    /// Raw Teams ring dump for the falsification probe (MSD_RING_TRACE). Stdout-only
+    /// (never touches the durable session log) so the probe harness can sample the
+    /// unmodified per-tile ring at the poll cadence. One line per readable Teams
+    /// meeting window per tick.
+    private func emitRingTrace(meetingId: String, tiles: [TeamsTileObservation],
+                              remoteAudio: Bool, ts: Int) {
+        let tileObjs: [[String: Any]] = tiles.map {
+            ["name": $0.name, "ring": $0.isSpeaking, "is_me": $0.isMe,
+             "unmuted": $0.unmuted.map { $0 as Any } ?? NSNull(), "area": $0.area]
+        }
+        let obj: [String: Any] = [
+            "type": "teams_ring_trace", "ts": ts, "meeting_id": meetingId,
+            "remote_audio": remoteAudio,
+            "ring_names": tiles.filter { $0.isSpeaking && !$0.isMe }.map { $0.name },
+            "tiles": tileObjs,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let line = String(data: data, encoding: .utf8) {
+            FileHandle.standardOutput.write(Data("[ringtrace] \(line)\n".utf8))
+        }
+    }
+
+    /// Per-tick window-level Teams trace for the throttle-boundary spike (plan #3).
+    /// `readable=false` marks a throttled/backgrounded window whose deep tree went
+    /// empty; `keep_alive` marks a window the scanner is holding open from memory;
+    /// `pip` reports whether the compact "<name> is speaking" note is still live.
+    /// Stdout-only, MSD_RING_TRACE-gated.
+    private func emitTeamsWindowTrace(meetingId: String, window w: ScannedWindow, ts: Int) {
+        let obj: [String: Any] = [
+            "type": "teams_window_trace", "ts": ts, "meeting_id": meetingId,
+            "readable": !w.teamsTiles.isEmpty, "tile_count": w.teamsTiles.count,
+            "participant_count": w.participants.count, "keep_alive": w.keepAliveOnly,
+            "node_count": w.nodeCount, "pip": w.pipSpeaker.map { $0 as Any } ?? NSNull(),
+            "title": w.title,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let line = String(data: data, encoding: .utf8) {
+            FileHandle.standardOutput.write(Data("[teamstrace] \(line)\n".utf8))
+        }
+    }
+
     /// Reconstruct the minimal `MeetTileObservation`s the resolver needs from an
     /// observer snapshot (event mode, when the scanner skipped the per-tile sub-walk).
     /// The snapshot already excludes self, so every synthesized tile is a non-self
@@ -714,6 +852,36 @@ final class DetectionEngine {
             "reconcile_repairs": meetReconcileRepairs,
             "walks_per_min": (walksPerMin * 100).rounded() / 100,
         ], ts: now)
+    }
+
+    /// Teams CPU/walk instrumentation (mirrors `meet_walk_stats`). `full_walks` is one
+    /// per readable Teams tick in BOTH modes — Teams has no walk-skip (no usable
+    /// AXObserver, docs §10), so this honestly shows event mode buys ACCURACY (edges →
+    /// rapid-swap disambiguation), not a CPU reduction. `edges` = ring onsets fed to the
+    /// confidence. Emitted on the reconcile cadence (event mode) + on stop.
+    private func emitTeamsWalkStats(now: Int) {
+        let elapsedMs = max(1, now - teamsStatsStartMs)
+        let walksPerMin = Double(teamsFullWalks) / (Double(elapsedMs) / 60_000.0)
+        record("teams_walk_stats", [
+            "full_walks": teamsFullWalks,
+            "edges": teamsEdgeCount,
+            "event_mode": config.eventDrivenTeams,
+            "walks_per_min": (walksPerMin * 100).rounded() / 100,
+        ], ts: now)
+    }
+
+    /// Emit one `teams_edge` line per ring onset (kind/to/confidence/mono_ts/wall_ts),
+    /// mirroring `meet_edge`. `mono_ts` is the decay origin; `wall_ts` correlates with
+    /// the live-QA rig's scripted handoff wall-times.
+    private func recordTeamsEdge(_ e: TeamsEdgeEvent, confidence: Double) {
+        let wall = nowMs()
+        record("teams_edge", [
+            "kind": e.kindToken,
+            "to": e.to,
+            "confidence": (confidence * 1000).rounded() / 1000,
+            "mono_ts": e.atMs,
+            "wall_ts": wall,
+        ], ts: wall)
     }
 
     /// Emit one `meet_edge` line per drained edge (kind/from/to/confidence/mono_ts/wall_ts)

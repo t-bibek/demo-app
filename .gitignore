@@ -28,6 +28,13 @@ logs
 /research/meet-dom-detector/live/.audio-device-index
 /research/meet-dom-detector/live/.bh-device-index
 /research/meet-dom-detector/live/struct-loop-results.json
+# Teams live rig per-run outputs — regenerated each run; the distilled numbers live
+# in docs/teams-active-speaker-detection.md §9. NEVER commit raw traces.
+/qa/teams-live/teams-live-results.ndjson
+/qa/teams-live/teams-ring-probe-trace.ndjson
+/qa/teams-live/teams-ring-probe-marks.json
+/qa/teams-live/teams-throttle-trace.ndjson
+/qa/teams-live/teams-axobserve-probe.log
 node_modules/
 # Claude Code session worktrees (transient agent workspaces)
 .claude/worktrees/
