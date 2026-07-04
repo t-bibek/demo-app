@@ -2,6 +2,22 @@ import Foundation
 import SpeakerCore
 import AXKit
 
+/// Zoom-web transition-confidence calibration constant (plan A4). The active
+/// `…__video-frame--active` class LINGERS on silence, so during a fast handoff the
+/// just-ended speaker's tile can still carry it, overlapping the fresh one; the
+/// half-life sets how fast the stale holder's confidence decays so a fresh edge
+/// overtakes it. The correct value is the measured class-linger midpoint from the
+/// live `zoomweb-events-live` rig (raw per-swap dts + linger durations recorded).
+/// This is the STARTING point — Meet's proven 1200ms — NOT the calibrated answer;
+/// the fix agent replaces it (env `MSD_ZOOMWEB_HALFLIFE_MS`) once the linger
+/// distribution is measured, and justifies the number in this comment. Named +
+/// centralized so that calibration is a one-line change.
+enum ZoomWebTuning {
+    /// Starting half-life (ms) for the Zoom-web active-class linger decay — Meet's
+    /// 1200ms until the live linger distribution is measured. CALIBRATE ME.
+    static let defaultHalfLifeMs: Double = 1200
+}
+
 /// Engine tuning, mirroring the original's adjustable parameters:
 /// poll interval 500 ms, remote audio threshold 0.02, mic threshold 0.04.
 struct EngineConfig {
@@ -33,12 +49,42 @@ struct EngineConfig {
     /// MSD_SKIP_MEET_FULLSCAN=0. Legacy mode keeps counting `full_walks` per scan so the
     /// A/B baseline works (INV-8).
     var skipMeetInFullScan: Bool = false
+    /// MSD_MODE=event — subscribe the Zoom WEB AXObserver path (bounded tile reads +
+    /// active-moved edges + confidence) instead of the full sub-walk. SAME flag as
+    /// Meet (`eventDrivenMeet`). false = legacy `zoomWebSpeakerBar` direct read.
+    var eventDrivenZoomWeb: Bool = false
+    /// Short-circuit the expensive Zoom-web sub-walk inside `scan()` when the
+    /// observer is live. IMPLIED by event mode unless MSD_SKIP_ZOOMWEB_FULLSCAN=0.
+    /// Legacy mode keeps the full walk (zoomweb full_walks counts for the A/B).
+    var skipZoomWebInFullScan: Bool = false
+    /// MSD_MODE=event — the native-Zoom event tier: PIP "Talking:" talking-changed
+    /// edges + native TransitionConfidence + the AXTitleChanged/AXWindowCreated
+    /// wake-up observer. false = legacy PIP read (source "zoom.pip").
+    var eventDrivenZoomNative: Bool = false
     /// Reconciliation-sweep cadence (bounded re-scan + re-subscribe + death detection).
     var reconcileEveryMs: Int = 4000
     /// AXObserver notification-storm coalescing window.
     var edgeCoalesceMs: Int = 70
-    /// Transition-confidence tuning (spike/floor/half-life).
+    /// Transition-confidence tuning (spike/floor/half-life). Meet + Teams use this.
     var transition: TransitionConfidenceConfig = TransitionConfidenceConfig()
+    /// Zoom-web transition-confidence tuning. The active class LINGERS on silence
+    /// (measured live in `zoomweb-events-live`); halfLife is the linger midpoint.
+    /// STARTING point = Meet's 1200ms (`ZoomWebTuning.defaultHalfLifeMs`), to be
+    /// calibrated from the measured class-linger distribution. Env `MSD_ZOOMWEB_HALFLIFE_MS`.
+    var zoomWebTransition: TransitionConfidenceConfig =
+        TransitionConfidenceConfig(halfLifeMs: ZoomWebTuning.defaultHalfLifeMs)
+    /// Native-Zoom PIP transition-confidence tuning (PIP "Talking:" edges).
+    var zoomNativeTransition: TransitionConfidenceConfig = TransitionConfidenceConfig()
+    /// SchmittVad tuning (frame RMS hysteresis). Replaces the instantaneous-peak
+    /// gates by default; `MSD_VAD=peak` restores the peak behavior (`vadEnabled=false`).
+    var vad: VadConfig = VadConfig()
+    /// Whether the shared SchmittVad drives `micActive`/`remoteActive` (default ON).
+    /// MSD_VAD=peak ⇒ false ⇒ instantaneous peak gates (the pre-B4 behavior).
+    var vadEnabled: Bool = true
+    /// MSD_VAD_TRACE=1 — emit a per-tick `[vadtrace] {vad_frame}` NDJSON line with
+    /// the max frame RMS + booleans, so the live rig records raw levels for
+    /// enter/exit calibration (plan B4: calibration needs recorded raw data).
+    var vadTrace: Bool = false
     /// MSD_RUN_SECONDS — clean auto-exit after N seconds (required for unattended QA).
     /// 0 = run forever (default).
     var runSeconds: Int = 0
@@ -133,6 +179,38 @@ final class DetectionEngine {
     private var meetStatsStartMs = 0
     private var edgeLogHandle: FileHandle?
 
+    // Shared SchmittVad (plan B4). One instance per audio stream; the engine feeds
+    // each drained 50ms RMS frame with AXKit.monotonicMs() and reads the boolean,
+    // which becomes `micActive` / `remoteActive` (SAME downstream booleans). Inert
+    // when `config.vadEnabled == false` (MSD_VAD=peak restores the peak gates).
+    private var micVad = SchmittVad()
+    private var remoteVad = SchmittVad()
+
+    // Event-driven Zoom WEB (plan A). All inert unless `config.eventDrivenZoomWeb`.
+    private var zoomWebObserver: ZoomWebTileObserver?
+    private var zoomWebTransition = TransitionConfidence()
+    private var zoomWebLastReconcileMs = 0
+    private var zoomWebFullWalks = 0
+    private var zoomWebEdgeCount = 0
+    private var zoomWebSubtreeReads = 0
+    private var zoomWebReconcileRepairs = 0
+    private var zoomWebRestarts = 0
+    private var zoomWebSubscribedNodes = 0
+    private var zoomWebStatsStartMs = 0
+
+    // Event-driven native Zoom (plan B). All inert unless `config.eventDrivenZoomNative`.
+    private var zoomNativeObserver: ZoomNativeObserver?
+    private var zoomNativeTransition = TransitionConfidence()
+    private var zoomNativeLastSnapshot: ZoomNativeSnapshot?
+    private var zoomNativeLastReconcileMs = 0
+    private var zoomFullWalks = 0
+    private var zoomSubtreeReads = 0
+    private var zoomEdgeCount = 0
+    private var zoomReconcileRepairs = 0
+    private var zoomStatsStartMs = 0
+    /// Set by the native observer wake-ups; drained per tick to force an immediate re-read.
+    private var zoomNativeWokeThisTick = false
+
     /// Where completed-session NDJSON is written.
     let logURL: URL
 
@@ -169,6 +247,15 @@ final class DetectionEngine {
         meetTransition = TransitionConfidence(config: config.transition)
         teamsStatsStartMs = nowMs()
         teamsLastStatsMs = nowMs()
+        zoomWebStatsStartMs = nowMs()
+        zoomWebLastReconcileMs = nowMs()
+        zoomWebTransition = TransitionConfidence(config: config.zoomWebTransition)
+        zoomStatsStartMs = nowMs()
+        zoomNativeLastReconcileMs = nowMs()
+        zoomNativeTransition = TransitionConfidence(config: config.zoomNativeTransition)
+        // Shared SchmittVad instances (plan B4). Config-tuned; inert when peak mode.
+        micVad = SchmittVad(config: config.vad)
+        remoteVad = SchmittVad(config: config.vad)
 
         // Open the optional edge-event log (MSD_EDGE_LOG) — meet_edge lines are
         // appended here too, in ADDITION to the stdout/NDJSON mirror in record().
@@ -191,6 +278,36 @@ final class DetectionEngine {
             status(.info, "Detection started — event-driven Meet (MSD_MODE=event), audio poll every \(config.pollIntervalMs) ms.")
         } else {
             status(.info, "Detection started — polling every \(config.pollIntervalMs) ms.")
+        }
+
+        // Event mode: spin up the Zoom WEB observer (dedicated CFRunLoop thread) — a
+        // Chromium surface exactly like Meet. Legacy leaves this nil so the scanner
+        // does the full zoomWebSpeakerBar read as before.
+        if config.eventDrivenZoomWeb {
+            let obs = ZoomWebTileObserver(scanner: scanner, coalesceMs: config.edgeCoalesceMs)
+            obs.onLifecycle = { [weak self] state, nodes in
+                self?.queue.async { self?.recordZoomWebObserver(state, nodes) }
+            }
+            obs.onSelectorDump = { [weak self] dump in
+                self?.queue.async { self?.recordZoomWebSelectorDump(dump) }
+            }
+            zoomWebObserver = obs
+            obs.start()
+        }
+
+        // Event mode: spin up the native-Zoom lifecycle observer (real AX
+        // notifications — genuinely event-driven). It only supplies wake-ups + the
+        // one-shot menu probe note; the roster/PIP data stays with the pure extractors.
+        if config.eventDrivenZoomNative {
+            let obs = ZoomNativeObserver(coalesceMs: config.edgeCoalesceMs)
+            obs.onLifecycle = { [weak self] state, nodes in
+                self?.queue.async { self?.recordZoomObserver(state, nodes) }
+            }
+            obs.onMenuProbe = { [weak self] probe in
+                self?.queue.async { self?.recordZoomMenuProbe(probe) }
+            }
+            zoomNativeObserver = obs
+            obs.start()
         }
 
         let t = DispatchSource.makeTimerSource(queue: queue)
@@ -235,8 +352,26 @@ final class DetectionEngine {
             obs.stop()
             meetObserver = nil
         }
+        // Fold the Zoom-web observer's final counters, then stop it.
+        if let obs = zoomWebObserver {
+            let s = obs.snapshotStats()
+            zoomWebSubtreeReads = s.subtreeReads
+            zoomWebReconcileRepairs = s.reconcileRepairs
+            zoomWebRestarts = s.restarts
+            zoomWebSubscribedNodes = s.subscribedNodes
+            obs.stop()
+            zoomWebObserver = nil
+        }
+        if let obs = zoomNativeObserver {
+            obs.stop()
+            zoomNativeObserver = nil
+        }
         emitWalkStats(now: nowMs())
         emitTeamsWalkStats(now: nowMs())
+        // FINAL zoomweb_walk_stats + zoom_walk_stats — emitted on stop in BOTH modes
+        // so the CPU A/B baseline always has a closing sample (legacy counts full_walks).
+        emitZoomWebWalkStats(now: nowMs())
+        emitZoomWalkStats(now: nowMs())
         edgeLogHandle?.closeFile()
         edgeLogHandle = nil
 
@@ -266,8 +401,52 @@ final class DetectionEngine {
             systemPeak = (systemMeter as? SystemAudioMeter)?.currentPeak ?? 0
         }
 
-        let micActive = micPeak > config.micThreshold
-        let remoteActive = systemPeak > config.remoteThreshold
+        // AUDIO GATE (plan B4). Default: the shared SchmittVad — feed each drained
+        // 50ms RMS frame with the injected monotonic clock, take the resulting
+        // boolean. The Schmitt hysteresis rejects single-frame transients (join
+        // dings, clicks) and bridges intra-sentence pauses, so the SAME `micActive`/
+        // `remoteActive` booleans are cleaner than the old instantaneous peak gate.
+        // Escape hatch MSD_VAD=peak (`vadEnabled == false`) restores the peak gates
+        // byte-for-byte (the pre-B4 behavior; Meet/Teams regression suite proves it).
+        let micActive: Bool
+        let remoteActive: Bool
+        if config.vadEnabled {
+            // Each drained 50ms frame carries its OWN monotonic timestamp, spread
+            // back from `now` at `frameMs` spacing (frame i of n ends at
+            // now-(n-1-i)*frameMs). Feeding every frame at ONE `now` collapsed the
+            // hangover math — `atMs - belowExitSinceMs` was always 0 within a tick,
+            // so a segment could only close on the NEXT tick regardless of how much
+            // quiet arrived this tick. Spreading the timestamps makes close honor the
+            // real 400ms hangover across the frames drained in a single ~250-500ms poll.
+            let mono = AXKit.monotonicMs()
+            let fm = config.vad.frameMs
+            let micFrames = mic.rmsFrames.drainFrames()
+            var micBool = micVad.active
+            for (i, f) in micFrames.enumerated() {
+                micBool = micVad.ingest(rms: Double(f), atMs: mono - (micFrames.count - 1 - i) * fm)
+            }
+            var remoteBool = remoteVad.active
+            var remoteFrames: [Float] = []
+            if #available(macOS 13.0, *) {
+                remoteFrames = (systemMeter as? SystemAudioMeter)?.rmsFrames.drainFrames() ?? []
+                for (i, f) in remoteFrames.enumerated() {
+                    remoteBool = remoteVad.ingest(rms: Double(f), atMs: mono - (remoteFrames.count - 1 - i) * fm)
+                }
+            }
+            micActive = micBool
+            remoteActive = remoteBool
+            // Raw-RMS calibration evidence (MSD_VAD_TRACE): the max frame RMS this
+            // tick per stream + the resulting booleans, so the live rig can record
+            // the actual speech/tone/noise RMS distribution and re-fit enter/exit to
+            // measured data (plan: calibration needs recorded raw levels).
+            if config.vadTrace, !micFrames.isEmpty || !remoteFrames.isEmpty {
+                emitVadTrace(micRms: micFrames.max() ?? 0, remoteRms: remoteFrames.max() ?? 0,
+                             micActive: micBool, remoteActive: remoteBool, ts: now)
+            }
+        } else {
+            micActive = micPeak > config.micThreshold
+            remoteActive = systemPeak > config.remoteThreshold
+        }
 
         // The VAD gate is SOFT: only trustworthy when system-audio capture is
         // actually running. Without Screen Recording permission systemPeak is
@@ -331,6 +510,69 @@ final class DetectionEngine {
             }
         } else {
             scanner.skipMeetSubWalk = false
+        }
+
+        // EVENT-DRIVEN ZOOM WEB (plan A). A Chromium surface exactly like Meet: the
+        // active-class flip is AX-silent, so the observer's bounded per-tick read is
+        // the PRIMARY edge source. Drain active-moved edges → Zoom-web confidence →
+        // per-tick transition state (used to collapse a lingering-highlight overlap
+        // to the freshly-edged holder). Tell the scanner to skip the speaker-bar
+        // sub-walk while live. All inert in legacy mode (zoomWebObserver == nil).
+        var zoomWebTransitionState: ZoomWebTransitionState? = nil
+        var zoomWebEventSnapshot: ZoomWebTileSnapshot? = nil
+        if let obs = zoomWebObserver {
+            scanner.skipZoomWebSubWalk = config.skipZoomWebInFullScan
+            // The observer builds snapshots with self excluded at BUILD level, so it
+            // needs the resolved local self name each tick (learned from the tiles /
+            // "(me)" footer, cross-validated by the self mic control).
+            obs.setSelfName(config.localUserName == "You" ? nil : config.localUserName)
+            if now - zoomWebLastReconcileMs >= config.reconcileEveryMs {
+                zoomWebLastReconcileMs = now
+                obs.reconcile()
+                let s = obs.snapshotStats()
+                zoomWebSubtreeReads = s.subtreeReads
+                zoomWebReconcileRepairs = s.reconcileRepairs
+                emitZoomWebWalkStats(now: now)
+            } else {
+                obs.pollRefresh()
+            }
+            let mono = AXKit.monotonicMs()
+            for e in obs.drainEdges() {
+                zoomWebTransition.edge(to: e.to, at: e.atMs)
+                let conf = zoomWebTransition.confidence(of: e.to, at: mono)
+                zoomWebEdgeCount += 1
+                recordZoomWebEdge(e, confidence: conf)
+            }
+            let s = obs.snapshotStats()
+            zoomWebSubtreeReads = s.subtreeReads
+            zoomWebReconcileRepairs = s.reconcileRepairs
+            zoomWebRestarts = s.restarts
+            zoomWebSubscribedNodes = s.subscribedNodes
+            zoomWebEventSnapshot = obs.currentSnapshot()
+            if let holder = zoomWebTransition.holder {
+                zoomWebTransitionState = ZoomWebTransitionState(
+                    holder: holder,
+                    confidence: zoomWebTransition.confidence(of: holder, at: mono),
+                    nowMs: mono)
+            }
+        } else {
+            scanner.skipZoomWebSubWalk = false
+        }
+
+        // EVENT-DRIVEN NATIVE ZOOM (plan B2/B3). The observer is a genuine AX-event
+        // source (AXTitleChanged / AXWindowCreated / AXUIElementDestroyed) — drain
+        // its wake flag so the PIP appear/disappear + title moves are reflected this
+        // tick, and drive the death/pid-move reconcile on cadence. The PIP "Talking:"
+        // edges themselves are diffed below in the per-window loop (the PIP name is
+        // read by the scanner's pure extractor). Inert unless the observer is live.
+        zoomNativeWokeThisTick = false
+        if let obs = zoomNativeObserver {
+            if obs.drainWake() { zoomNativeWokeThisTick = true }
+            if now - zoomNativeLastReconcileMs >= config.reconcileEveryMs {
+                zoomNativeLastReconcileMs = now
+                obs.reconcile()
+                emitZoomWalkStats(now: now)
+            }
         }
 
         let scanned = scanner.scan()
@@ -403,11 +645,43 @@ final class DetectionEngine {
             // the window — empty for Meet / Teams / native Zoom.
             for name in w.speakers { add(name, "web.direct") }
 
+            // NATIVE-ZOOM walk accounting (plan B3): native Zoom has no walk-skip —
+            // the scanner does one full `zoomExtractWindow` walk per tick regardless
+            // (the AXObserver only supplies wake-ups). Count one full_walk per native
+            // Zoom window in BOTH modes so the zoom_walk_stats A/B baseline is honest.
+            if w.platform == .zoom && !w.directSpeakerRead {
+                zoomFullWalks += 1
+                if zoomNativeWokeThisTick { zoomSubtreeReads += 1 }
+            }
+
             if let pip = w.pipSpeaker {
                 // Direct active-speaker read off a PIP / compact thumbnail — the app's
                 // OWN VAD (Zoom "Talking: <name>", Teams "<name> is speaking"). Trust
                 // it over the mute-gate / anonymous floor.
-                add(pip, w.platform == .zoom ? "zoom.pip" : "teams.pip")
+                //
+                // NATIVE-ZOOM PIP EDGE PATH (plan B1): in event mode the PIP
+                // "Talking:" name is treated as a first-class talking-changed edge —
+                // diff against last tick (self excluded at snapshot build), feed the
+                // native TransitionConfidence, and tag the attribution
+                // `zoom.pip.edge` so edge-sourced naming is visible end-to-end. The
+                // ladder position is unchanged (PIP → mute-gate → someone); legacy
+                // mode keeps the plain `zoom.pip` read.
+                if w.platform == .zoom, config.eventDrivenZoomNative {
+                    let mono = AXKit.monotonicMs()
+                    let selfName = w.zoomRoster.first(where: { $0.isMe })?.name
+                    let next = ZoomNativeSnapshot.from(pipTalking: pip, selfName: selfName)
+                    for e in zoomNativeEdgesFromDiff(prev: zoomNativeLastSnapshot, next: next, at: mono) {
+                        zoomNativeTransition.edge(to: e.to, at: e.atMs)
+                        zoomEdgeCount += 1
+                        recordZoomEdge(e, confidence: zoomNativeTransition.confidence(of: e.to, at: mono))
+                    }
+                    zoomNativeLastSnapshot = next
+                    // The holder is self-excluded at snapshot build; only a non-self
+                    // PIP talker is named (self speaks via the mic path below).
+                    if let holder = next.pipTalking { add(holder, "zoom.pip.edge") }
+                } else {
+                    add(pip, w.platform == .zoom ? "zoom.pip" : "teams.pip")
+                }
                 // The note named the speaker — the Someone floor is attributed.
                 if w.platform == .teams { teamsSomeoneUnattributedSince = nil }
             } else if w.platform == .meet {
@@ -622,20 +896,40 @@ final class DetectionEngine {
                 }
                 teamsPrevAreas = Dictionary(w.teamsTiles.map { ($0.name, $0.area) }, uniquingKeysWith: { a, _ in a })
             } else if w.directSpeakerRead {
-                // Meet (kssMZb class) / Zoom web ("active speaker" marker): the UI
-                // names the speaker, including your own tile. Trust it; only fall
-                // back to the anonymous "Someone" when the tree itself is
-                // unreadable (e.g. a backgrounded tab). No "You" — your tile is
-                // already named, so adding it would double-log.
+                // Zoom web ("--active" tile class): the UI names the speaker,
+                // including your own tile. Trust it; only fall back to the anonymous
+                // "Someone" when the tree itself is unreadable (e.g. a backgrounded
+                // tab). No "You" — your tile is already named, so adding it would
+                // double-log.
                 //
-                // Zoom web names the active speaker via the speaker-bar tile's
-                // `…__video-frame--active` CSS class (read as zoomWebSpeaker). VAD-
-                // gate it: the highlight lingers on the last talker during silence,
-                // so only trust it while audio confirms speech (fall back to trusting
-                // it when system-audio capture isn't available, like Meet's class).
-                if let ws = w.zoomWebSpeaker,
-                   audioReliable ? (micActive || remoteActive) : true {
-                    add(ws, "zoom.web_active")
+                // LEGACY vs EVENT active-speaker source. Legacy: the scanner's
+                // per-tick speaker-bar sub-walk (`zoomWebSpeaker`, counted as one
+                // zoomweb `full_walk`). Event: the observer's bounded reads supply a
+                // self-excluded snapshot + a transition state; the active tile alone
+                // wins even during a lingering-highlight overlap (source
+                // `zoom.web_active.edge`). VAD-gate both so a stale highlight during
+                // silence doesn't extend a turn (soft-open when capture is off).
+                let audioOk = audioReliable ? (micActive || remoteActive) : true
+                if config.eventDrivenZoomWeb, zoomWebObserver != nil {
+                    zoomWebFullWalks += 0   // event mode reads via the observer, not a walk
+                    if let snap = zoomWebEventSnapshot {
+                        if audioOk, let ws = zoomWebActiveSpeaker(snapshot: snap, transition: zoomWebTransitionState) {
+                            add(ws, "zoom.web_active.edge")
+                        }
+                        // Seed the meeting roster from the observer snapshot's present
+                        // names (the scanner skipped the walk that would fill it), so
+                        // the meeting stays alive with a non-empty participant list.
+                        if w.participants.isEmpty {
+                            var roster = Set(snap.presentNames)
+                            roster.formUnion(who)
+                            w.participants = Array(roster)
+                        }
+                    }
+                } else {
+                    zoomWebFullWalks += 1
+                    if let ws = w.zoomWebSpeaker, audioOk {
+                        add(ws, "zoom.web_active")
+                    }
                 }
                 if remoteActive && who.isEmpty && !w.treeOk {
                     add("Someone", "web.direct")
@@ -820,6 +1114,25 @@ final class DetectionEngine {
         }
     }
 
+    /// Raw-RMS VAD calibration trace (MSD_VAD_TRACE). One line per tick that had
+    /// any drained frame, carrying the loudest frame RMS this tick per stream and
+    /// the resulting gate booleans. Stdout-only; the live rig greps `vad_frame`
+    /// lines into `levelSamples` so enter/exit can be re-fit to the measured
+    /// speech/tone/noise RMS distribution (plan B4 calibration evidence).
+    private func emitVadTrace(micRms: Float, remoteRms: Float,
+                             micActive: Bool, remoteActive: Bool, ts: Int) {
+        let obj: [String: Any] = [
+            "type": "vad_frame", "ts": ts,
+            "mic_rms": Double(micRms), "remote_rms": Double(remoteRms),
+            "mic_active": micActive, "remote_active": remoteActive,
+            "enter": config.vad.enterLevel, "exit": config.vad.exitLevel,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let line = String(data: data, encoding: .utf8) {
+            FileHandle.standardOutput.write(Data("[vadtrace] \(line)\n".utf8))
+        }
+    }
+
     /// Reconstruct the minimal `MeetTileObservation`s the resolver needs from an
     /// observer snapshot (event mode, when the scanner skipped the per-tile sub-walk).
     /// The snapshot already excludes self, so every synthesized tile is a non-self
@@ -919,6 +1232,125 @@ final class DetectionEngine {
         record("meet_observer", [
             "state": state.rawValue,
             "subscribed_nodes": nodes,
+        ], ts: nowMs())
+    }
+
+    // MARK: Zoom event-driven instrumentation (plan A + B NDJSON)
+
+    /// Append an edge's fields to the MSD_EDGE_LOG file (stdout mirror is kept via
+    /// record()). Shared by every platform's edge so the edge-log always carries the
+    /// wall_ts the live-QA latency check correlates against.
+    private func appendToEdgeLog(_ type: String, _ fields: [String: Any]) {
+        guard let h = edgeLogHandle else { return }
+        var obj = fields
+        obj["type"] = type
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let line = String(data: data, encoding: .utf8) {
+            h.write(Data("\(line)\n".utf8))
+        }
+    }
+
+    /// Emit one `zoomweb_walk_stats` line: full_walks / subtree_reads / edges /
+    /// reconcile_repairs / subscribed_nodes / restarts / walks_per_min. Per reconcile
+    /// AND on stop, counting in BOTH modes (legacy counts full_walks for the A/B).
+    private func emitZoomWebWalkStats(now: Int) {
+        let elapsedMs = max(1, now - zoomWebStatsStartMs)
+        let walksPerMin = Double(zoomWebFullWalks) / (Double(elapsedMs) / 60_000.0)
+        record("zoomweb_walk_stats", [
+            "full_walks": zoomWebFullWalks,
+            "subtree_reads": zoomWebSubtreeReads,
+            "edges": zoomWebEdgeCount,
+            "reconcile_repairs": zoomWebReconcileRepairs,
+            "subscribed_nodes": zoomWebSubscribedNodes,
+            "restarts": zoomWebRestarts,
+            "event_mode": config.eventDrivenZoomWeb,
+            "walks_per_min": (walksPerMin * 100).rounded() / 100,
+        ], ts: now)
+    }
+
+    /// Emit one `zoom_walk_stats` line for native Zoom (mirrors meet_walk_stats).
+    /// Native Zoom has no walk-skip (the observer supplies wake-ups only), so
+    /// full_walks counts one per native-Zoom tick in BOTH modes — the honest CPU
+    /// story (event mode buys latency via wake-ups, not a walk reduction).
+    private func emitZoomWalkStats(now: Int) {
+        let elapsedMs = max(1, now - zoomStatsStartMs)
+        let walksPerMin = Double(zoomFullWalks) / (Double(elapsedMs) / 60_000.0)
+        record("zoom_walk_stats", [
+            "full_walks": zoomFullWalks,
+            "subtree_reads": zoomSubtreeReads,
+            "edges": zoomEdgeCount,
+            "reconcile_repairs": zoomReconcileRepairs,
+            "event_mode": config.eventDrivenZoomNative,
+            "walks_per_min": (walksPerMin * 100).rounded() / 100,
+        ], ts: now)
+    }
+
+    /// Emit one `zoomweb_edge` line per drained active-moved edge (kind/from/to/
+    /// confidence/mono_ts/wall_ts), mirrored to MSD_EDGE_LOG when set.
+    private func recordZoomWebEdge(_ e: ZoomWebEdgeEvent, confidence: Double) {
+        let wall = nowMs()
+        var f: [String: Any] = [
+            "kind": e.kindToken,
+            "to": e.to,
+            "confidence": (confidence * 1000).rounded() / 1000,
+            "mono_ts": e.atMs,
+            "wall_ts": wall,
+        ]
+        if let from = e.from { f["from"] = from }
+        record("zoomweb_edge", f, ts: wall)
+        appendToEdgeLog("zoomweb_edge", f)
+    }
+
+    /// Emit one `zoom_edge` line per native PIP talking-changed edge, mirrored to
+    /// MSD_EDGE_LOG when set.
+    private func recordZoomEdge(_ e: ZoomNativeEdgeEvent, confidence: Double) {
+        let wall = nowMs()
+        var f: [String: Any] = [
+            "kind": e.kindToken,
+            "to": e.to,
+            "confidence": (confidence * 1000).rounded() / 1000,
+            "mono_ts": e.atMs,
+            "wall_ts": wall,
+        ]
+        if let from = e.from { f["from"] = from }
+        record("zoom_edge", f, ts: wall)
+        appendToEdgeLog("zoom_edge", f)
+    }
+
+    /// Emit one `zoomweb_observer` lifecycle line.
+    private func recordZoomWebObserver(_ state: ZoomWebObserverState, _ nodes: Int) {
+        record("zoomweb_observer", [
+            "state": state.rawValue,
+            "subscribed_nodes": nodes,
+        ], ts: nowMs())
+    }
+
+    /// Emit the rate-limited `zoomweb_selector_dump` forensic line: per-selector
+    /// presence counts + candidate tile class chains when in-call but ZERO tiles
+    /// matched any selector family (a diagnosable rotation, not a silent null).
+    private func recordZoomWebSelectorDump(_ dump: ZoomWebSelectorDump) {
+        record("zoomweb_selector_dump", [
+            "selector_counts": dump.selectorCounts,
+            "candidate_class_chains": dump.candidateClassChains,
+        ], ts: nowMs())
+    }
+
+    /// Emit one `zoom_observer` lifecycle line for the native-Zoom observer.
+    private func recordZoomObserver(_ state: ZoomNativeObserverState, _ nodes: Int) {
+        record("zoom_observer", [
+            "state": state.rawValue,
+            "subscribed_nodes": nodes,
+        ], ts: nowMs())
+    }
+
+    /// Emit the one-shot `zoom_menu_probe` note (B2): the real menu-bar state so the
+    /// live report records whether Zoom exposed a Meeting > Mute Audio item — never a
+    /// fabricated menu signal.
+    private func recordZoomMenuProbe(_ probe: ZoomMenuProbe) {
+        record("zoom_menu_probe", [
+            "meeting_menu_present": probe.meetingMenuPresent,
+            "mute_item_present": probe.muteItemPresent,
+            "mute_item_title": probe.muteItemTitle,
         ], ts: nowMs())
     }
 

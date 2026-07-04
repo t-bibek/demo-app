@@ -11,6 +11,10 @@ final class MicMeter {
     private let peak = AtomicPeak()
     private var running = false
 
+    /// RMS frame accumulator for the shared SchmittVad (plan B4). Fed in the same
+    /// realtime tap that updates `currentPeak`; the engine drains 50ms frames.
+    let rmsFrames = RmsFrameMeter()
+
     /// Latest microphone peak in 0..1.
     var currentPeak: Float { peak.current }
     var isRunning: Bool { running }
@@ -42,6 +46,7 @@ final class MicMeter {
 
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.peak.set(MicMeter.peak(of: buffer))
+            self?.rmsFrames.ingest(buffer)
         }
         do {
             try engine.start()
@@ -57,6 +62,7 @@ final class MicMeter {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         peak.set(0)
+        rmsFrames.reset()
         running = false
     }
 

@@ -143,6 +143,11 @@ final class AppModel: ObservableObject {
 
         let mode = (env["MSD_MODE"] ?? "").lowercased()
         cfg.eventDrivenMeet = (mode == "event")
+        // Zoom WEB + native use the SAME MSD_MODE=event flag as Meet (the master A/B
+        // switch). With NO env vars set, Zoom is byte-for-byte legacy: zero zoom
+        // observer/edge NDJSON output (a live scenario probes this at runtime).
+        cfg.eventDrivenZoomWeb = (mode == "event")
+        cfg.eventDrivenZoomNative = (mode == "event")
         // Teams rapid-swap disambiguation (no AXObserver — docs §10). DEFAULT ON;
         // MSD_TEAMS_MODE=legacy restores the byte-for-byte overlap-set behavior.
         cfg.eventDrivenTeams = ((env["MSD_TEAMS_MODE"] ?? "event").lowercased() != "legacy")
@@ -156,6 +161,14 @@ final class AppModel: ObservableObject {
         } else {
             cfg.skipMeetInFullScan = false
         }
+        // Zoom-web sub-walk skip: implied by event mode unless MSD_SKIP_ZOOMWEB_FULLSCAN=0
+        // (the CPU A/B baseline needs legacy to keep counting full_walks).
+        if cfg.eventDrivenZoomWeb {
+            let skipRaw = env["MSD_SKIP_ZOOMWEB_FULLSCAN"]
+            cfg.skipZoomWebInFullScan = (skipRaw == nil) ? true : (skipRaw != "0")
+        } else {
+            cfg.skipZoomWebInFullScan = false
+        }
 
         if let r = env["MSD_RECONCILE_MS"], let v = Int(r), v > 0 { cfg.reconcileEveryMs = v }
 
@@ -164,6 +177,32 @@ final class AppModel: ObservableObject {
         if let f = env["MSD_TRANSITION_FLOOR"], let v = Double(f) { tc.floor = v }
         if let h = env["MSD_TRANSITION_HALFLIFE_MS"], let v = Double(h), v >= 0 { tc.halfLifeMs = v }
         cfg.transition = tc
+        // Zoom-web + native transition configs inherit the shared spike/floor;
+        // Zoom-web's half-life is separately calibratable from the measured active-
+        // class linger (ZoomWebTuning.defaultHalfLifeMs = 1200ms starting point).
+        var zwtc = cfg.zoomWebTransition
+        zwtc.spike = tc.spike
+        zwtc.floor = tc.floor
+        if let h = env["MSD_ZOOMWEB_HALFLIFE_MS"], let v = Double(h), v >= 0 { zwtc.halfLifeMs = v }
+        cfg.zoomWebTransition = zwtc
+        var zntc = cfg.zoomNativeTransition
+        zntc.spike = tc.spike
+        zntc.floor = tc.floor
+        if let h = env["MSD_TRANSITION_HALFLIFE_MS"], let v = Double(h), v >= 0 { zntc.halfLifeMs = v }
+        cfg.zoomNativeTransition = zntc
+
+        // Shared SchmittVad (plan B4). DEFAULT ON; MSD_VAD=peak restores the
+        // instantaneous-peak gates byte-for-byte (the pre-B4 behavior). Enter/exit/
+        // hangover env-overridable for live calibration against noise/ding/speech.
+        cfg.vadEnabled = ((env["MSD_VAD"] ?? "").lowercased() != "peak")
+        var vad = cfg.vad
+        if let e = env["MSD_VAD_ENTER"], let v = Double(e), v >= 0 { vad.enterLevel = v }
+        if let x = env["MSD_VAD_EXIT"], let v = Double(x), v >= 0 { vad.exitLevel = v }
+        if let hm = env["MSD_VAD_HANGOVER_MS"], let v = Int(hm), v >= 0 { vad.hangoverMs = v }
+        cfg.vad = vad
+        // Raw-RMS trace for calibration evidence (off unless asked). The live rig
+        // sets MSD_VAD_TRACE=1 on the vad-quality detector to record levelSamples.
+        cfg.vadTrace = (env["MSD_VAD_TRACE"] == "1")
 
         if let rs = env["MSD_RUN_SECONDS"], let v = Int(rs), v > 0 { cfg.runSeconds = v }
         if let p = env["MSD_EDGE_LOG"], !p.isEmpty { cfg.edgeLogPath = p }

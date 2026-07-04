@@ -95,6 +95,14 @@ final class AccessibilityScanner {
     /// legacy full walk (so `full_walks` counts per scan for the A/B baseline).
     var skipMeetSubWalk: Bool = false
 
+    /// Zoom-web analog of `skipMeetSubWalk` (plan A4): when the Zoom-web event
+    /// observer is live, skip the expensive per-tick `zoomWebSpeakerBar` sub-walk —
+    /// the observer's bounded reads supply the active speaker instead. The window is
+    /// still detected + call-gated (meeting stays alive) but `zoomWebSpeaker` comes
+    /// back nil, which the engine's event branch ignores in favor of the observer
+    /// snapshot. Default false = legacy full read (so zoomweb full_walks counts).
+    var skipZoomWebSubWalk: Bool = false
+
     /// A tile's name identifies self when it equals the configured local user name
     /// (case-insensitive). No-op when the name is the placeholder "You".
     private func meetNameIsSelf(_ name: String) -> Bool {
@@ -386,12 +394,22 @@ final class AccessibilityScanner {
                     // on web zoom is page chrome (nav, pricing, footer).
                     guard zoomWebCallActive(in: window)
                             || collector.localUserUnmuted != nil else { continue }
-                    // Active speaker + roster from the speaker-bar tiles: the
-                    // `…__video-frame--active` tile is whoever is talking; the plain
-                    // `…__video-frame` tiles are the idle participants.
-                    let bar = zoomWebSpeakerBar(in: window)
-                    zoomWebSpeaker = bar.active
-                    participants = dedup(bar.names + speakers)
+                    if skipZoomWebSubWalk {
+                        // Event mode (plan A4): the Zoom-web observer's bounded reads
+                        // supply the active speaker + roster, so SKIP the expensive
+                        // per-tick speaker-bar sub-walk. The window is still detected +
+                        // call-gated (meeting stays alive); `zoomWebSpeaker` stays nil
+                        // and the engine attributes from the observer snapshot instead.
+                        zoomWebSpeaker = nil
+                        participants = []
+                    } else {
+                        // Active speaker + roster from the speaker-bar tiles: the
+                        // `…__video-frame--active` tile is whoever is talking; the plain
+                        // `…__video-frame` tiles are the idle participants.
+                        let bar = zoomWebSpeakerBar(in: window)
+                        zoomWebSpeaker = bar.active
+                        participants = dedup(bar.names + speakers)
+                    }
                 }
 
                 let directSpeakerRead: Bool
@@ -558,6 +576,159 @@ final class AccessibilityScanner {
         // The filmstrip "--active" tile is the definitive speaker; the big speaker-
         // view tile is the fallback when the filmstrip isn't shown (few participants).
         return (barActive ?? bigActive, dedup(names))
+    }
+
+    // MARK: Zoom WEB event-driven bounded reads (mirror the Meet stage scan)
+
+    /// The result of one bounded Zoom-web tile subtree read for a single Chrome pid
+    /// — the SAME per-tile facts a full `scan()` produces for Zoom web, but WITHOUT
+    /// the multi-window / multi-platform sweep. `callActive == false` means the tab
+    /// is a landing / post-call / backgrounded surface, so the observer treats it
+    /// like a dead read and lets the reconcile sweep clear its snapshot.
+    struct ZoomWebSubtreeScan: Equatable {
+        var tiles: [ZoomWebTileObservation]
+        var participants: [String]
+        var callActive: Bool
+        var url: String?
+        /// Diagnostics for the stale-selector forensic dump: per-family container
+        /// counts + the raw class chains of tile-shaped candidate groups. Only
+        /// populated when NO tile matched (the observer rate-limits the emit).
+        var selectorCounts: [String: Int]
+        var candidateClassChains: [[String]]
+    }
+
+    /// Locate the Chrome window hosting a Zoom WEB call for a single pid — the
+    /// subscription anchor + call-gate anchor for `ZoomWebTileObserver`. Classifies
+    /// by AXWebArea AXURL (address-bar-independent), exactly like `scan()`. nil when
+    /// no Zoom-web window is present for this pid.
+    func zoomWebElements(pid: pid_t) -> (app: AXUIElement, window: AXUIElement)? {
+        guard AXIsProcessTrusted() else { return nil }
+        let axApp = AXUIElementCreateApplication(pid)
+        AXKit.forceFullAXTree(pid: pid)
+        for window in axArray(axApp, "AXWindows") {
+            guard let webURL = webAreaMeetingURL(in: window),
+                  platformForURL(webURL) == .zoom else { continue }
+            return (axApp, window)
+        }
+        return nil
+    }
+
+    /// Read ONLY the Zoom-web tile subtree for a single Chrome pid — the cheap
+    /// replacement for the full `scan()` used by the event-driven path (observer
+    /// refresh + reconcile sweep). Reuses the SAME tile-family / active / name /
+    /// mute grammar (`ZoomSpeakerRules`) the polling `zoomWebSpeakerBar` uses, so
+    /// event mode reads identical per-tile facts — no second, drift-prone extractor.
+    func zoomWebTileScan(pid: pid_t, selfName: String?) -> ZoomWebSubtreeScan? {
+        guard AXIsProcessTrusted() else { return nil }
+        let axApp = AXUIElementCreateApplication(pid)
+        AXKit.forceFullAXTree(pid: pid)
+        for window in axArray(axApp, "AXWindows") {
+            guard let webURL = webAreaMeetingURL(in: window),
+                  platformForURL(webURL) == .zoom else { continue }
+            let callActive = zoomWebCallActive(in: window)
+            let selfUnmuted = zoomWebSelfUnmuted(in: window)
+            let read = zoomWebTileObservations(in: window, selfName: selfName,
+                                               selfUnmuted: selfUnmuted)
+            return ZoomWebSubtreeScan(
+                tiles: read.tiles,
+                participants: read.tiles.map { $0.name },
+                callActive: callActive,
+                url: webURL,
+                selectorCounts: read.selectorCounts,
+                candidateClassChains: read.candidateClassChains)
+        }
+        return nil
+    }
+
+    /// Read the local self-mute state from the Zoom-web toolbar mic control
+    /// ("mute my microphone" = unmuted, "unmute my microphone" = muted) — the
+    /// cross-validation signal for self-exclusion (A4). nil when not found.
+    private func zoomWebSelfUnmuted(in window: AXUIElement) -> Bool? {
+        var result: Bool?
+        var n = 0
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if result != nil || n >= maxNodesPerWindow || d > maxDepth { return }
+            n += 1
+            for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                if let raw = axString(el, attr),
+                   let u = zoomRules.webSelfUnmuted(raw.lowercased()) { result = u; return }
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if result != nil { return } }
+        }
+        rec(window, 0)
+        return result
+    }
+
+    /// Build the per-tile `ZoomWebTileObservation`s the event path diffs — name +
+    /// active-class + per-tile mute + self flag + surface family — plus the
+    /// stale-selector forensics (per-family container counts + candidate class
+    /// chains) so a class rotation is diagnosable rather than a silent null.
+    ///
+    /// Self-exclusion is cross-validated at BUILD level: a tile is `isMe` when its
+    /// name matches the resolved local self name (learned from "(me)" / the footer)
+    /// — the snapshot layer then drops it, and it can never be an edge holder.
+    private func zoomWebTileObservations(in window: AXUIElement, selfName: String?,
+                                         selfUnmuted: Bool?)
+        -> (tiles: [ZoomWebTileObservation], selectorCounts: [String: Int],
+            candidateClassChains: [[String]]) {
+        var tiles: [ZoomWebTileObservation] = []
+        var seen = Set<String>()
+        var counts: [String: Int] = ["filmstrip": 0, "speaker": 0, "gallery": 0]
+        var chains: [[String]] = []
+        var n = 0
+
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if n >= maxNodesPerWindow || d > maxDepth { return }
+            n += 1
+            let classes = axClassList(el)
+            if let surface = zoomRules.webTileSurface(classList: classes) {
+                counts[surface, default: 0] += 1
+                if chains.count < 12 { chains.append(classes) }
+                if let name = zoomWebTileName(el), seen.insert(name).inserted {
+                    let active = zoomRules.webTileIsActive(classList: classes)
+                    let muted = zoomRules.webTileMuted(classList: classes)
+                    let isMe = zoomWebNameIsSelf(name, selfName: selfName)
+                    tiles.append(ZoomWebTileObservation(
+                        name: name, active: active, isMe: isMe,
+                        muted: muted, surface: surface))
+                }
+                return   // a tile is a leaf for our purposes; don't descend
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1) }
+        }
+        rec(window, 0)
+        _ = selfUnmuted   // reserved: cross-validate the self tile's mute vs the toolbar (telemetry)
+        return (tiles, counts, chains)
+    }
+
+    /// A tile's display name: prefer the avatar image alt (real name, camera off),
+    /// fall back to the footer / static-text label (always present, camera on).
+    /// Mirrors `zoomWebSpeakerBar.tileName` so both paths read the same names.
+    private func zoomWebTileName(_ frame: AXUIElement) -> String? {
+        var imgName: String?
+        var footerName: String?
+        func rec(_ el: AXUIElement, _ d: Int) {
+            if imgName != nil || d > maxDepth { return }
+            let classes = axClassList(el)
+            if zoomRules.webAvatarNameClasses.contains(where: { classes.contains($0) }) {
+                for attr in ["AXDescription", "AXTitle", "AXValue"] {
+                    if let raw = axString(el, attr), let clean = cleanParticipantName(raw) { imgName = clean; break }
+                }
+            }
+            if footerName == nil, axString(el, "AXRole") == "AXStaticText",
+               let raw = axString(el, "AXValue"), let clean = cleanParticipantName(raw) {
+                footerName = clean
+            }
+            for c in axArray(el, "AXChildren") { rec(c, d + 1); if imgName != nil { return } }
+        }
+        rec(frame, 0)
+        return imgName ?? footerName
+    }
+
+    /// Case-insensitive self-name match (no-op when self isn't resolved yet).
+    private func zoomWebNameIsSelf(_ name: String, selfName: String?) -> Bool {
+        guard let s = selfName, !s.isEmpty else { return false }
+        return name.caseInsensitiveCompare(s) == .orderedSame
     }
 
     // MARK: Platform resolution
