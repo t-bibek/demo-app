@@ -127,7 +127,7 @@ final class AppModel: ObservableObject {
     /// rebuild. With NO env vars set, this returns a default `EngineConfig` (byte-for-byte
     /// legacy 500ms polling). See plan step 6.
     ///   MSD_MODE=event|legacy      master A/B switch for Meet (default legacy)
-    ///   MSD_TEAMS_MODE=event       Teams rapid-swap disambiguation + teams_walk_stats (default legacy)
+    ///   MSD_TEAMS_MODE=legacy      DISABLE Teams rapid-swap disambiguation (default is event/on)
     ///   MSD_SKIP_MEET_FULLSCAN     0/1 — override the event-implied Meet sub-walk skip
     ///   MSD_RECONCILE_MS           reconcile-sweep cadence (ms)
     ///   MSD_TRANSITION_SPIKE       confidence spike (default 1.0)
@@ -143,8 +143,9 @@ final class AppModel: ObservableObject {
 
         let mode = (env["MSD_MODE"] ?? "").lowercased()
         cfg.eventDrivenMeet = (mode == "event")
-        // Teams rapid-swap disambiguation + instrumentation (no AXObserver — docs §10).
-        cfg.eventDrivenTeams = ((env["MSD_TEAMS_MODE"] ?? "").lowercased() == "event")
+        // Teams rapid-swap disambiguation (no AXObserver — docs §10). DEFAULT ON;
+        // MSD_TEAMS_MODE=legacy restores the byte-for-byte overlap-set behavior.
+        cfg.eventDrivenTeams = ((env["MSD_TEAMS_MODE"] ?? "event").lowercased() != "legacy")
         // Event mode IMPLIES the Meet sub-walk short-circuit unless explicitly disabled
         // (the live CPU-compare suite depends on event mode eliminating the sub-walks).
         // MSD_MODE=legacy (or unset) keeps full_walks counting per scan so the A/B

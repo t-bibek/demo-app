@@ -443,8 +443,11 @@ implement against what IS confirmed:
   existing 500ms poll drives the bounded read + diff synchronously.
 
 This applies to Teams **native and web** identically (same Chromium class-token behavior,
-same single engine `.teams` branch). Opt-in via `MSD_TEAMS_MODE=event` (legacy full-walk is
-the byte-for-byte default, mirroring Meet's A/B discipline).
+same single engine `.teams` branch). **DEFAULT ON**; `MSD_TEAMS_MODE=legacy` restores the
+byte-for-byte overlap-set behavior. (Only the *behavioral* disambiguation is default — the
+per-edge `teams_edge` telemetry stays behind `MSD_RING_TRACE` since the pulsing ring makes
+onsets ~1/s per speaker, too chatty for the default session log; the low-volume
+`teams_walk_stats` counter still emits.)
 
 **Implementation + review.** Pure diff/snapshot in `SpeakerCore/TeamsEdgeEvents.swift`
 (`teamsEdgesFromDiff` / `TeamsTileSnapshot`, self-excluded, unit-tested); `.ringTransition`

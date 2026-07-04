@@ -20,13 +20,14 @@ struct EngineConfig {
     /// MSD_MODE=event — subscribe the AXObserver path for Meet (edges + confidence)
     /// instead of a full AX walk every tick. false = legacy polling (default).
     var eventDrivenMeet: Bool = false
-    /// MSD_TEAMS_MODE=event — Teams rapid-swap disambiguation: per-tick ring
-    /// snapshot→diff→TransitionConfidence so a fresh onset overrides a stale lingering
-    /// ring during fast handoffs, plus `teams_walk_stats`/`teams_edge` instrumentation.
-    /// There is NO AXObserver for Teams — a live probe proved the ring flip fires ZERO
-    /// AX notifications (docs §10), so the diff runs synchronously on the existing poll.
-    /// false = legacy overlap-set behavior, byte-for-byte (default).
-    var eventDrivenTeams: Bool = false
+    /// Teams rapid-swap disambiguation: per-tick ring snapshot→diff→TransitionConfidence
+    /// so a fresh onset overrides a stale lingering ring during fast handoffs (plus the
+    /// `teams_walk_stats` counter; per-edge `teams_edge` lines only under MSD_RING_TRACE
+    /// to keep the default log quiet). There is NO AXObserver for Teams — a live probe
+    /// proved the ring flip fires ZERO AX notifications (docs §10), so the diff runs
+    /// synchronously on the existing poll. DEFAULT ON; `MSD_TEAMS_MODE=legacy` restores
+    /// the byte-for-byte overlap-set behavior.
+    var eventDrivenTeams: Bool = true
     /// Short-circuit the expensive Meet sub-walks inside `scanner.scan()` when the
     /// observer is live (the Stage-2 CPU win). IMPLIED by event mode unless
     /// MSD_SKIP_MEET_FULLSCAN=0. Legacy mode keeps counting `full_walks` per scan so the
@@ -541,7 +542,10 @@ final class DetectionEngine {
                     for e in teamsEdgesFromDiff(prev: teamsLastSnapshots[wMid], next: next, at: mono) {
                         tc.edge(to: e.to, at: e.atMs)
                         teamsEdgeCount += 1
-                        recordTeamsEdge(e, confidence: tc.confidence(of: e.to, at: mono))
+                        // The edge always feeds the confidence + counter; the per-edge
+                        // NDJSON line is DEBUG-only (the ring pulses, so onsets are ~1/s
+                        // per speaker — too chatty for the default session log).
+                        if config.ringTrace { recordTeamsEdge(e, confidence: tc.confidence(of: e.to, at: mono)) }
                     }
                     teamsLastSnapshots[wMid] = next
                     if let holder = tc.holder {
