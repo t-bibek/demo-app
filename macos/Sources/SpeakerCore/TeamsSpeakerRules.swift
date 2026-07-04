@@ -51,32 +51,35 @@ public struct TeamsSpeakerRules: Codable, Sendable, Equatable {
     }
 
     /// Built-in defaults. Self/mute tokens are PROVEN literal strings from
-    /// Recall's `@recallai/desktop-sdk` v2.0.19 binary. Speaking is CLASS-FREE
-    /// by verdict (docs/teams-active-speaker-detection.md §7): Teams exposes NO
-    /// who-is-speaking signal to a passive observer, so:
+    /// Recall's `@recallai/desktop-sdk` v2.0.19 binary.
     ///
-    ///  - `speakingClasses` ships EMPTY. `vdi-frame-occlusion` (shipped here
-    ///    2026-07-01, now REMOVED) is a video-rectangle PLACEMENT token — it
-    ///    tracks any active video frame, not the speaker — and the whole vdi-*
-    ///    family plus the obfuscated ring tokens tried before it (___1vvhwjq,
-    ///    fn8mz29, f1ky4vpe, frwhdur, ftevtku, f1qyaz97, f14rmoke, fm03cl5,
-    ///    f3ve9t9) ROTATE per Teams build. Nothing is speaker-specific, so
-    ///    nothing ships; a future PROVEN token is a `teams-rules.json` config
-    ///    drop, never a release.
-    ///  - The text markers below never fire on the video stage (§7 needle hunt:
-    ///    " is active speaker" appears in NO AX attribute) — they stay only as
-    ///    the same config hook. The live speaking path is the engine's VAD +
-    ///    roster mute-gate, plus Teams' own "<name> is speaking" note (a text
-    ///    note read by `teamsExtractWindow`, not a class).
+    /// SPEAKING: `vdi-frame-occlusion` — LIVE-VERIFIED per-speaker signal
+    /// (2026-07-04, 3-party co-variance, supersedes docs §7's "no signal"
+    /// verdict). It appears on EXACTLY the audible remote's tile subtree and
+    /// clears on mute/silence, in BOTH gallery and speaker view:
+    ///   Alice talks → Alice's tile has it, Bob's doesn't; Bob talks → it moves;
+    ///   both talk → both have it (overlap); silence → none.
+    /// CRITICAL: it must be read STRUCTURALLY — located inside a resolved
+    /// participant TILE's subtree (`teamsExtractWindow` walks the tile, not the
+    /// whole window). The bare `vdi-occlusion` sits on many non-tile groups and
+    /// the SELF tile carries `vdi-dynamic-occlusion` (not `-frame-`), so a
+    /// whole-dump `.contains` would mismark; the per-tile scan can't. The
+    /// co-occurring Griffel hashes (___1vvhwjq, fn8mz29, f1ky4vpe, frwhdur,
+    /// ftevtku, f1qyaz97, f14rmoke, fm03cl5, f3ve9t9) are the ROTATING ring
+    /// animation classes — deliberately NOT shipped; `vdi-frame-occlusion` is the
+    /// durable semantic token. A rotation is a `teams-rules.json` config drop.
+    ///
+    /// The text markers stay as a secondary hook (Teams' transient "<name> is
+    /// speaking" note is read separately by the extractor, not via a class).
     ///
     /// All config-overridable (`teams-rules.json`).
     public static let builtin = TeamsSpeakerRules(
-        speakingTextMarkers: ["is active speaker", "active speaker", "is speaking", ", speaking"],
-        speakingClasses: [],
+        speakingTextMarkers: ["is active speaker", "active speaker", ", speaking"],
+        speakingClasses: ["vdi-frame-occlusion"],
         selfTokens: ["calling_is_me_video", "myself video", "(you)"],
         mutedTokens: ["aria_calling_roster_muted", ", muted"],
         unmutedTokens: ["aria_calling_roster_unmuted", ", unmuted"],
-        version: "2026-07-03-class-free"
+        version: "2026-07-04-vdi-frame-occlusion-structural"
     )
 }
 

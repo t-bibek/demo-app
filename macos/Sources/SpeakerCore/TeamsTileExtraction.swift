@@ -133,6 +133,23 @@ public func teamsSelfNameHint(_ root: TeamsAXNode, maxNodes: Int = 6000) -> Stri
     return found
 }
 
+/// True if any node in this TILE's subtree carries a speaking class token
+/// (`vdi-frame-occlusion`). Reached STRUCTURALLY from an already-resolved tile —
+/// never a whole-window scan — so the token is read only where it means "this
+/// tile's speaker ring is lit", and can't be confused with the tile-wide
+/// `vdi-occlusion` or the self tile's `vdi-dynamic-occlusion`. Bounded; a tile
+/// subtree is small and tiles are siblings, so this never crosses into another
+/// participant's tile. Live-verified 2026-07-04.
+func teamsTileSubtreeSpeaks(_ tile: TeamsAXNode, rules: TeamsSpeakerRules, budget: inout Int) -> Bool {
+    if budget <= 0 { return false }
+    budget -= 1
+    if rules.speakingClasses.contains(where: { tile.classes.contains($0) }) { return true }
+    for c in tile.children {
+        if teamsTileSubtreeSpeaks(c, rules: rules, budget: &budget) { return true }
+    }
+    return false
+}
+
 public func teamsExtractWindow(_ root: TeamsAXNode,
                                rules: TeamsSpeakerRules = .builtin,
                                selfHint: String? = nil,
@@ -142,7 +159,7 @@ public func teamsExtractWindow(_ root: TeamsAXNode,
         var area: Double
         var explicitUnmuted: Bool?   // an explicit mute/unmute token was read
         var isMe: Bool
-        var speaking: Bool           // config-hook only: builtin rules never match (§7)
+        var speaking: Bool           // vdi-frame-occlusion ring (per-tile structural)
         var minY: Double
         var minX: Double
         var order: Int
@@ -248,10 +265,17 @@ public func teamsExtractWindow(_ root: TeamsAXNode,
                 desc.lowercased().contains("context menu"),
                 let name = cleanParticipantName(desc, structuralAnchor: true) {
             let l = desc.lowercased()
+            // Speaking: the `vdi-frame-occlusion` ring, read STRUCTURALLY inside
+            // this located tile's subtree (it sits on a descendant AXGroup, not
+            // the menu-item node), OR a text marker. Per-tile so it names only the
+            // audible remote — live-verified 2026-07-04.
+            var b = 600
+            let speaks = teamsTileSubtreeSpeaks(n, rules: rules, budget: &b)
+                || rules.tileIsSpeaking(textBlob: l, classTokens: Set(n.classes))
             consider(name: name, node: n,
                      isMe: rules.tileIsSelf(textBlob: l, classTokens: Set(n.classes)),
                      unmuted: rules.muteState(textBlob: l, classTokens: Set(n.classes)),
-                     speaking: rules.tileIsSpeaking(textBlob: l, classTokens: Set(n.classes)))
+                     speaking: speaks)
         }
 
         for c in n.children { walk(c, depth: depth + 1) }

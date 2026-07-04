@@ -497,19 +497,19 @@ do {
     equal(t.activeCount, 2, "self and remote tracked as distinct sessions")
 }
 
-// MARK: Teams rules (stable aria_*/calling_* tokens; CLASS-FREE speaking — §7)
+// MARK: Teams rules — SPEAKING via vdi-frame-occlusion (structural, live-verified 2026-07-04)
 print("TeamsSpeakerRules:")
 let tr = TeamsSpeakerRules.builtin
-check(tr.speakingClasses.isEmpty,
-      "builtin speakingClasses EMPTY — no CSS/DOM class ever decides Teams speaking")
-check(tr.tileIsSpeaking(textBlob: "wedding thapas is active speaker", classTokens: []),
-      "is-active-speaker text marker -> speaking (config hook; never fires live)")
-check(!tr.tileIsSpeaking(textBlob: "wedding thapas", classTokens: []),
-      "plain name -> not speaking")
-check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-frame-occlusion", "fui-Flex"]),
-      "vdi-frame-occlusion -> NOT speaking (placement token, tracks video frames not the speaker — removed 2026-07-03)")
+check(tr.speakingClasses == ["vdi-frame-occlusion"],
+      "builtin speakingClasses = [vdi-frame-occlusion] — the live-verified per-speaker ring")
+check(tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-frame-occlusion", "fui-Flex"]),
+      "vdi-frame-occlusion class -> speaking (the ring token, read STRUCTURALLY per tile)")
 check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-occlusion", "fui-Flex"]),
-      "vdi-occlusion (bare, on every tile) -> NOT speaking")
+      "vdi-occlusion (bare, on non-tile groups) -> NOT speaking")
+check(!tr.tileIsSpeaking(textBlob: "", classTokens: ["vdi-dynamic-occlusion"]),
+      "vdi-dynamic-occlusion (the SELF tile's token) -> NOT speaking")
+check(!tr.tileIsSpeaking(textBlob: "wedding thapas", classTokens: []),
+      "plain name, no ring -> not speaking")
 check(tr.tileIsSelf(textBlob: "bibek thapa (you)", classTokens: []),
       "(you) suffix -> self")
 check(tr.tileIsSelf(textBlob: "", classTokens: ["calling_is_me_video"]),
@@ -582,39 +582,48 @@ let ttSpotlight = [
     TeamsTileObservation(name: "Alice", area: 200_000, orderIndex: 0, isSpeaking: false),
     TeamsTileObservation(name: "Bob",   area: 10_000,  orderIndex: 1, isSpeaking: false),
 ]
-// 1) VAD gate closed -> nobody.
-equal(teamsActiveSpeaker(tiles: ttSpeaking, prevAreas: [:], vadSpeechActive: false).names, [],
-      "vad silent -> no speaker even with is-speaking token")
-// 2) structural token wins when speaking.
+// 1) The RING is Teams' OWN VAD — trusted DIRECTLY, ahead of our audio gate: a
+//    lit ring names the speaker even when our peak meter is quiet.
+equal(teamsActiveSpeaker(tiles: ttSpeaking, prevAreas: [:], vadSpeechActive: false).names, ["Alice"],
+      "ring lit + our audio quiet -> STILL named (ring is Teams' VAD, trusted directly)")
+// 2) ring names the speaker.
 equal(teamsActiveSpeaker(tiles: ttSpeaking, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
-      "is-speaking token -> name")
+      "ring (vdi-frame-occlusion) -> name")
 equal(teamsActiveSpeaker(tiles: ttSpeaking, prevAreas: [:], vadSpeechActive: true).via, .structural,
-      "is-speaking token -> via structural")
-// 3) geometry is OFF by default (unverified build must not guess a name).
-equal(teamsActiveSpeaker(tiles: ttSpotlight, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
-      "spotlight, no token, geometry off -> Someone floor")
-// 3b) geometry ON (post-verification) -> dominant tile named.
+      "ring -> via structural")
+// 2b) OVERLAP: two lit rings -> BOTH named (the real multi-talker timeline, no "Someone").
+let ttBothRing = [
+    TeamsTileObservation(name: "Alice", area: 10_000, orderIndex: 0, isSpeaking: true),
+    TeamsTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, isSpeaking: true),
+]
+equal(teamsActiveSpeaker(tiles: ttBothRing, prevAreas: [:], vadSpeechActive: true).names.sorted(), ["Alice", "Bob"],
+      "two lit rings -> BOTH remotes named (overlap timeline, not Someone)")
+// 3) no ring, our audio silent -> nobody (NOT Someone — the engine gates Someone on unreadable-only).
+equal(teamsActiveSpeaker(tiles: ttGallery, prevAreas: [:], vadSpeechActive: false).names, [],
+      "no ring + no audio -> nobody (.none)")
+equal(teamsActiveSpeaker(tiles: ttGallery, prevAreas: [:], vadSpeechActive: false).via, .none,
+      "no ring + no audio -> via .none")
+// 4) no ring but geometry ON -> dominant tile (camera-off / older-build fallback).
 equal(teamsActiveSpeaker(tiles: ttSpotlight, prevAreas: [:], vadSpeechActive: true, useGeometry: true).names, ["Alice"],
-      "spotlight, geometry on -> dominant tile")
-// 4) gallery, no token -> Someone floor.
-equal(teamsActiveSpeaker(tiles: ttGallery, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
-      "gallery, no token -> via someoneFloor")
-// 5) SELF-EXCLUSION (mirrors the Meet ring fix): a config'd rule matching the
-//    SELF tile must never name the local user — self is mic-attributed.
+      "no ring, geometry on -> dominant tile")
+// 5) SELF-EXCLUSION (mirrors the Meet ring fix): a lit ring on the SELF tile must
+//    never name the local user — self is mic-attributed. (The resolver still
+//    returns the someoneFloor when our audio is active + nobody attributable; the
+//    ENGINE ignores that floor and gates "Someone" on an unreadable tree instead.)
 let ttSelfSpeaking = [
     TeamsTileObservation(name: "Me",  area: 10_000, orderIndex: 0, isSpeaking: true, isMe: true),
     TeamsTileObservation(name: "Bob", area: 10_000, orderIndex: 1, isSpeaking: false),
 ]
-equal(teamsActiveSpeaker(tiles: ttSelfSpeaking, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
-      "config'd token on SELF only -> not named (falls to Someone floor)")
-equal(teamsActiveSpeaker(tiles: ttSelfSpeaking, prevAreas: [:], vadSpeechActive: true).via, .someoneFloor,
-      "token on SELF only -> via someoneFloor (self is mic-attributed)")
+check(!teamsActiveSpeaker(tiles: ttSelfSpeaking, prevAreas: [:], vadSpeechActive: true).names.contains("Me"),
+      "ring on SELF only -> local user NEVER named (self excluded)")
+equal(teamsActiveSpeaker(tiles: ttSelfSpeaking, prevAreas: [:], vadSpeechActive: false).names, [],
+      "ring on SELF only + audio quiet -> nobody (.none)")
 let ttSelfPlusRemote = [
     TeamsTileObservation(name: "Me",    area: 10_000, orderIndex: 0, isSpeaking: true, isMe: true),
     TeamsTileObservation(name: "Alice", area: 10_000, orderIndex: 1, isSpeaking: true),
 ]
 equal(teamsActiveSpeaker(tiles: ttSelfPlusRemote, prevAreas: [:], vadSpeechActive: true).names, ["Alice"],
-      "token on self + remote -> only the remote named (self excluded)")
+      "ring on self + remote -> only the remote named (self excluded)")
 // 6) geometry never promotes SELF (a big pinned self-view isn't speech evidence).
 let ttSelfDominant = [
     TeamsTileObservation(name: "Me",  area: 200_000, orderIndex: 0, isSpeaking: false, isMe: true),
@@ -622,6 +631,69 @@ let ttSelfDominant = [
 ]
 equal(teamsActiveSpeaker(tiles: ttSelfDominant, prevAreas: [:], vadSpeechActive: true, useGeometry: true).names, ["Someone"],
       "geometry on, SELF dominant -> not named (Someone floor, mirrors Meet)")
+
+// MARK: Teams EVENT MODE — ring snapshot/diff + rapid-swap disambiguation
+// (docs §10; the AXObserver does NOT transfer — this is the diff + TransitionConfidence
+// half, driven by the poll). The pure diff and the transition logic are unit-tested
+// here with NO AX, exactly like the Meet edge tests.
+print("Teams event mode — ring diff + transition:")
+// Pure snapshot/diff.
+equal(teamsEdgesFromDiff(prev: nil, next: TeamsTileSnapshot(ringHolders: ["Alice"]), at: 100).map { $0.to },
+      ["Alice"], "diff: silence -> Alice ringing -> one ring-gained onset")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: ["Alice"]), at: 100).count, 0,
+      "diff: unchanged ring -> no edge")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: ["Alice", "Bob"]), at: 100).map { $0.to },
+      ["Bob"], "diff: overlap onset -> ONLY the newly-ringing Bob (not Alice again)")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: []), at: 100).count, 0,
+      "diff: ring going out -> no edge (a lost ring isn't a move)")
+equal(teamsEdgesFromDiff(prev: TeamsTileSnapshot(ringHolders: ["Alice"]),
+                         next: TeamsTileSnapshot(ringHolders: ["Bob"]), at: 100).map { $0.to },
+      ["Bob"], "diff: swap Alice->Bob -> ring-gained to Bob")
+// Snapshot self-exclusion: a ring on the SELF tile never becomes a holder.
+let snapMix = TeamsTileSnapshot.from(tiles: [
+    TeamsTileObservation(name: "Me", area: 1, orderIndex: 0, isSpeaking: true, isMe: true),
+    TeamsTileObservation(name: "Alice", area: 1, orderIndex: 1, isSpeaking: true),
+])
+equal(snapMix.ringHolders, ["Alice"], "snapshot: self ring excluded, only remote is a holder")
+
+// Transition disambiguation in teamsActiveSpeaker. Two lit rings (stale Alice linger +
+// fresh Bob): the transition holder Bob wins alone via .ringTransition.
+let ttStaleOverlap = [
+    TeamsTileObservation(name: "Alice", area: 10_000, orderIndex: 0, isSpeaking: true),
+    TeamsTileObservation(name: "Bob",   area: 10_000, orderIndex: 1, isSpeaking: true),
+]
+// Drive the REAL TransitionConfidence: Alice edged at t=0, Bob edged at t=1600 (fresh).
+var tc = TransitionConfidence()
+tc.edge(to: "Alice", at: 0)
+tc.edge(to: "Bob", at: 1_600)
+let stBob = TeamsTransitionState(holder: tc.holder, confidence: tc.holderConfidence(at: 1_600), nowMs: 1_600)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stBob).names,
+      ["Bob"], "transition: stale Alice + fresh Bob -> ['Bob'] (stale linger suppressed)")
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stBob).via,
+      .ringTransition, "transition: disambiguated -> via .ringTransition")
+check(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stBob).confidence != nil,
+      "transition: .ringTransition result carries a confidence")
+// transition:nil -> today's overlap set, byte-for-byte (opt-in non-regression).
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true).names.sorted(),
+      ["Alice", "Bob"], "transition:nil -> overlap set unchanged (both named)")
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true).via,
+      .structural, "transition:nil -> via .structural (unchanged)")
+// Holder already went SILENT (not among lit tiles) -> fall through to the lit set, no phantom.
+let stGhost = TeamsTransitionState(holder: "Carol", confidence: 0.9, nowMs: 2_000)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stGhost).names.sorted(),
+      ["Alice", "Bob"], "transition: holder not among lit tiles -> overlap set (no phantom name)")
+// GENUINE overlap that the transition can't collapse: holder is one of two truly-lit —
+// mirrors Meet, the freshest holder wins; the other surfaces on its own next onset.
+let stAlice = TeamsTransitionState(holder: "Alice", confidence: 0.8, nowMs: 3_000)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stAlice).names,
+      ["Alice"], "transition: holder=Alice among lit -> ['Alice'] (freshest wins, mirrors Meet)")
+// Self holder is ignored (self-excluded), falls through to the remote overlap set.
+let stSelf = TeamsTransitionState(holder: "Me", confidence: 0.9, nowMs: 3_000)
+equal(teamsActiveSpeaker(tiles: ttStaleOverlap, prevAreas: [:], vadSpeechActive: true, transition: stSelf).names.sorted(),
+      ["Alice", "Bob"], "transition: self holder ignored -> remote overlap set")
 
 // MARK: Teams pure extraction — REAL captured fixtures (macos/Fixtures/teams,
 // distilled from ax-dumps 20260701-*). The SAME teamsExtractWindow the scanner
@@ -636,6 +708,128 @@ func loadTeamsFixture(_ name: String) -> TeamsAXNode? {
     guard let data = try? Data(contentsOf: url) else { return nil }
     return try? JSONDecoder().decode(TeamsAXNode.self, from: data)
 }
+
+// MARK: SPEAKER TIMELINE — real 3-party captures (2026-07-04 co-variance run:
+// host Bibek Thapa + guests Alice Talker + Bob Speaker, mics toggled). These
+// prove the vdi-frame-occlusion ring, read structurally per tile, names EXACTLY
+// the audible remote(s) — single, overlap, and silence — with NO "Someone".
+print("Teams SPEAKER TIMELINE (real 3-party ring captures):")
+func teamsSpeakers(_ ex: TeamsWindowExtraction) -> [String] {
+    teamsActiveSpeaker(tiles: ex.tiles, prevAreas: [:], vadSpeechActive: true).names.sorted()
+}
+// GALLERY, only Alice audible -> ring on Alice only.
+if let root = loadTeamsFixture("gallery-3p-alice-speaking") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(ex.participants.sorted(), ["Alice Talker", "Bibek Thapa", "Bob Speaker"],
+          "gallery/alice: exact 3-party roster")
+    equal(ex.tiles.first(where: { $0.name == "Alice Talker" })?.isSpeaking, true,
+          "gallery/alice: Alice ring lit (vdi-frame-occlusion, structural)")
+    equal(ex.tiles.first(where: { $0.name == "Bob Speaker" })?.isSpeaking, false,
+          "gallery/alice: muted Bob NOT speaking")
+    check(ex.tiles.first(where: { $0.name == "Bibek Thapa" })?.isMe == true,
+          "gallery/alice: self (Bibek) flagged, carries vdi-dynamic-occlusion not the ring")
+    equal(teamsSpeakers(ex), ["Alice Talker"],
+          "gallery/alice: resolver names EXACTLY Alice — no Someone")
+} else { check(false, "fixture gallery-3p-alice-speaking.json missing") }
+
+// GALLERY, both audible -> BOTH rings lit -> overlap timeline.
+if let root = loadTeamsFixture("gallery-3p-both-speaking") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(teamsSpeakers(ex), ["Alice Talker", "Bob Speaker"],
+          "gallery/both: resolver names BOTH remotes (overlap) — the case that used to be 'Someone'")
+    check(ex.tiles.first(where: { $0.isMe })?.isSpeaking == false,
+          "gallery/both: self never joins the ring set")
+} else { check(false, "fixture gallery-3p-both-speaking.json missing") }
+
+// GALLERY, silence (both muted) -> no ring -> nobody, NOT Someone.
+if let root = loadTeamsFixture("gallery-3p-silence") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(ex.participants.sorted(), ["Alice Talker", "Bibek Thapa", "Bob Speaker"],
+          "gallery/silence: roster intact")
+    check(ex.tiles.allSatisfy { !$0.isSpeaking },
+          "gallery/silence: NO ring on any tile")
+    equal(teamsActiveSpeaker(tiles: ex.tiles, prevAreas: [:], vadSpeechActive: false).names, [],
+          "gallery/silence: nobody speaking -> [] (no Someone)")
+} else { check(false, "fixture gallery-3p-silence.json missing") }
+
+// SPEAKER VIEW, only Bob audible -> Bob promoted to the big tile + ring.
+if let root = loadTeamsFixture("speaker-3p-bob-speaking") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(ex.tiles.first(where: { $0.name == "Bob Speaker" })?.isSpeaking, true,
+          "speaker-view/bob: Bob ring lit")
+    equal(ex.tiles.first(where: { $0.name == "Alice Talker" })?.isSpeaking, false,
+          "speaker-view/bob: muted Alice NOT speaking")
+    equal(teamsSpeakers(ex), ["Bob Speaker"],
+          "speaker-view/bob: resolver names EXACTLY Bob")
+    // Bob is the promoted big tile — geometry corroborates the ring HERE.
+    let big = ex.tiles.max(by: { $0.area < $1.area })
+    equal(big?.name, "Bob Speaker", "speaker-view/bob: the audible remote is the promoted big tile (geometry corroborates)")
+    // REGRESSION GUARD — why the ring MUST stay class-anchored, not geometric
+    // (research 2026-07-04): muted Alice is a small filmstrip tile that DOES carry
+    // a near-tile-sized AXGroup overlay (the base video container). A class-free
+    // "tile-sized overlay ⇒ speaking" heuristic would FALSE-POSITIVE her; only the
+    // vdi-frame-occlusion CLASS excludes her. Locks the design against a future
+    // "detect the ring structurally" change that would regress.
+    equal(ex.tiles.filter { $0.isSpeaking }.map { $0.name }, ["Bob Speaker"],
+          "speaker-view/bob: exactly ONE ring (class-anchored) — the muted filmstrip tile is NOT mismarked")
+} else { check(false, "fixture speaker-3p-bob-speaking.json missing") }
+
+// MARK: TeamsMeetingMemory — a call SURVIVES its window becoming unreadable
+// (backgrounded / WebView2-throttled). Readable ticks record the roster keyed by
+// the title-derived meetingId; throttled ticks keep the meeting alive from it and
+// the ring resumes on recovery. Pure + time-injected.
+print("TeamsMeetingMemory (unreadable/backgrounded recovery):")
+do {
+    var mem = TeamsMeetingMemory()
+    let mid = "teams::meetingwithbibekthapa"
+    let roster = [ZoomRosterEntry(name: "Alice Talker", unmuted: true, isMe: false),
+                  ZoomRosterEntry(name: "Bibek Thapa", unmuted: true, isMe: true)]
+    // t=1000: readable — record roster + pid.
+    mem.observeReadable(meetingId: mid, roster: roster,
+                        participants: ["Alice Talker", "Bibek Thapa"], pid: 4242, nowMs: 1000)
+    equal(mem.entry(mid)?.participants, ["Alice Talker", "Bibek Thapa"], "readable tick -> roster remembered")
+    equal(mem.entry(mid)?.pid, 4242, "readable tick -> pid remembered")
+    // t=2000: THROTTLED (window title still resolves to mid) — still within TTL, so
+    // the scanner would keep it alive.
+    check(mem.activeIds(nowMs: 2000, ttlMs: 300_000).contains(mid),
+          "throttled 1s later -> meeting still ACTIVE (kept alive, not dropped)")
+    equal(mem.entry(mid)?.roster.first(where: { $0.isMe })?.name, "Bibek Thapa",
+          "throttled -> last-known roster (incl. self) persists")
+    // Long throttle past the TTL -> no longer kept alive (a genuinely-ended call clears).
+    check(!mem.activeIds(nowMs: 1000 + 300_001, ttlMs: 300_000).contains(mid),
+          "throttled past TTL -> meeting clears (no phantom call forever)")
+    // Recovery: a fresh readable tick refreshes lastReadable + roster.
+    mem.observeReadable(meetingId: mid, roster: roster, participants: ["Alice Talker", "Bibek Thapa", "Bob Speaker"], pid: 4242, nowMs: 305_000)
+    equal(mem.entry(mid)?.participants.count, 3, "recovery -> roster refreshed from the live tree")
+    check(mem.activeIds(nowMs: 305_500, ttlMs: 300_000).contains(mid), "recovery -> active again")
+    // prune drops stale entries.
+    mem.prune(nowMs: 305_000 + 300_001, maxAgeMs: 300_000)
+    equal(mem.count, 0, "prune -> stale meeting evicted")
+}
+
+// CAMERA-OFF SPEAKERS — the ring is CAMERA-INDEPENDENT (live-verified 2026-07-04,
+// SUPERSEDES the earlier "no video frame ⇒ no ring" limitation). A camera-off
+// speaker's AVATAR tile still carries vdi-frame-occlusion, and camera-off OVERLAP
+// marks both avatars — so there is no camera-off gap. The tile desc drops
+// "video is on" ("Alice Talker (Guest), Context menu is available") but the P1
+// context-menu anchor still admits it and the per-tile ring scan still fires.
+print("Teams CAMERA-OFF ring (avatar, no video frame):")
+if let root = loadTeamsFixture("gallery-3p-camoff-alice-speaking") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(ex.participants.sorted(), ["Alice Talker", "Bibek Thapa", "Bob Speaker"],
+          "camoff/alice: roster intact (camera-off tile still admitted)")
+    equal(ex.tiles.first(where: { $0.name == "Alice Talker" })?.isSpeaking, true,
+          "camoff/alice: camera-OFF Alice's AVATAR ring lit (vdi-frame-occlusion, no video frame)")
+    equal(ex.tiles.first(where: { $0.name == "Bob Speaker" })?.isSpeaking, false,
+          "camoff/alice: muted Bob not speaking")
+    equal(teamsSpeakers(ex), ["Alice Talker"],
+          "camoff/alice: resolver names the camera-off speaker — no Someone, no mute-gate needed")
+} else { check(false, "fixture gallery-3p-camoff-alice-speaking.json missing") }
+if let root = loadTeamsFixture("gallery-3p-camoff-both-speaking") {
+    let ex = teamsExtractWindow(root, selfHint: "Bibek Thapa")
+    equal(teamsSpeakers(ex), ["Alice Talker", "Bob Speaker"],
+          "camoff/both: camera-OFF OVERLAP -> BOTH avatars named (the case documented as the ceiling, now covered)")
+} else { check(false, "fixture gallery-3p-camoff-both-speaking.json missing") }
 
 // CELL: 2 participants × speaker/large view (screen-share stage) — the remote's
 // camera is OFF, so its tile desc has NO "video is" token ("David Tgapa (Guest),
@@ -849,6 +1043,45 @@ do {
         TeamsAXNode(role: "AXGroup", desc: "Nobody is speaking"),
     ])
     check(teamsExtractWindow(idle).speakingNote == nil, "compact: 'Nobody is speaking' -> nil (keep-alive only)")
+}
+
+// CELL: FALSIFICATION — unmuted-but-SILENT (the open-mic state the tone rig could
+// never produce, and the one that dominates real meetings). `isSpeaking` must come
+// ONLY from the ring (vdi-frame-occlusion), NEVER from mute-state: an UNMUTED tile
+// with no ring reads NOT speaking, and adding the ring (changing nothing else) is
+// the ONLY thing that flips it. This locks the qa/teams-live --probe contract
+// offline — the live probe proves Teams leaves the ring DARK for a silent open mic;
+// this proves our extractor never invents a speaker from one. See docs/…detection.md.
+do {
+    func ring() -> TeamsAXNode { TeamsAXNode(role: "AXGroup", classes: ["vdi-frame-occlusion"]) }
+    // Two UNMUTED remotes + self, NO ring anywhere -> nobody speaking.
+    let silent = synWindow([
+        synTile("Alice Kumar, video is on, Context menu is available", x: 3, y: 121, w: 370, h: 300),
+        synTile("Bob Rai, video is on, Context menu is available", x: 380, y: 121, w: 370, h: 300),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 760, y: 121, w: 370, h: 300),
+    ])
+    let exSilent = teamsExtractWindow(silent)
+    equal(exSilent.participants, ["Alice Kumar", "Bob Rai", "Bibek Thapa"], "open-mic SILENT: roster intact")
+    check(exSilent.tiles.allSatisfy { !$0.isSpeaking },
+          "open-mic SILENT: unmuted tiles, no ring -> NO tile isSpeaking (mute-state never names)")
+    equal(teamsActiveSpeaker(tiles: exSilent.tiles, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+          "open-mic SILENT + our audio active -> Someone floor only (engine gates it on unreadable), NEVER the silent remote")
+    check(!teamsActiveSpeaker(tiles: exSilent.tiles, prevAreas: [:], vadSpeechActive: true).names.contains("Alice Kumar"),
+          "open-mic SILENT: the unmuted remote is NEVER named by our resolver")
+    // Same tree, ONLY difference: Alice's tile subtree gains the ring -> now named.
+    let aliceRinging = synWindow([
+        TeamsAXNode(role: "AXMenuItem", desc: "Alice Kumar, video is on, Context menu is available",
+                    x: 3, y: 121, w: 370, h: 300, children: [ring()]),
+        synTile("Bob Rai, video is on, Context menu is available", x: 380, y: 121, w: 370, h: 300),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 760, y: 121, w: 370, h: 300),
+    ])
+    let exRing = teamsExtractWindow(aliceRinging)
+    equal(exRing.tiles.first(where: { $0.name == "Alice Kumar" })?.isSpeaking, true,
+          "ring added to Alice's subtree (nothing else changed) -> Alice isSpeaking")
+    equal(exRing.tiles.first(where: { $0.name == "Bob Rai" })?.isSpeaking, false,
+          "…while still-silent Bob stays NOT speaking (ring is per-tile, no leak)")
+    equal(teamsActiveSpeaker(tiles: exRing.tiles, prevAreas: [:], vadSpeechActive: true).names, ["Alice Kumar"],
+          "unmuted + RING -> named; the ring, not the open mic, is what speaks")
 }
 
 // CELL: People panel OPEN — roster rows live under the Attendees outline ONLY.
