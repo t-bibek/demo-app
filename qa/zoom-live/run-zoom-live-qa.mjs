@@ -193,11 +193,15 @@ async function harvestInvite() {
   return m2 ? m2[0] : null;
 }
 
-// --- Waiting-room admit: press the in-panel "Admit" button (⌘U reveals it) --------
-async function admitLoop(maxTries = 8) {
+// --- Waiting-room admit: press the in-panel "Admit" button. Open the panel ONCE
+// (⌘U toggles, so re-pressing it per try would flip it shut), then retry the
+// button — the waiting-room row can take a few seconds to render.
+async function admitLoop(maxTries = 10) {
+  if (!drive('find', 'waiting room').ok && !drive('find', 'admit').ok) return; // nobody waiting
+  if (!rosterVisible() && !drive('find', 'waiting room').ok) { panelToggle(); await sleep(2500); }
   for (let i = 0; i < maxTries; i++) {
-    if (!drive('find', 'entered the waiting room').ok && !drive('find', 'admit').ok) return; // nobody waiting
-    panelToggle(); await sleep(2000); // reveal waiting-room mgmt in the panel
+    // The toast's "Admit" (a button in the notification) OR the panel's "Admit".
+    if (await pressFirst(['Admit'], { args: ['--role', 'AXButton'] }, 2000)) return;
     if (await pressFirst(['Admit'], { args: ['--window', 'Zoom Meeting'] }, 2000)) return;
     await sleep(2500);
   }

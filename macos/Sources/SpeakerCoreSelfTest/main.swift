@@ -1232,6 +1232,11 @@ check(parseZoomRosterLine("Join With Computer Audio") == nil,
       "join-dialog button carrying the marker -> nil (stopword head)")
 check(parseZoomRosterLine("Mute my audio") == nil, "toolbar label (no marker) -> nil")
 check(parseZoomRosterLine("Audio options") == nil, "toolbar label -> nil")
+// Participants-panel SECTION HEADERS must never become participants (live-
+// observed: "Waiting room" leaked as a person while a guest waited).
+check(cleanParticipantName("Waiting room") == nil, "'Waiting room' section header rejected")
+check(cleanParticipantName("In the meeting (2)") == nil, "'In the meeting (N)' header rejected")
+check(cleanParticipantName("In this meeting") == nil, "'In this meeting' header rejected")
 
 print("Zoom self line parse:")
 equal(parseZoomSelfLine("David Thapa (Host, me)"), "David Thapa", "'(Host, me)' panel row -> self name")
