@@ -315,8 +315,10 @@ guard('INV-14 teams event mode', () => {
   else pass('INV-14 teams event mode', 'no AXObserver for Teams (correct — ring flips are AX-silent, docs §10)');
 
   const appModel = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/ViewModel/AppModel.swift') || '');
-  if (/MSD_TEAMS_MODE/.test(appModel)) pass('INV-14 teams event mode', 'MSD_TEAMS_MODE opt-in wired (legacy default preserved)');
-  else fail('INV-14 teams event mode', 'MSD_TEAMS_MODE env opt-in is not parsed');
+  // Event mode is DEFAULT-ON; MSD_TEAMS_MODE=legacy is the escape hatch to the
+  // byte-for-byte overlap-set behavior (still exercised via the transition:nil self-tests).
+  if (/MSD_TEAMS_MODE/.test(appModel) && /\?\?\s*"event"/.test(appModel) && /!=\s*"legacy"/.test(appModel)) pass('INV-14 teams event mode', 'event mode DEFAULT-ON; MSD_TEAMS_MODE=legacy is the escape hatch');
+  else fail('INV-14 teams event mode', 'MSD_TEAMS_MODE not wired as default-event / legacy-escape-hatch');
 
   const tests = readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '';
   if (/stale linger suppressed/.test(tests) && /teamsEdgesFromDiff/.test(tests)) pass('INV-14 teams event mode', 'self-test locks the diff + stale-ring disambiguation');

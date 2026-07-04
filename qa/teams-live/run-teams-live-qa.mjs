@@ -604,7 +604,9 @@ async function runEventQA() {
   if (!prebuild()) { record('teams-eventqa', 'FAIL', { reason: 'swift build failed' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
   if (!preflightAxTrust()) { record('teams-eventqa', 'FAIL', { reason: 'Accessibility permission not granted' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
 
-  const det = startDetector(900, { MSD_TEAMS_MODE: 'event' });
+  // MSD_RING_TRACE surfaces the per-edge teams_edge lines (debug-gated in the default
+  // path) so this QA can count onsets; event mode is on by default but set explicitly.
+  const det = startDetector(900, { MSD_TEAMS_MODE: 'event', MSD_RING_TRACE: '1' });
   let chromeGuest = null;
   try {
     if (!await hostJoinCall()) { record('teams-eventqa', 'FAIL', { reason: 'host could not join a call' }); return; }
