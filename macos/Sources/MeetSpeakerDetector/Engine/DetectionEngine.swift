@@ -36,6 +36,14 @@ struct EngineConfig {
     var runSeconds: Int = 0
     /// MSD_EDGE_LOG — append `meet_edge` NDJSON to this path too (stdout mirror kept).
     var edgeLogPath: String? = nil
+    /// MSD_RING_TRACE=1 — emit a per-tick `[ringtrace]` NDJSON line carrying the RAW
+    /// Teams per-tile ring state (`vdi-frame-occlusion`), read straight off the tiles
+    /// BEFORE SessionTracker grace/hangover. This is the instrument for the
+    /// falsification probe (qa/teams-live: is the ring lit for an unmuted-but-SILENT
+    /// remote?) and for measuring ring linger-L. Inert (no output) unless set. The
+    /// trace reads the SAME `w.teamsTiles` the resolver uses, so it can't drift from
+    /// the real detection path. Default OFF.
+    var ringTrace: Bool = false
 }
 
 /// Drives the whole detection pipeline. Every poll it merges two independent
@@ -320,6 +328,14 @@ final class DetectionEngine {
         var chipMeetings = Set<String>()
         for var w in scanned {
             let wMid = meetingId(platform: w.platform, url: w.url, title: w.title)
+            // Throttle-boundary instrument (MSD_RING_TRACE, plan #3): a per-tick
+            // window-level trace for EVERY Teams window — emitted here, BEFORE the
+            // keep-alive `continue`, so it captures a THROTTLED window too. Lets the
+            // supervised session time exactly when the tree goes empty after
+            // backgrounding, and whether the compact/PIP note survives the throttle.
+            if config.ringTrace && w.platform == .teams {
+                emitTeamsWindowTrace(meetingId: wMid, window: w, ts: now)
+            }
             // Keep-alive-only windows (the Teams compact / PIP view, OR a throttled
             // backgrounded meeting) hold the meeting open but contribute no live
             // speakers — snapshot them so the meeting doesn't end, then skip
@@ -474,6 +490,13 @@ final class DetectionEngine {
                 let readable = !w.teamsTiles.isEmpty
                 // Ring is Teams' VAD → trusted directly (vadSpeechActive: true).
                 let r = teamsActiveSpeaker(tiles: w.teamsTiles, prevAreas: teamsPrevAreas, vadSpeechActive: true)
+                // Falsification-probe instrument (MSD_RING_TRACE): dump the RAW per-tile
+                // ring here, before any tracker grace, so the probe can tell whether the
+                // ring lights for an unmuted-but-silent remote and can time linger-L.
+                if config.ringTrace {
+                    emitRingTrace(meetingId: wMid, tiles: w.teamsTiles,
+                                  remoteAudio: audioReliable && remoteActive, ts: now)
+                }
                 if r.via == .structural {
                     for n in r.names { add(n, "teams.ring") }   // remote speaker(s) via vdi-frame-occlusion
                     teamsStructural += 1
@@ -675,6 +698,47 @@ final class DetectionEngine {
         if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
            let line = String(data: data, encoding: .utf8) {
             FileHandle.standardOutput.write(Data("[event] \(line)\n".utf8))
+        }
+    }
+
+    /// Raw Teams ring dump for the falsification probe (MSD_RING_TRACE). Stdout-only
+    /// (never touches the durable session log) so the probe harness can sample the
+    /// unmodified per-tile ring at the poll cadence. One line per readable Teams
+    /// meeting window per tick.
+    private func emitRingTrace(meetingId: String, tiles: [TeamsTileObservation],
+                              remoteAudio: Bool, ts: Int) {
+        let tileObjs: [[String: Any]] = tiles.map {
+            ["name": $0.name, "ring": $0.isSpeaking, "is_me": $0.isMe,
+             "unmuted": $0.unmuted.map { $0 as Any } ?? NSNull(), "area": $0.area]
+        }
+        let obj: [String: Any] = [
+            "type": "teams_ring_trace", "ts": ts, "meeting_id": meetingId,
+            "remote_audio": remoteAudio,
+            "ring_names": tiles.filter { $0.isSpeaking && !$0.isMe }.map { $0.name },
+            "tiles": tileObjs,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let line = String(data: data, encoding: .utf8) {
+            FileHandle.standardOutput.write(Data("[ringtrace] \(line)\n".utf8))
+        }
+    }
+
+    /// Per-tick window-level Teams trace for the throttle-boundary spike (plan #3).
+    /// `readable=false` marks a throttled/backgrounded window whose deep tree went
+    /// empty; `keep_alive` marks a window the scanner is holding open from memory;
+    /// `pip` reports whether the compact "<name> is speaking" note is still live.
+    /// Stdout-only, MSD_RING_TRACE-gated.
+    private func emitTeamsWindowTrace(meetingId: String, window w: ScannedWindow, ts: Int) {
+        let obj: [String: Any] = [
+            "type": "teams_window_trace", "ts": ts, "meeting_id": meetingId,
+            "readable": !w.teamsTiles.isEmpty, "tile_count": w.teamsTiles.count,
+            "participant_count": w.participants.count, "keep_alive": w.keepAliveOnly,
+            "node_count": w.nodeCount, "pip": w.pipSpeaker.map { $0 as Any } ?? NSNull(),
+            "title": w.title,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let line = String(data: data, encoding: .utf8) {
+            FileHandle.standardOutput.write(Data("[teamstrace] \(line)\n".utf8))
         }
     }
 

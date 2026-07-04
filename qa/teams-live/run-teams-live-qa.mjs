@@ -28,10 +28,20 @@
 //                         the local user. Needs TEAMS_MEETING_URL (or a link
 //                         harvested from the Meet tab's Share link → Copy).
 //
-// Detector contract (same as the Meet live gate): MSD_AUTOSTART=1,
-// MSD_RUN_SECONDS=N; every engine event mirrors to stdout as `[event] {json}`.
+//   teams-ring-probe    — (--probe) FALSIFICATION run: a guest joins with the
+//                         getUserMedia SPEECH override so mute-state and speech-
+//                         content decouple, then holds an open mic SILENT while the
+//                         detector's RAW per-tile ring is sampled (MSD_RING_TRACE).
+//                         Answers the one state the tone rig can't make: does the
+//                         ring light for unmuted-but-silent? Also times linger-L.
 //
-//   node qa/teams-live/run-teams-live-qa.mjs --all
+// Detector contract (same as the Meet live gate): MSD_AUTOSTART=1,
+// MSD_RUN_SECONDS=N; every engine event mirrors to stdout as `[event] {json}`
+// (and, under --probe, raw ring dumps as `[ringtrace] {json}`).
+//
+//   node qa/teams-live/run-teams-live-qa.mjs --all      # the 4-scenario sweep
+//   node qa/teams-live/run-teams-live-qa.mjs --probe     # the ring falsification probe (#1)
+//   node qa/teams-live/run-teams-live-qa.mjs --throttle  # WebView2 throttle/PIP measurement (#3)
 //
 // Env: TEAMS_EXPECT_SELF (default: git user.name), TEAMS_MEETING_URL,
 //      TEAMS_GUEST_NAME (default "QA Guest"), TEAMS_SKIP_GUEST=1.
@@ -97,11 +107,15 @@ function prebuild() {
   return existsSync(DETECTOR_BIN) && existsSync(TEAMSDRIVE_BIN);
 }
 
-// --- Streaming detector: parse `[event] {json}` stdout lines as they arrive. -----
-function startDetector(seconds) {
-  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds) };
+// --- Streaming detector: parse `[event] {json}` (and, for the probe, `[ringtrace]`)
+// stdout lines as they arrive. `extraEnv` lets the probe turn on the raw ring trace
+// (MSD_RING_TRACE) and a finer poll (MSD_POLL_INTERVAL_MS) for linger-L resolution. --
+function startDetector(seconds, extraEnv = {}) {
+  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds), ...extraEnv };
   const proc = spawn(DETECTOR_BIN, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   const events = [];
+  const ringTrace = [];    // raw per-tick Teams ring dumps (probe only; empty otherwise)
+  const teamsTrace = [];   // per-tick window-level trace (throttle spike; empty otherwise)
   let buf = '';
   const onData = (d) => {
     buf += d.toString();
@@ -109,14 +123,20 @@ function startDetector(seconds) {
     while ((i = buf.indexOf('\n')) >= 0) {
       const ln = buf.slice(0, i); buf = buf.slice(i + 1);
       const j = ln.indexOf('{');
-      if (!ln.includes('[event]') || j < 0) continue;
-      try { const o = JSON.parse(ln.slice(j)); if (o && o.type) events.push(o); } catch (e) {}
+      if (j < 0) continue;
+      if (ln.includes('[event]')) {
+        try { const o = JSON.parse(ln.slice(j)); if (o && o.type) events.push(o); } catch (e) {}
+      } else if (ln.includes('[ringtrace]')) {
+        try { const o = JSON.parse(ln.slice(j)); if (o) ringTrace.push(o); } catch (e) {}
+      } else if (ln.includes('[teamstrace]')) {
+        try { const o = JSON.parse(ln.slice(j)); if (o) teamsTrace.push(o); } catch (e) {}
+      }
     }
   };
   proc.stdout.on('data', onData);
   proc.stderr.on('data', onData);
   const done = new Promise((res) => proc.on('exit', res));
-  return { proc, events, done, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
+  return { proc, events, ringTrace, teamsTrace, done, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
 }
 const isTeams = (e) => typeof e.meeting_id === 'string' && e.meeting_id.startsWith('teams::');
 async function waitEvent(det, pred, timeoutMs, label) {
@@ -188,11 +208,42 @@ async function harvestInCall() {
   return /^https:\/\/teams\./.test(clip) ? clip : null;
 }
 
-// --- Web-Teams guest via Chrome CDP (fake mic tone = guest speech energy). --------
-async function joinGuest(url) {
+// --- Guest speech control (probe only). The getUserMedia override exposes two
+// INDEPENDENT gates so mute-state and speech-content decouple:
+//   __fakeMicSpeak(on) — real decoded voice at gain 1/0 (mic stays unmuted)
+//   __fakeMicTone(on)  — a pure sine (energy, no speech content) — energy-vs-content
+// so the probe can hold an open mic SILENT (impossible with the fake-device tone). --
+const guestMicReady = (page) => page.evalJs('!!window.__fakeMicReady');
+const setGuestSpeak = (page, on) => page.evalJs(`window.__fakeMicSpeak && window.__fakeMicSpeak(${on ? 'true' : 'false'})`);
+const setGuestTone = (page, on, hz = 440) => page.evalJs(`window.__fakeMicTone && window.__fakeMicTone(${on ? 'true' : 'false'}, ${hz})`);
+// Best-effort mute toggle for the mute-mid-speech window (Teams web control labels vary).
+const setGuestMuted = (page, muted) => page.evalJs(`(() => {
+  const t = document.querySelector('[data-tid*="toggle-mute"], [aria-label*="microphone" i][role="switch"], [aria-label*="mute" i][role="button"], [title*="ute" i]');
+  if (!t) return 'no-toggle';
+  const lbl = ((t.getAttribute('title') || '') + ' ' + (t.getAttribute('aria-label') || '')).toLowerCase();
+  const currentlyMuted = /unmute/.test(lbl);           // "Unmute" shown ⇒ currently muted
+  if (currentlyMuted !== ${muted ? 'true' : 'false'}) { t.click(); return 'toggled'; }
+  return 'already';
+})()`);
+
+// --- Web-Teams guest via Chrome CDP. Default: fake-device tone (existing scenarios).
+// opts.override=true installs the getUserMedia SPEECH override BEFORE Teams grabs the
+// mic (launch about:blank → add pre-nav script → navigate), so the probe can drive
+// speak/tone/silence independently of mute. --------------------------------------
+async function joinGuest(url, opts = {}) {
   const { launchChrome, attachToPage } = require(join(REPO, 'research', 'meet-dom-detector', 'live', 'cdp-lib.js'));
-  const chrome = launchChrome({ port: GUEST_PORT, headful: true, fakeAudio: true, url, profileTag: 'teams-guest' });
-  const page = await attachToPage(GUEST_PORT, /teams\.(live|microsoft)\.com/);
+  let chrome, page;
+  if (opts.override) {
+    const { buildOverride } = require(join(REPO, 'research', 'meet-dom-detector', 'live', 'fake-mic-override.js'));
+    const wav = join(REPO, 'research', 'meet-dom-detector', 'live', 'fake-audio', 'guest.wav');
+    chrome = launchChrome({ port: GUEST_PORT, headful: true, fakeAudio: true, url: 'about:blank', profileTag: 'teams-guest' });
+    page = await attachToPage(GUEST_PORT, /about:blank|/);
+    await page.cmd('Page.addScriptToEvaluateOnNewDocument', { source: buildOverride(wav, 'GUEST') });
+    await page.cmd('Page.navigate', { url });
+  } else {
+    chrome = launchChrome({ port: GUEST_PORT, headful: true, fakeAudio: true, url, profileTag: 'teams-guest' });
+    page = await attachToPage(GUEST_PORT, /teams\.(live|microsoft)\.com/);
+  }
   const click = (needle) => page.evalJs(`(() => {
     const els = [...document.querySelectorAll('button, a, [role="button"]')];
     const el = els.find(e => (e.innerText || '').trim().toLowerCase().includes(${JSON.stringify(needle)}));
@@ -227,9 +278,214 @@ async function joinGuest(url) {
 }
 
 // ===========================================================================
+// FALSIFICATION PROBE (plan #1). The live QA rig only ever produced two guest
+// audio states — muted and unmuted-with-tone — so the state that dominates real
+// meetings (unmuted-but-SILENT, an open mic saying nothing) was never tested. If
+// the ring (`vdi-frame-occlusion`) lights for that state, `teams.ring` mislabels
+// every silent participant as speaking. This drives a decoupled speak/tone/silence
+// timeline and samples the RAW per-tile ring (MSD_RING_TRACE) to answer:
+//   A  0–45s  unmuted + silent   → ring MUST stay dark   (the load-bearing test)
+//   B  next   speak (real voice) → ring lights           (rig-sanity: we can move it)
+//   C  next   stop               → measure linger-L (ring-clear latency)
+//   D  next   pure tone          → dark=content-VAD, lit=energy-triggered
+//   E  next   mute mid-speech    → clear latency on mute
+// PASS = the rig drove the ring in B AND it stayed dark through silent A (+ tone D).
+const RING_TRACE_NDJSON = join(HERE, 'teams-ring-probe-trace.ndjson');
+const PROBE_MARKS_JSON = join(HERE, 'teams-ring-probe-marks.json');
+
+// Sleep `ms`, re-raising Teams every 2s so its native window stays AX-readable
+// (backgrounding the app while the guest Chrome is frontmost can throttle the ring).
+async function sampleFor(ms, tickFn) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { try { if (tickFn) tickFn(); } catch (e) {} await sleep(2_000); }
+}
+
+// Fraction of ring-trace samples in [t0,t1) whose ring_names include the guest.
+function guestRingFraction(ringTrace, t0, t1) {
+  const win = ringTrace.filter((r) => r.ts >= t0 && r.ts < t1);
+  if (!win.length) return { frac: null, samples: 0, lit: 0 };
+  const lit = win.filter((r) => Array.isArray(r.ring_names) && r.ring_names.includes(GUEST_NAME)).length;
+  return { frac: +(lit / win.length).toFixed(3), samples: win.length, lit };
+}
+
+// linger-L: ms from `stopTs` to the LAST sample (within `horizonMs`) where the guest
+// ring was still lit. null if the ring was already dark at stop (cleared immediately).
+function measureLinger(ringTrace, stopTs, horizonMs = 15_000) {
+  const after = ringTrace.filter((r) => r.ts >= stopTs && r.ts < stopTs + horizonMs);
+  let last = null;
+  for (const r of after) if (Array.isArray(r.ring_names) && r.ring_names.includes(GUEST_NAME)) last = r.ts;
+  return last === null ? 0 : last - stopTs;
+}
+
+function analyzeProbe(ringTrace, marks) {
+  const at = (phase) => { const m = marks.find((x) => x.phase === phase); return m ? m.ts : null; };
+  const a = guestRingFraction(ringTrace, at('A_silent_start'), at('A_silent_end'));
+  const b = guestRingFraction(ringTrace, at('B_speak_start'), at('B_speak_end'));
+  const d = guestRingFraction(ringTrace, at('D_tone_start'), at('D_tone_end'));
+  const lingerMs = at('C_stop') != null ? measureLinger(ringTrace, at('C_stop')) : null;
+  const muteClearMs = at('E_mute') != null ? measureLinger(ringTrace, at('E_mute')) : null;
+  // The rig must have DRIVEN the ring in B, else the run says nothing about the claim.
+  const rigDroveRing = b.frac != null && b.frac >= 0.5;
+  const stayedDarkSilent = a.frac != null && a.frac <= 0.1;
+  const stayedDarkTone = d.frac == null || d.frac <= 0.1;   // tone window is informational
+  const pass = rigDroveRing && stayedDarkSilent;
+  return {
+    pass, rigDroveRing, stayedDarkSilent, stayedDarkTone,
+    silentWindow: a, speakWindow: b, toneWindow: d,
+    lingerMs, muteClearMs, ringSamples: ringTrace.length,
+  };
+}
+
+async function runProbe() {
+  mkdirSync(HERE, { recursive: true });
+  writeFileSync(RESULTS_NDJSON, '');
+  if (!prebuild()) { record('teams-ring-probe', 'FAIL', { reason: 'swift build failed' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+  if (!preflightAxTrust()) { record('teams-ring-probe', 'FAIL', { reason: 'Accessibility permission not granted' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+
+  // Raw ring trace + fine poll (150ms) so linger-L has sub-500ms resolution.
+  const det = startDetector(1800, { MSD_RING_TRACE: '1', MSD_POLL_INTERVAL_MS: '150' });
+  const marks = [];
+  const mark = (phase, extra = {}) => { const m = { phase, ts: Date.now(), ...extra }; marks.push(m); log(`MARK ${phase} @${m.ts}`); };
+  let chromeGuest = null;
+  try {
+    if (!await hostJoinCall()) { record('teams-ring-probe', 'FAIL', { reason: 'host could not join a call' }); return; }
+    await waitEvent(det, (e) => e.type === 'meeting_initialized' && isTeams(e), 60_000, 'meeting_initialized');
+    const meetingUrl = await harvestInCall();
+    if (!meetingUrl) { record('teams-ring-probe', 'REVIEW', { reason: 'no meeting URL (set TEAMS_MEETING_URL)' }); return; }
+    log('meeting link: ' + meetingUrl);
+
+    chromeGuest = await joinGuest(meetingUrl, { override: true });
+    await sleep(8_000);
+    await pressFirst(['Admit'], 3_000);
+    const guestJoin = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeams(e) && e.name === GUEST_NAME, 120_000, 'guest joined');
+    if (!guestJoin) { record('teams-ring-probe', 'FAIL', { reason: 'guest never joined (override path)' }); return; }
+    const page = chromeGuest.page;
+    // Confirm the getUserMedia override actually installed.
+    let ready = false;
+    for (let i = 0; i < 20 && !ready; i++) { ready = await guestMicReady(page); if (!ready) await sleep(500); }
+    if (!ready) { record('teams-ring-probe', 'REVIEW', { reason: 'fake-mic override never became ready (__fakeMicReady false)' }); return; }
+    const raise = () => drive('raise');
+
+    // A — open mic, SILENT (load-bearing).
+    await setGuestTone(page, false); await setGuestSpeak(page, false);
+    mark('A_silent_start'); raise(); await sampleFor(45_000, raise); mark('A_silent_end');
+    // B — real speech.
+    await setGuestSpeak(page, true);
+    mark('B_speak_start'); await sampleFor(30_000, raise); mark('B_speak_end');
+    // C — stop → linger.
+    await setGuestSpeak(page, false); mark('C_stop'); await sampleFor(20_000, raise);
+    // D — pure tone (energy, no content).
+    await setGuestTone(page, true);
+    mark('D_tone_start'); await sampleFor(40_000, raise); await setGuestTone(page, false); mark('D_tone_end');
+    // E — speak then mute mid-speech.
+    await setGuestSpeak(page, true); mark('E_speak_start'); await sampleFor(10_000, raise);
+    const muteAction = await setGuestMuted(page, true); mark('E_mute', { muteAction });
+    await sampleFor(10_000, raise); await setGuestSpeak(page, false);
+
+    // Persist the raw trace + marks (fixture-authoring source) and verdict.
+    writeFileSync(RING_TRACE_NDJSON, det.ringTrace.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    writeFileSync(PROBE_MARKS_JSON, JSON.stringify(marks, null, 2));
+    const v = analyzeProbe(det.ringTrace, marks);
+    record('teams-ring-probe', v.pass ? 'PASS' : (v.rigDroveRing ? 'FAIL' : 'REVIEW'), v);
+    log(`PROBE silentA=${JSON.stringify(v.silentWindow)} speakB=${JSON.stringify(v.speakWindow)} toneD=${JSON.stringify(v.toneWindow)} lingerMs=${v.lingerMs} muteClearMs=${v.muteClearMs}`);
+  } finally {
+    await hostLeaveCall();
+    if (chromeGuest && chromeGuest.chrome) chromeGuest.chrome.kill();
+    det.kill();
+  }
+  console.log('TEAMS LIVE SESSION COMPLETE');
+  process.exit(0);
+}
+
+// ===========================================================================
+// THROTTLE / PIP MEASUREMENT (plan #3). When Teams is backgrounded, WebView2
+// throttles the renderer and the deep AX tree goes empty; today we degrade to
+// "Someone" and hold the roster for a GUESSED 5-min TTL (teamsMemoryTtlMs). This
+// drives the scriptable backgrounding modes (minimize, hide) with precise timing
+// and reads the window-level trace (MSD_RING_TRACE → [teamstrace]) to measure, per
+// mode: ms from the action to tree-empty, and whether the compact/PIP "<name> is
+// speaking" note survives the throttle. Occlude / Chat-tab are not cleanly
+// scriptable — a manual window is left open with the trace running for those.
+const THROTTLE_NDJSON = join(HERE, 'teams-throttle-trace.ndjson');
+
+// osascript app hide/show + AXMinimized via TeamsDrive.
+const hideTeams = () => spawnSync('osascript', ['-e', 'tell application "System Events" to set visible of (first process whose bundle identifier is "com.microsoft.teams2") to false'], { encoding: 'utf8' });
+const showTeams = () => { spawnSync('open', ['-b', 'com.microsoft.teams2']); drive('raise'); };
+
+// First [teamstrace] sample AT/AFTER actionTs whose window went unreadable (tree
+// empty). Returns { latencyMs, pipSurvived, samples } over [actionTs, actionTs+winMs).
+function measureThrottle(teamsTrace, actionTs, winMs = 25_000) {
+  const win = teamsTrace.filter((r) => r.ts >= actionTs && r.ts < actionTs + winMs);
+  const firstEmpty = win.find((r) => r.readable === false || r.tile_count === 0);
+  const pipSurvived = win.some((r) => (r.readable === false || r.tile_count === 0) && r.pip != null);
+  return {
+    latencyMs: firstEmpty ? firstEmpty.ts - actionTs : null,   // null = never went empty in the window
+    pipSurvived, samples: win.length,
+    keptAlive: win.some((r) => r.keep_alive === true),
+  };
+}
+
+async function runThrottleMode(det, mode, apply, restore) {
+  log(`THROTTLE mode=${mode}: applying…`);
+  const actionTs = Date.now();
+  apply();
+  await sampleFor(25_000, null);          // observe the tree-empty transition
+  const m = measureThrottle(det.teamsTrace, actionTs);
+  log(`THROTTLE mode=${mode}: tree-empty in ${m.latencyMs == null ? 'NEVER(<25s)' : m.latencyMs + 'ms'}, pipSurvived=${m.pipSurvived}, keptAlive=${m.keptAlive}`);
+  restore();
+  await sampleFor(8_000, () => drive('raise'));   // let it recover before the next mode
+  return { mode, ...m, actionTs };
+}
+
+async function runThrottle() {
+  mkdirSync(HERE, { recursive: true });
+  writeFileSync(RESULTS_NDJSON, '');
+  if (!prebuild()) { record('teams-throttle', 'FAIL', { reason: 'swift build failed' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+  if (!preflightAxTrust()) { record('teams-throttle', 'FAIL', { reason: 'Accessibility permission not granted' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+
+  const det = startDetector(1800, { MSD_RING_TRACE: '1', MSD_POLL_INTERVAL_MS: '250' });
+  const results = [];
+  try {
+    if (!await hostJoinCall()) { record('teams-throttle', 'FAIL', { reason: 'host could not join a call' }); return; }
+    await waitEvent(det, (e) => e.type === 'meeting_initialized' && isTeams(e), 60_000, 'meeting_initialized');
+    // Baseline: confirm the tree is readable while foreground.
+    await sampleFor(6_000, () => drive('raise'));
+
+    // Scriptable modes.
+    results.push(await runThrottleMode(det, 'minimize', () => drive('minimize'), () => drive('unminimize')));
+    results.push(await runThrottleMode(det, 'hidden', () => hideTeams(), () => showTeams()));
+
+    // Manual window (occlude with another app / switch to Chat): the operator does
+    // these by hand while the trace keeps recording; we just timestamp the window.
+    const manualTs = Date.now();
+    log('THROTTLE manual: occlude Teams with another maximized app AND/OR switch Teams to the Chat tab now — 40s…');
+    await sampleFor(40_000, null);
+    const manual = measureThrottle(det.teamsTrace, manualTs, 40_000);
+
+    writeFileSync(THROTTLE_NDJSON, det.teamsTrace.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    // Recommend a TTL: comfortably above the slowest observed tree-empty latency, or
+    // REVIEW if nothing throttled (measurement inconclusive).
+    const lats = results.map((r) => r.latencyMs).filter((x) => x != null);
+    const anyThrottled = lats.length > 0 || manual.latencyMs != null;
+    record('teams-throttle', anyThrottled ? 'PASS' : 'REVIEW', {
+      results, manual, slowestEmptyMs: lats.length ? Math.max(...lats) : null,
+      note: 'set teamsMemoryTtlMs from real backgrounded-meeting duration, NOT this latency; latency only bounds how fast we must switch to keep-alive.',
+    });
+  } finally {
+    showTeams();
+    await hostLeaveCall();
+    det.kill();
+  }
+  console.log('TEAMS LIVE SESSION COMPLETE');
+  process.exit(0);
+}
+
+// ===========================================================================
 async function main() {
+  if (process.argv.includes('--probe')) return runProbe();
+  if (process.argv.includes('--throttle')) return runThrottle();
   if (!process.argv.includes('--all')) {
-    console.error('usage: node run-teams-live-qa.mjs --all');
+    console.error('usage: node run-teams-live-qa.mjs --all | --probe | --throttle');
     process.exit(2);
   }
   mkdirSync(HERE, { recursive: true });
@@ -357,8 +613,16 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((e) => {
-  console.error('[teams-live] FATAL', e && e.stack ? e.stack : e);
-  console.log('TEAMS LIVE SESSION COMPLETE'); // reader suites fail on missing verdicts
-  process.exit(1);
-});
+// Pure analysis helpers exported for the offline unit test
+// (qa/teams-live/probe-analysis.test.mjs) — no live session needed to verify the math.
+export { guestRingFraction, measureLinger, analyzeProbe, measureThrottle };
+
+// Only drive a live session when RUN directly (so a test can import the helpers above
+// without spawning Chrome / the detector).
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => {
+    console.error('[teams-live] FATAL', e && e.stack ? e.stack : e);
+    console.log('TEAMS LIVE SESSION COMPLETE'); // reader suites fail on missing verdicts
+    process.exit(1);
+  });
+}

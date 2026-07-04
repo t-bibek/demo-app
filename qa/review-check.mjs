@@ -257,6 +257,39 @@ guard('INV-12 teams single extractor', () => {
   else pass('INV-12 teams single extractor', 'TeamsTileExtraction.swift is Foundation-only (fixture-replayable)');
 });
 
+// INV-13 — the Teams FALSIFICATION PROBE + throttle/locale tooling must stay wired
+// (plan #1/#3/#4). The rig only ever produced muted/unmuted-with-tone; the probe
+// adds the unmuted-but-SILENT state and samples the RAW ring, so a ring that lit
+// for an open mic would be caught. This invariant locks the instrument, the
+// decoupled control, the offline falsification assertion, and the analysis test so
+// none can silently regress away.
+guard('INV-13 teams falsification tooling', () => {
+  const engine = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/Engine/DetectionEngine.swift') || '');
+  if (/ringTrace/.test(engine) && /\[ringtrace\]/.test(engine)) pass('INV-13 teams falsification tooling', 'engine emits the raw [ringtrace] probe instrument (MSD_RING_TRACE)');
+  else fail('INV-13 teams falsification tooling', 'engine no longer emits the [ringtrace] raw-ring instrument — the probe is blind');
+  if (/\[teamstrace\]/.test(engine)) pass('INV-13 teams falsification tooling', 'engine emits the [teamstrace] window-level throttle instrument');
+  else fail('INV-13 teams falsification tooling', 'engine no longer emits the [teamstrace] throttle instrument (plan #3)');
+
+  const appModel = stripComments(readOrNull('macos/Sources/MeetSpeakerDetector/ViewModel/AppModel.swift') || '');
+  if (/MSD_RING_TRACE/.test(appModel) && /MSD_POLL_INTERVAL_MS/.test(appModel)) pass('INV-13 teams falsification tooling', 'MSD_RING_TRACE + MSD_POLL_INTERVAL_MS wired from env');
+  else fail('INV-13 teams falsification tooling', 'the probe env hooks (MSD_RING_TRACE / MSD_POLL_INTERVAL_MS) are not parsed');
+
+  const rig = readOrNull('qa/teams-live/run-teams-live-qa.mjs') || '';
+  if (/--probe/.test(rig) && /setGuestSpeak/.test(rig) && /buildOverride/.test(rig)) pass('INV-13 teams falsification tooling', 'rig has --probe + decoupled setGuestSpeak + the getUserMedia override');
+  else fail('INV-13 teams falsification tooling', 'rig lost the --probe mode / decoupled speak / override — cannot produce unmuted-but-silent');
+  if (/--throttle/.test(rig) && /measureThrottle/.test(rig)) pass('INV-13 teams falsification tooling', 'rig has the --throttle measurement mode (plan #3)');
+  else fail('INV-13 teams falsification tooling', 'rig lost the --throttle measurement mode');
+
+  const tests = readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift') || '';
+  if (/open-mic SILENT/.test(tests) && /ring, not the open mic/.test(tests)) pass('INV-13 teams falsification tooling', 'self-test locks unmuted-but-silent -> NOT speaking (the ring is the only namer)');
+  else fail('INV-13 teams falsification tooling', 'the unmuted-but-silent falsification assertion is gone from the self-test');
+
+  if (readOrNull('qa/teams-live/probe-analysis.test.mjs') != null) pass('INV-13 teams falsification tooling', 'offline probe/throttle analysis unit test exists');
+  else fail('INV-13 teams falsification tooling', 'qa/teams-live/probe-analysis.test.mjs (the offline verdict-math test) is missing');
+  if (readOrNull('qa/teams-live/locale-anchor-diff.mjs') != null) pass('INV-13 teams falsification tooling', 'locale anchor-diff helper exists (plan #4)');
+  else fail('INV-13 teams falsification tooling', 'qa/teams-live/locale-anchor-diff.mjs is missing');
+});
+
 // --- report ---------------------------------------------------------------
 const bad = results.filter((r) => !r.ok);
 console.log('QA-check review — executable invariants over the checks themselves');

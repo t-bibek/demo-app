@@ -294,6 +294,117 @@ honest "Someone".
 
 ---
 
+## §9 — Structural hardening: falsification probe, throttle map, locale (2026-07-04)
+
+Three follow-ups that harden the §8 ring, built as runnable tooling (offline gate
+stays green; the live steps are supervised). See the plan in
+`.claude/plans/zazzy-forging-star.md`.
+
+### §9.1 Falsification probe — the unmuted-but-SILENT test (plan #1)
+
+The ring was only ever proven in TWO rig states — `muted` and `unmuted-with-tone`.
+The state that dominates real meetings — **unmuted but SILENT** (an open mic saying
+nothing) — never existed in the rig, so a ring that lit for an open mic would
+mislabel every silent participant and no test could catch it.
+
+The rig now ports the Meet `getUserMedia` speech override
+(`research/meet-dom-detector/live/fake-mic-override.js`, `buildOverride`) into a
+Teams guest, with a **decoupled** control so mute-state and speech-content separate:
+`__fakeMicSpeak(on)` (real voice at gain 1/0) and `__fakeMicTone(on)` (energy, no
+content). Run:
+
+```
+node qa/teams-live/run-teams-live-qa.mjs --probe
+```
+
+It drives A) open-mic-silent → B) speak → C) stop → D) tone → E) mute-mid-speech
+while the engine emits the RAW per-tile ring each tick (`MSD_RING_TRACE=1` →
+`[ringtrace]`, sampled at `MSD_POLL_INTERVAL_MS=150`). **PASS = the rig drove the
+ring in B AND it stayed dark through the silent A window.** It also records
+**linger-L** (ring-clear latency after speech stops) — the constant that would tune
+a Teams `TransitionConfidence` half-life. Verdict math is unit-tested offline
+(`qa/teams-live/probe-analysis.test.mjs`) and wired into the QA gate.
+
+The contract is regression-locked in `SpeakerCoreSelfTest` ("open-mic SILENT"): an
+UNMUTED tile with no ring reads NOT speaking, and adding the ring — changing nothing
+else — is the ONLY thing that flips it. (The live run proves Teams itself leaves the
+ring dark when silent; the self-test proves our extractor never invents a speaker
+from an open mic.) **Contingency:** if the live probe shows the ring lights for
+open-mic-silent or tone, the ring must be fused with our own VAD (`ring AND
+vad-agrees`) — the deferred RMS+hysteresis work.
+
+**LIVE RESULT (2026-07-04, verdict PASS).** Guest joined with the override; raw ring
+sampled at 150ms (721 samples).
+- **Open-mic-SILENT → ring DARK.** silentWindow 4/198 lit (2%), and all 4 were in the
+  first 1.5s (the gain-ramp tail settling); the ring was dark for the remaining ~44s.
+  **The core worry is disproven — a quiet open mic is NOT mislabeled as speaking.**
+- **speak → ring lit** 63/126 (50% duty-cycle, evenly spread) → rig-sanity confirmed.
+- **linger-L ≈ 1270ms** (ring clears ~1.3s after speech stops) — near-identical to
+  Meet's 1200ms half-life; the default if Teams `TransitionConfidence` is ever wired.
+- ⚠️ **PURE TONE lit the ring the SAME as speech** (82/164, 50%). The ring is
+  **energy/transmission-triggered (WebRTC send-side VAD/DTX), NOT speech-content-aware.**
+  So genuine silence is safe (DTX suppresses transmission → dark), but open-mic NOISE
+  loud enough to transmit (typing, fan, cough, background TV) WILL light the ring and
+  can yield a false `teams.ring` speaker. This is the residual risk the deferred #2
+  (RMS+hysteresis VAD fusion) closes — the tone result MEETS the contingency trigger,
+  so #2 is now evidence-indicated (not merely optional).
+- The ring and our system-audio VAD DISAGREED on 30/194 lit ticks (~15%) — a naive
+  `ring AND vad` gate would drop real speech, so #2's fusion must be hysteresis-based
+  (hold through disagreement), not an instantaneous AND.
+
+### §9.2 Throttle / PIP boundary (plan #3)
+
+When Teams is backgrounded, WebView2 throttles and the tree empties; today we hold
+the roster for a **guessed** `teamsMemoryTtlMs = 300_000`. The engine now emits a
+per-tick window-level trace (`[teamstrace]`: readable / tile_count / keep_alive /
+pip) for EVERY Teams window, including throttled ones. `--throttle` drives the
+scriptable modes (minimize, hide) with precise timing and measures ms-to-tree-empty
+plus whether the compact/PIP "<name> is speaking" note survives:
+
+```
+node qa/teams-live/run-teams-live-qa.mjs --throttle
+```
+
+Feeds a measured boundary into the TTL and, if the PIP survives, a follow-up to
+prefer the PIP name over the blind "Someone" during throttle.
+
+**LIVE RESULT (2026-07-04, verdict PASS).**
+- **Backgrounding throttles the tree in ~200–470ms** — near-instant: minimize 467ms,
+  hide (Cmd+H) 206ms to `tile_count=0`. Keep-alive (`TeamsMeetingMemory`) engaged in
+  both (`keptAlive=true`), so the meeting persists across the throttle.
+- **The compact/PIP window does NOT rescue naming.** Teams did spawn a "Meeting
+  compact view" window (241 ticks), but it was `readable=false, tiles=0, pip=null`
+  throughout — it throttles alongside the main window when the whole app is
+  backgrounded. So minimize/hide → we correctly fall to keep-alive + "Someone".
+- **TTL verdict: leave `teamsMemoryTtlMs = 300_000` as-is.** The throttle is
+  near-instant, so the TTL is NOT a throttle-catching deadline (keep-alive already
+  engages in <0.5s); it is only the trust-horizon for a stale roster before assuming
+  the call ended. The measurement shows the constraint we worried about doesn't exist,
+  so no change is warranted — the guess is fine.
+- **Still open (needs a 2-party call):** the Chat-tab case — navigate Teams to Chat so
+  the app stays FOREGROUND with the meeting demoted to an always-on-top PIP. That is
+  the only path where the PIP could stay live and name a remote speaker; minimize/hide
+  (which background everything) can't test it, and a solo call has no speaker to name.
+
+### §9.3 Locale (plan #4)
+
+The ring (`vdi-frame-occlusion`) and the stable mute token
+(`aria_calling_roster_muted`) are locale-free, but the *tile-recognition* anchors
+(`"context menu"`, `"Mute mic"`, `"Leave"`) are English — so a non-English tenant
+may fail to FIND the tile, and the ring never gets scanned. Capture one non-English
+dump and diff the anchors before building anything:
+
+```
+swift run AXSnapshot teams                          # after switching tenant/OS language
+node qa/teams-live/locale-anchor-diff.mjs           # verdict: ENGLISH BASELINE | PARTIAL | LOCALIZED
+```
+
+The helper keys its verdict on semantic anchor GROUPS (tile / mute / self / control)
+and surfaces the localized tile phrases as the raw material for a per-locale table
+dropped via `teams-rules.json` — only built if the anchors actually break.
+
+---
+
 ## 7. FINAL VERDICT — investigation closed (2026-06-23) — ⚠️ SUPERSEDED BY §8
 
 > Everything in §1–6 about an AX **is-speaking** signal for Teams is **SUPERSEDED**. After live probing the native client (`com.microsoft.teams2`) and re-decoding the binary, the conclusion reversed. The mute/name/self/geometry findings stand; the *speaking* claim does not. **(2026-07-04: the "no speaking signal" verdict here is itself now superseded — see §8. `vdi-frame-occlusion`, read per-tile, IS the speaker ring.)**

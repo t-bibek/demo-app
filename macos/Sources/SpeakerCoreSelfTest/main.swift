@@ -982,6 +982,45 @@ do {
     check(teamsExtractWindow(idle).speakingNote == nil, "compact: 'Nobody is speaking' -> nil (keep-alive only)")
 }
 
+// CELL: FALSIFICATION — unmuted-but-SILENT (the open-mic state the tone rig could
+// never produce, and the one that dominates real meetings). `isSpeaking` must come
+// ONLY from the ring (vdi-frame-occlusion), NEVER from mute-state: an UNMUTED tile
+// with no ring reads NOT speaking, and adding the ring (changing nothing else) is
+// the ONLY thing that flips it. This locks the qa/teams-live --probe contract
+// offline — the live probe proves Teams leaves the ring DARK for a silent open mic;
+// this proves our extractor never invents a speaker from one. See docs/…detection.md.
+do {
+    func ring() -> TeamsAXNode { TeamsAXNode(role: "AXGroup", classes: ["vdi-frame-occlusion"]) }
+    // Two UNMUTED remotes + self, NO ring anywhere -> nobody speaking.
+    let silent = synWindow([
+        synTile("Alice Kumar, video is on, Context menu is available", x: 3, y: 121, w: 370, h: 300),
+        synTile("Bob Rai, video is on, Context menu is available", x: 380, y: 121, w: 370, h: 300),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 760, y: 121, w: 370, h: 300),
+    ])
+    let exSilent = teamsExtractWindow(silent)
+    equal(exSilent.participants, ["Alice Kumar", "Bob Rai", "Bibek Thapa"], "open-mic SILENT: roster intact")
+    check(exSilent.tiles.allSatisfy { !$0.isSpeaking },
+          "open-mic SILENT: unmuted tiles, no ring -> NO tile isSpeaking (mute-state never names)")
+    equal(teamsActiveSpeaker(tiles: exSilent.tiles, prevAreas: [:], vadSpeechActive: true).names, ["Someone"],
+          "open-mic SILENT + our audio active -> Someone floor only (engine gates it on unreadable), NEVER the silent remote")
+    check(!teamsActiveSpeaker(tiles: exSilent.tiles, prevAreas: [:], vadSpeechActive: true).names.contains("Alice Kumar"),
+          "open-mic SILENT: the unmuted remote is NEVER named by our resolver")
+    // Same tree, ONLY difference: Alice's tile subtree gains the ring -> now named.
+    let aliceRinging = synWindow([
+        TeamsAXNode(role: "AXMenuItem", desc: "Alice Kumar, video is on, Context menu is available",
+                    x: 3, y: 121, w: 370, h: 300, children: [ring()]),
+        synTile("Bob Rai, video is on, Context menu is available", x: 380, y: 121, w: 370, h: 300),
+        synSelf("Myself video, Bibek Thapa, Unmuted, Has context menu", x: 760, y: 121, w: 370, h: 300),
+    ])
+    let exRing = teamsExtractWindow(aliceRinging)
+    equal(exRing.tiles.first(where: { $0.name == "Alice Kumar" })?.isSpeaking, true,
+          "ring added to Alice's subtree (nothing else changed) -> Alice isSpeaking")
+    equal(exRing.tiles.first(where: { $0.name == "Bob Rai" })?.isSpeaking, false,
+          "…while still-silent Bob stays NOT speaking (ring is per-tile, no leak)")
+    equal(teamsActiveSpeaker(tiles: exRing.tiles, prevAreas: [:], vadSpeechActive: true).names, ["Alice Kumar"],
+          "unmuted + RING -> named; the ring, not the open mic, is what speaks")
+}
+
 // CELL: People panel OPEN — roster rows live under the Attendees outline ONLY.
 // A roster-only participant (gallery overflow) still reaches `participants`
 // (fusion: roster ∪ tiles), and the self row is flagged from the self tile.
