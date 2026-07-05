@@ -1,0 +1,8 @@
+teams-wake: attached pid=4321
+teams-wake: app-register-fail AXAnnouncementRequested err=-25204 pid=4321
+teams-wake: consumed key=teams dt_ms=180
+teams-wake: consumed key=teams dt_ms=95
+teams-wake: window-register-fail AXValueChanged err=-25204 pid=4321
+teams-wake: released pid=4321
+teams-wake: observer-create-fail pid=9999 err=-25211 — poll-only
+not a wake line at all

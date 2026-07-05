@@ -1,0 +1,6 @@
+some unrelated stderr noise the parser must ignore
+teams-keepalive: engaged key=Microsoft Teams|com.microsoft.teams2 age_ms=1240 pid=4321
+[ringtrace] {"ring_names":[],"ts":1000,"type":"teams_ring_trace"}
+teams-keepalive: released key=Microsoft Teams|com.microsoft.teams2 reason=recovered
+teams-keepalive: engaged key=Microsoft Teams|com.microsoft.teams2 age_ms=880 pid=4321
+teams-keepalive: released key=Microsoft Teams|com.microsoft.teams2 reason=ttl-expired

@@ -131,13 +131,26 @@ function startDetector(seconds, extraEnv = {}) {
   const proc = spawn(DETECTOR_BIN, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   const events = [];
   const ringTrace = [];    // raw per-tick Teams ring dumps (probe only; empty otherwise)
-  const teamsTrace = [];   // per-tick window-level trace (throttle spike; empty otherwise)
+  const teamsTrace = [];   // [teamstrace] — SANDBOX-ONLY window-level trace; the PRODUCT
+                           // binary never emits it (only [ringtrace]). Kept for back-compat.
+  const wire = [];         // stdout NDJSON WIRE events ({event:"meet-active"|"meet-idle"|
+                           // "speaking",…}, no [event] prefix) with a receive ts. The
+                           // idle/ended signal the throttle scenario asserts lives HERE:
+                           // the product's typed [event] mirror has no meeting_ended line;
+                           // `meet-idle` is emitted only on the wire (main.swift emit()).
+  const stderrLines = [];  // {ts, line} for stderr lines carrying a keyword the scenarios
+                           // grep by substring (teams-keepalive / teams-wake / title-wake).
+  const STDERR_KEYWORDS = ['teams-keepalive', 'teams-wake', 'title-wake'];
   let buf = '';
-  const onData = (d) => {
+  const onData = (stream) => (d) => {
     buf += d.toString();
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
       const ln = buf.slice(0, i); buf = buf.slice(i + 1);
+      const rxTs = Date.now();
+      if (stream === 'err' && STDERR_KEYWORDS.some((k) => ln.includes(k))) {
+        stderrLines.push({ ts: rxTs, line: ln });
+      }
       const j = ln.indexOf('{');
       if (j < 0) continue;
       if (ln.includes('[event]')) {
@@ -146,13 +159,17 @@ function startDetector(seconds, extraEnv = {}) {
         try { const o = JSON.parse(ln.slice(j)); if (o) ringTrace.push(o); } catch (e) {}
       } else if (ln.includes('[teamstrace]')) {
         try { const o = JSON.parse(ln.slice(j)); if (o) teamsTrace.push(o); } catch (e) {}
+      } else if (stream === 'out') {
+        // Plain stdout WIRE line (no diagnostic prefix). Capture the meeting-lifecycle
+        // events with a receive ts so scenarios can assert "key never idled".
+        try { const o = JSON.parse(ln.slice(j)); if (o && typeof o.event === 'string') wire.push({ rxTs, ...o }); } catch (e) {}
       }
     }
   };
-  proc.stdout.on('data', onData);
-  proc.stderr.on('data', onData);
+  proc.stdout.on('data', onData('out'));
+  proc.stderr.on('data', onData('err'));
   const done = new Promise((res) => proc.on('exit', res));
-  return { proc, events, ringTrace, teamsTrace, done, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
+  return { proc, events, ringTrace, teamsTrace, wire, stderrLines, done, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
 }
 const isTeams = (e) => typeof e.meeting_id === 'string' && e.meeting_id.startsWith('teams::');
 async function waitEvent(det, pred, timeoutMs, label) {
@@ -358,6 +375,268 @@ function analyzeProbe(ringTrace, marks) {
     silentWindow: a, speakWindow: b, toneWindow: d,
     lingerMs, muteClearMs, ringSamples: ringTrace.length,
   };
+}
+
+// ===========================================================================
+// PHASE-3 PURE ANALYSIS HELPERS. Every parser below is keyed to a line format
+// PINNED from the PRODUCT sources at bubbles-dev d8a87b8da6 (feature/active-
+// speaker-integration); the file:line each format is emitted at is recorded in
+// the block comment above each helper so a format drift is caught at review, not
+// live. All helpers are PURE (log arrays in, verdict object out) and unit-tested
+// offline against synthesized fixtures — no live Teams needed to verify the math.
+//   All export at the bottom of the file alongside the probe/throttle helpers.
+// ---------------------------------------------------------------------------
+
+// --- Stderr line parsers -----------------------------------------------------
+// teams-keepalive: bubbles-dev macos/teams/TeamsProbes.swift:172-173 (engaged),
+//                  :197-198 (released). Format (verbatim, plain stderr, no JSON):
+//   "teams-keepalive: engaged key=<memKey> age_ms=<n> pid=<pid>"
+//   "teams-keepalive: released key=<memKey> reason=<reason>"
+// where memKey = "Microsoft Teams|<bundle>" (TeamsProbes.swift:40) — note the memKey
+// CONTAINS A SPACE ("Microsoft Teams|…"), so `key=` is captured non-greedily up to the
+// next ` age_ms=` / ` reason=` field, NOT with \S+ (which would stop at the space).
+const KEEPALIVE_ENGAGE_RE = /teams-keepalive: engaged key=(.+?) age_ms=(-?\d+) pid=(\d+)/;
+const KEEPALIVE_RELEASE_RE = /teams-keepalive: released key=(.+?) reason=(\S+)/;
+function parseKeepaliveLines(stderrLines) {
+  const engage = [], release = [];
+  for (const { ts, line } of stderrLines) {
+    let m;
+    if ((m = line.match(KEEPALIVE_ENGAGE_RE))) engage.push({ ts, key: m[1], ageMs: +m[2], pid: +m[3] });
+    else if ((m = line.match(KEEPALIVE_RELEASE_RE))) release.push({ ts, key: m[1], reason: m[2] });
+  }
+  return { engage, release };
+}
+
+// teams-wake: bubbles-dev macos/teams/TeamsWakeObserver.swift
+//   :207  "teams-wake: attached pid=<pid>"
+//   :164  "teams-wake: consumed key=teams dt_ms=<n>"
+//   :151  "teams-wake: released pid=<pid>"
+//   :181  "teams-wake: observer-create-fail pid=<pid> err=<n> — poll-only"
+// (app/window-register-fail lines exist too — informational, not asserted).
+const WAKE_ATTACHED_RE = /teams-wake: attached pid=(\d+)/;
+const WAKE_CONSUMED_RE = /teams-wake: consumed key=teams dt_ms=(-?\d+)/;
+const WAKE_RELEASED_RE = /teams-wake: released pid=(\d+)/;
+const WAKE_CREATE_FAIL_RE = /teams-wake: observer-create-fail pid=(\d+) err=(-?\d+)/;
+function parseWakeLines(stderrLines) {
+  const attached = [], consumed = [], released = [], createFail = [];
+  for (const { ts, line } of stderrLines) {
+    let m;
+    if ((m = line.match(WAKE_ATTACHED_RE))) attached.push({ ts, pid: +m[1] });
+    else if ((m = line.match(WAKE_CONSUMED_RE))) consumed.push({ ts, dtMs: +m[1] });
+    else if ((m = line.match(WAKE_RELEASED_RE))) released.push({ ts, pid: +m[1] });
+    else if ((m = line.match(WAKE_CREATE_FAIL_RE))) createFail.push({ ts, pid: +m[1], err: +m[2] });
+  }
+  return { attached, consumed, released, createFail };
+}
+
+// title-wake: bubbles-dev macos/shared/Browsers.swift:198-199. Format:
+//   "title-wake: <bundle> pid=<pid> title=<snippet>"  (snippet = first 60 chars)
+const TITLE_WAKE_RE = /title-wake: (\S+) pid=(\d+) title=(.*)/;
+function parseTitleWakeLines(stderrLines) {
+  const out = [];
+  for (const { ts, line } of stderrLines) {
+    const m = line.match(TITLE_WAKE_RE);
+    if (m) out.push({ ts, bundle: m[1], pid: +m[2], title: m[3] });
+  }
+  return out;
+}
+
+// --- Ring-trace helpers (product [ringtrace] teams_ring_trace object) --------
+// The rig reads ONLY two fields off a ring sample: `ts` (wall-clock epoch ms) and
+// `ring_names` (lit non-self tile names). Source: TeamsSpeakerPipeline.swift:248-262.
+// A named ring is LIT in a sample when ring_names includes that name.
+function ringLitSamples(ringTrace, name, t0, t1) {
+  return ringTrace.filter((r) => r.ts >= t0 && r.ts < t1
+    && Array.isArray(r.ring_names) && r.ring_names.includes(name));
+}
+// First ts at/after `from` (within `horizonMs`) at which the named ring is lit, or null.
+function firstRingLit(ringTrace, name, from, horizonMs) {
+  const s = ringTrace.filter((r) => r.ts >= from && r.ts < from + horizonMs
+    && Array.isArray(r.ring_names) && r.ring_names.includes(name))
+    .sort((a, b) => a.ts - b.ts);
+  return s.length ? s[0].ts : null;
+}
+// The longest contiguous span (ms) in [t0,t1) during which the named ring was DARK,
+// treating any sample gap larger than `sampleGapMs` as the poll cadence (not a real
+// gap). Used by ring-continuity: a layout switch must not open a >GAP release window.
+function longestDarkGap(ringTrace, name, t0, t1, sampleGapMs = 700) {
+  const win = ringTrace.filter((r) => r.ts >= t0 && r.ts < t1).sort((a, b) => a.ts - b.ts);
+  if (!win.length) return { gapMs: null, samples: 0 };
+  let worst = 0, darkStart = null, prevTs = null;
+  const lit = (r) => Array.isArray(r.ring_names) && r.ring_names.includes(name);
+  for (const r of win) {
+    // A poll gap larger than sampleGapMs means we simply weren't sampling — do not
+    // charge it as a dark span (it is unobserved, not observed-dark).
+    if (prevTs != null && r.ts - prevTs > sampleGapMs && darkStart != null) darkStart = r.ts;
+    if (lit(r)) { if (darkStart != null) { worst = Math.max(worst, prevTs - darkStart); darkStart = null; } }
+    else if (darkStart == null) darkStart = r.ts;
+    prevTs = r.ts;
+  }
+  if (darkStart != null && prevTs != null) worst = Math.max(worst, prevTs - darkStart);
+  return { gapMs: worst, samples: win.length };
+}
+
+// --- teams_edge helpers ([event] teams_edge, MonitorDiagnostics.swift:175-194) --
+// Format: {"type":"teams_edge","kind":<token>,"to":<name>,"confidence":<f>,
+//          "mono_ts":<n>,"wall_ts":<epochMs>,"ts":<epochMs>}. No `from` (a ring
+// onset names only the newly ringing tile). `wall_ts` is the correlation key.
+const teamsEdges = (events) => events.filter((e) => e.type === 'teams_edge');
+const teamsEdgesTo = (events, name) => teamsEdges(events).filter((e) => e.to === name);
+
+// --- Scenario 1: teams-throttle-live ----------------------------------------
+// Assert, over a minimize→(>=120s throttle)→restore window with the guest still
+// speaking: (a) a teams-keepalive ENGAGE line appears during the throttle;
+// (b) the meeting key NEVER idled — no wire meet-idle for `key`, and no full
+//     speech_off-flush-to-empty (the [event] idle signal) — during the throttle;
+// (c) speakers released to [] (no phantom) — the guest ring went dark while the
+//     tree was throttled (a phantom would keep ring_names lit with no fresh reads);
+// (d) on restore, the guest ring re-lit (recovery) within recoverMs.
+// Inputs are pre-extracted so this is pure + unit-testable:
+//   keepalive = parseKeepaliveLines(...).engage/.release
+//   wire      = det.wire (meeting-lifecycle wire events, each {rxTs,event,key})
+//   ringTrace = det.ringTrace
+// marks: {minimizeTs, restoreTs} (Date.now() at each action). meetingKey is the
+// product key ("Microsoft Teams|<bundle>"). recoverMs default 8000.
+function analyzeThrottle({ keepalive, wire, ringTrace, meetingKey, guestName, minimizeTs, restoreTs, recoverMs = 8_000 }) {
+  const engagedDuring = keepalive.engage.filter((e) => e.ts >= minimizeTs && e.ts <= restoreTs);
+  // Idle signal on the wire is {"event":"meet-idle","key":...}; a re-fire of
+  // meet-active for the SAME key after an idle would mean the session dropped.
+  const idledDuring = wire.filter((w) => w.event === 'meet-idle'
+    && (meetingKey == null || w.key === meetingKey)
+    && w.rxTs >= minimizeTs && w.rxTs <= restoreTs);
+  const keptSession = idledDuring.length === 0;
+  // Phantom check: in the last third of the throttle window (well after the tree
+  // should have thrown its last fresh ring read), the guest ring must be DARK.
+  const tailStart = minimizeTs + Math.floor((restoreTs - minimizeTs) * 2 / 3);
+  const tailLit = ringLitSamples(ringTrace, guestName, tailStart, restoreTs).length;
+  const releasedToEmpty = tailLit === 0;
+  // Recovery: guest ring re-lights within recoverMs of restore.
+  const recoverTs = firstRingLit(ringTrace, guestName, restoreTs, recoverMs);
+  const recovered = recoverTs != null;
+  const pass = engagedDuring.length > 0 && keptSession && releasedToEmpty && recovered;
+  return {
+    pass, keepaliveEngaged: engagedDuring.length > 0, keptSession,
+    releasedToEmpty, recovered,
+    recoverMs: recoverTs != null ? recoverTs - restoreTs : null,
+    engageCount: engagedDuring.length, idleCount: idledDuring.length, tailLitSamples: tailLit,
+  };
+}
+
+// --- Scenario 2: teams-ring-continuity --------------------------------------
+// During continuous guest speech, a layout switch (gallery→speaker→gallery) must
+// NOT open a spurious ring release+reopen gap > maxGapMs (default 2500ms). We read
+// the ring trace across [switchStart, switchEnd) and take the longest observed
+// DARK span for the guest; a real continuity break shows as a long dark gap, while
+// the poll cadence (unobserved gaps) is excluded. teams_edge onsets are reported
+// (an extra reopen edge inside the window corroborates a release+reopen).
+function analyzeRingContinuity({ ringTrace, events, guestName, switchStart, switchEnd, maxGapMs = 2500 }) {
+  const { gapMs, samples } = longestDarkGap(ringTrace, guestName, switchStart, switchEnd);
+  // Reopen edges: teams_edge naming the guest that fired DURING the switch window
+  // (a survived switch needs zero — the ring never dropped, so nothing re-onset).
+  const reopenEdges = teamsEdgesTo(events, guestName)
+    .filter((e) => (e.wall_ts || e.ts) >= switchStart && (e.wall_ts || e.ts) < switchEnd).length;
+  const survived = samples > 0 && gapMs != null && gapMs <= maxGapMs;
+  return { pass: survived, survived, longestDarkGapMs: gapMs, samples, reopenEdges, maxGapMs };
+}
+
+// --- Scenario 3: teams-wake-accel -------------------------------------------
+// >=6 scripted 5s-on/5s-off flips. Assert (main leg, MSD_TEAMS_WAKE default on):
+//   - >=1 teams-wake:attached line;
+//   - >=1 teams-wake:consumed dt_ms within ±toleranceMs of each ring-gained
+//     teams_edge ONSET (a flip counts as covered if ANY consumed lands near ITS
+//     onset edge); allow misses on <= allowedMisses of N onsets;
+//   - 0 consumed during a >=30s silence window;
+//   - teams_wakes > 0 in the final walk-stats line.
+// Onsets = teams_edge naming the guest (each `wall_ts`). Consumed lines carry only
+// dt_ms + a receive ts; we correlate on the CONSUMED receive ts vs the onset wall_ts.
+function analyzeWakeAccel({ wake, events, walkStats, onsetName, silenceWindow, toleranceMs = 2000, allowedMisses = 1 }) {
+  const onsets = teamsEdgesTo(events, onsetName).map((e) => e.wall_ts || e.ts).sort((a, b) => a - b);
+  const consumedTs = wake.consumed.map((c) => c.ts);
+  let covered = 0;
+  const perOnset = onsets.map((on) => {
+    const hit = consumedTs.some((ct) => Math.abs(ct - on) <= toleranceMs);
+    if (hit) covered++;
+    return { onset: on, covered: hit };
+  });
+  const onsetsOk = onsets.length > 0 && (onsets.length - covered) <= allowedMisses;
+  const attachedOk = wake.attached.length >= 1;
+  // Silence quiet: 0 consumed within the silence window.
+  const consumedInSilence = silenceWindow
+    ? wake.consumed.filter((c) => c.ts >= silenceWindow.start && c.ts <= silenceWindow.end).length
+    : 0;
+  const silenceQuiet = consumedInSilence === 0;
+  const wakesCounter = walkStats && typeof walkStats.teams_wakes === 'number' ? walkStats.teams_wakes : null;
+  const counterOk = wakesCounter != null && wakesCounter > 0;
+  const pass = attachedOk && onsetsOk && silenceQuiet && counterOk;
+  return {
+    pass, attachedOk, onsetsOk, silenceQuiet, counterOk,
+    onsets: onsets.length, onsetsCovered: covered, consumedTotal: wake.consumed.length,
+    consumedInSilence, teamsWakes: wakesCounter, perOnset,
+  };
+}
+// CONTROL leg (MSD_TEAMS_WAKE=0): ZERO teams-wake lines AND ring detection still
+// works at the poll floor (>=1 teams_edge naming the guest). Proves the wake path
+// is purely additive — turning it off removes wakes but not detection.
+function analyzeWakeControl({ wake, events, walkStats, onsetName }) {
+  const noWakeLines = wake.attached.length === 0 && wake.consumed.length === 0
+    && wake.released.length === 0 && wake.createFail.length === 0;
+  const detectionWorks = teamsEdgesTo(events, onsetName).length >= 1;
+  const wakesCounter = walkStats && typeof walkStats.teams_wakes === 'number' ? walkStats.teams_wakes : null;
+  const counterZero = wakesCounter === 0 || wakesCounter == null;
+  const pass = noWakeLines && detectionWorks && counterZero;
+  return { pass, noWakeLines, detectionWorks, counterZero, teamsWakes: wakesCounter,
+           edgeCount: teamsEdgesTo(events, onsetName).length };
+}
+
+// --- Scenario 4: teams-web-cold-start ---------------------------------------
+// Cold Chrome + a Teams WEB meeting tab. Assert: a title-wake line fires for the
+// Chrome pid AND the meeting is DETECTED (a meeting_initialized [event] with
+// platform "teams") within `passBudget` passes / `msBudget` ms of detector start.
+// Web is roster-only — do NOT require a speaking signal (Phase-2 verdict may be
+// roster-only). Reports the actual detect latency so the bar can be tuned.
+function analyzeWebColdStart({ titleWakes, events, detectStartTs, chromePids, msBudget = 3000 }) {
+  const wakeForChrome = titleWakes.find((t) => !chromePids || chromePids.includes(t.pid));
+  const wakeFired = !!wakeForChrome;
+  // meeting_initialized for a teams platform (product emits platform token "teams").
+  const init = events.find((e) => e.type === 'meeting_initialized' && e.platform === 'teams');
+  const detected = !!init;
+  const detectLatencyMs = init && init.ts != null && detectStartTs != null ? init.ts - detectStartTs : null;
+  const withinBudget = detected && (detectLatencyMs == null || detectLatencyMs <= msBudget);
+  const pass = wakeFired && detected && withinBudget;
+  return { pass, wakeFired, detected, withinBudget, detectLatencyMs, msBudget,
+           wakePid: wakeForChrome ? wakeForChrome.pid : null };
+}
+
+// --- Scenario 6: ABA-on-flake protocol --------------------------------------
+// A rig helper (not prose): any cpu/perf-style suite FAIL triggers ONE automatic
+// ABA re-check (suspect binary vs frozen reference, back-to-back, same held
+// session) before the verdict is final. Binary-INDEPENDENT session-state effects
+// (present on BOTH legs: e.g. bounded-tier non-engagement, subtree_reads==0 on
+// both) mark the run ENVIRONMENTAL-RETRY instead of FAIL — the environment, not
+// the binary, is degenerate. Reference binary path = MSD_REFERENCE_BIN.
+// This is the PURE adjudicator; the live driver (runWakeAccel etc.) supplies the
+// two legs' walk-stats + the original verdict.
+function abaAdjudicate({ originalVerdict, suspectStats, referenceStats }) {
+  if (originalVerdict !== 'FAIL') return { verdict: originalVerdict, aba: false };
+  const s = suspectStats || {};
+  const r = referenceStats || {};
+  // Binary-independent degeneracy: a signal that is broken IDENTICALLY on both the
+  // suspect and the frozen reference is an environment fault, not a regression.
+  const bothSubtreeZero = s.subtree_reads === 0 && r.subtree_reads === 0;
+  const bothNoFullWalks = (s.full_walks === 0) && (r.full_walks === 0);
+  if (bothSubtreeZero || bothNoFullWalks) {
+    return { verdict: 'ENVIRONMENTAL-RETRY', aba: true,
+             reason: bothSubtreeZero ? 'subtree_reads==0 on BOTH legs (session degenerate, not the binary)'
+                                     : 'full_walks==0 on BOTH legs (bounded tier never engaged on either)',
+             suspectStats: s, referenceStats: r };
+  }
+  // The suspect is genuinely worse than the frozen reference on the work metric →
+  // the FAIL stands. Otherwise (suspect <= reference) the original FAIL was flake →
+  // recheck clears it to REVIEW for the human gate, never an outright silent PASS.
+  const suspectWorse = (s.full_walks || 0) > (r.full_walks || 0);
+  return suspectWorse
+    ? { verdict: 'FAIL', aba: true, reason: 'ABA confirms: suspect full_walks > reference', suspectStats: s, referenceStats: r }
+    : { verdict: 'REVIEW', aba: true, reason: 'ABA does not reproduce the FAIL (suspect <= reference) — flake, human-gate', suspectStats: s, referenceStats: r };
 }
 
 async function runProbe() {
@@ -1063,9 +1342,19 @@ async function main() {
   process.exit(0);
 }
 
-// Pure analysis helpers exported for the offline unit test
-// (qa/teams-live/probe-analysis.test.mjs) — no live session needed to verify the math.
-export { guestRingFraction, measureLinger, analyzeProbe, measureThrottle };
+// Pure analysis helpers exported for the offline unit tests — no live session
+// needed to verify the math. probe-analysis.test.mjs covers the first four; the
+// Phase-3 helpers are covered by phase3-analysis.test.mjs.
+export {
+  guestRingFraction, measureLinger, analyzeProbe, measureThrottle,
+  // Phase-3 stderr parsers
+  parseKeepaliveLines, parseWakeLines, parseTitleWakeLines,
+  // Phase-3 ring/edge helpers
+  ringLitSamples, firstRingLit, longestDarkGap, teamsEdges, teamsEdgesTo,
+  // Phase-3 scenario analyzers
+  analyzeThrottle, analyzeRingContinuity, analyzeWakeAccel, analyzeWakeControl,
+  analyzeWebColdStart, abaAdjudicate,
+};
 
 // Only drive a live session when RUN directly (so a test can import the helpers above
 // without spawning Chrome / the detector).
