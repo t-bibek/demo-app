@@ -89,9 +89,25 @@ async function attachToPage(port, urlMatch) {
   if (!target) throw new Error('page target not found for ' + (urlMatch || 'any'));
   const ws = new WS(target.webSocketDebuggerUrl); await ws.connect();
   let id = 0; const waiters = new Map();
-  ws.onmessage = (m) => { let o; try { o = JSON.parse(m); } catch (e) { return; } if (o.id && waiters.has(o.id)) { waiters.get(o.id)(o); waiters.delete(o.id); } };
-  const cmd = (method, params) => new Promise((r) => { const mid = ++id; waiters.set(mid, r); ws.send(JSON.stringify({ id: mid, method, params: params || {} })); });
-  const evalJs = async (expr) => { const r = await cmd('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }); return r.result && r.result.result && r.result.result.value; };
+  ws.onmessage = (m) => { let o; try { o = JSON.parse(m); } catch (e) { return; } if (o.id && waiters.has(o.id)) { const w = waiters.get(o.id); waiters.delete(o.id); clearTimeout(w.timer); w.resolve(o); } };
+  // Every CDP command carries a bounded timeout. Without it a lost/never-arriving
+  // response (a THROTTLED or backgrounded tab can stall Runtime.evaluate
+  // indefinitely, and a dropped WS frame never resolves) hangs the caller forever
+  // — the exact failure the Teams-web sweep hit when setGuestSpeak's evalJs never
+  // returned on a backgrounded guest. On timeout we reject AND evict the waiter so
+  // a late reply can't resolve a stale promise. Default 15s; override per call.
+  const CMD_TIMEOUT_MS = 15_000;
+  const cmd = (method, params, timeoutMs) => new Promise((resolve, reject) => {
+    const mid = ++id;
+    const ms = timeoutMs == null ? CMD_TIMEOUT_MS : timeoutMs;
+    const timer = ms > 0 ? setTimeout(() => {
+      if (waiters.has(mid)) { waiters.delete(mid); reject(new Error(`CDP ${method} timed out after ${ms}ms (id ${mid})`)); }
+    }, ms) : null;
+    waiters.set(mid, { resolve, timer });
+    try { ws.send(JSON.stringify({ id: mid, method, params: params || {} })); }
+    catch (e) { if (waiters.has(mid)) { waiters.delete(mid); clearTimeout(timer); reject(e); } }
+  });
+  const evalJs = async (expr, timeoutMs) => { const r = await cmd('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, timeoutMs); return r.result && r.result.result && r.result.result.value; };
   await cmd('Runtime.enable'); await cmd('Page.enable');
   return { ws, cmd, evalJs };
 }

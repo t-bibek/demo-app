@@ -351,12 +351,22 @@ function newFlipLog(tag) {
 }
 function flip(path, record) { appendFileSync(path, JSON.stringify(record) + '\n'); }
 
+// Toggle a single guest's speech gate WITHOUT letting a hung CDP eval stall the
+// whole scripted timeline. cdp-lib's evalJs now rejects on timeout (a backgrounded
+// guest can freeze Runtime.evaluate); we catch that, log it, and still emit the
+// flip so the timeline stays aligned — the sweep reads `evalOk:false` as "this
+// edge may not have taken client-side". Short 5s bound: the gate JS is trivial.
+async function safeSpeak(g, on) {
+  try { await g.page.evalJs(`window.__fakeMicSpeak && window.__fakeMicSpeak(${on ? 'true' : 'false'})`, 5_000); return true; }
+  catch (e) { log(`WARN: guest ${g.idx} speak(${on}) eval failed: ${e && e.message}`); return false; }
+}
+
 // Set every guest's speech gate and record ONE flip event per guest with wall+mono.
 async function setSpeakAll(guests, on, flipPath, extra = {}) {
   for (const g of guests) {
-    await g.page.evalJs(`window.__fakeMicSpeak && window.__fakeMicSpeak(${on ? 'true' : 'false'})`);
+    const evalOk = await safeSpeak(g, on);
     const s = stamp();
-    flip(flipPath, { event: on ? 'speak_on' : 'speak_off', guest: g.name, guestIdx: g.idx, wall: s.wall, mono: s.mono, ...extra });
+    flip(flipPath, { event: on ? 'speak_on' : 'speak_off', guest: g.name, guestIdx: g.idx, wall: s.wall, mono: s.mono, evalOk, ...extra });
   }
 }
 
@@ -468,9 +478,9 @@ async function runCapture(url, args) {
         const speaker = activeGuests[cycle % activeGuests.length];
         for (const g of activeGuests) {
           const on = g === speaker;
-          await g.page.evalJs(`window.__fakeMicSpeak && window.__fakeMicSpeak(${on ? 'true' : 'false'})`);
+          const evalOk = await safeSpeak(g, on);
           const s = stamp();
-          flip(flipPath, { event: on ? 'speak_on' : 'speak_off', guest: g.name, guestIdx: g.idx, wall: s.wall, mono: s.mono, cycle });
+          flip(flipPath, { event: on ? 'speak_on' : 'speak_off', guest: g.name, guestIdx: g.idx, wall: s.wall, mono: s.mono, cycle, evalOk });
         }
         await sleep(Math.min(ON_MS, Math.max(0, endAt - Date.now())));
       }
