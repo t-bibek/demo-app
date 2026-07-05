@@ -14,3 +14,22 @@
 {"iteration":3,"phase":"qa-live","verdict":"pass","failures":[],"ts":1783103117}
 {"iteration":3,"phase":"review","verdict":"pass","failures":[],"ts":1783103459}
 {"phase":"exit","verdict":"GREEN","iteration":3,"ts":1783103459}
+{"iteration":0,"phase":"implement-swift","verdict":"pass","failures":[],"ts":1783107782}
+{"iteration":1,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783108022}
+{"iteration":2,"phase":"qa-live","verdict":"fail","failures":["zoom-detect-live","zoom-roster-live","zoom-panelclosed-live"],"ts":1783125616}
+{"iteration":3,"phase":"qa-live","verdict":"pass","failures":[],"ts":1783125715}
+{"phase":"exit","verdict":"GREEN","iteration":3,"ts":1783125715}
+{"iteration":4,"phase":"qa-live","verdict":"pass","failures":[],"ts":1783154778}
+{"phase":"exit","verdict":"GREEN","iteration":4,"ts":1783154778}
+{"iteration":0,"phase":"implement-qa","verdict":"pass","failures":[],"ts":1783179101}
+{"iteration":0,"phase":"implement-swift","verdict":"done","failures":[],"ts":1783179171}
+{"iteration":0,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783179262}
+{"iteration":0,"phase":"qa-live","verdict":"fail","failures":["zoom-mutegate-live","pip-background-live","vad-quality-live"],"ts":1783179824}
+{"iteration":1,"phase":"fix","verdict":"pass","failures":["root cause: VAD enter threshold left at PEAK-scale 0.03 (RMS<<peak) -> 0 speech_on where peak-gate named 7x; recalibrated enter 0.006/exit 0.003 with crest-factor physics","VAD frames all fed one atMs -> hangover-close broken; now per-frame monotonic spread","enterFrames 2->3 so a boundary-straddling transient (2 frames) is rejected; added straddle self-test","pip-background: ZoomDrive AXMinimize bypassed Zoom PIP handler -> use unfocus/⌘⇧M trigger; gate on background COVERAGE not the untestable PIP (REVIEW when absent)","vad-quality: sustained tone unrejectable by level VAD -> short-transient burst train; added MSD_VAD_TRACE raw-RMS levelSamples; mute prior tone guest so Bravo names specifically"],"ts":1783180830}
+{"iteration":1,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783180925}
+{"iteration":1,"phase":"qa-live","verdict":"fail","failures":["native:zoom-mutegate-live","native:pip-background-live","native:vad-quality-live"],"ts":1783181749}
+{"iteration":2,"phase":"fix","verdict":"pass","failures":["zoom-mutegate-live","pip-background-live","vad-quality-live"],"ts":1783182349}
+{"iteration":2,"phase":"qa-deterministic","verdict":"pass","failures":[],"ts":1783182400}
+{"iteration":2,"phase":"qa-live","verdict":"fail","failures":["native:zoom-mutegate-live","native:pip-background-live","native:vad-quality-live"],"ts":1783182743}
+{"phase":"exit","verdict":"ITER_CAP","iteration":3,"ts":1783182920}
+{"iteration":3,"phase":"fix","verdict":"done","failures":["guest-audio-injection"],"ts":1783186368}

@@ -83,6 +83,16 @@ let package = Package(
             dependencies: ["SpeakerCore"],
             path: "Sources/ZoomProbe"
         ),
+        // AX driver for the LIVE native-Zoom QA rig (TeamsDrive analog + menu-bar
+        // control): presses named controls, picks View/Meeting menu items, toggles
+        // minimize, classifies windows via the shipping SpeakerCore extractor, and
+        // harvests the invite URL — so qa/zoom-live/run-zoom-live-qa.mjs can drive
+        // the layout × participant × panel matrix. Run: `swift run ZoomDrive windows`.
+        .executableTarget(
+            name: "ZoomDrive",
+            dependencies: ["AXKit", "SpeakerCore"],
+            path: "Sources/ZoomDrive"
+        ),
         .testTarget(
             name: "SpeakerCoreTests",
             dependencies: ["SpeakerCore"],

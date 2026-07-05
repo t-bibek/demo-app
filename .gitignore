@@ -11,6 +11,10 @@ build/
 /ax-dumps/
 /macos/ax-dumps/
 
+# Native-Zoom live rig debug dumps (guest-join HTML + screenshots on failure —
+# may show a meeting URL; regenerated per failing run). NEVER commit.
+/qa/zoom-live/debug/
+
 logs
 
 # Live Meet rig runtime artifacts — Chrome profiles (may hold a signed-in session),

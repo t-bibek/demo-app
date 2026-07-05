@@ -163,6 +163,11 @@ public func isLikelyPersonName(_ s: String, structuralAnchor: Bool = false) -> B
         "companion", "my video", "you are", "permission", "ellipsis", "panel",
         // Zoom NATIVE toolbar / banner labels (leak in as fake participant rows):
         "options", "upgrade to", "my notes", "my audio", "stop video", "start video",
+        // Zoom NATIVE Participants-panel SECTION HEADERS (an AXStaticText inside the
+        // roster outline that isn't a person): "Waiting room", "In the meeting (2)",
+        // "In this meeting". A waiting guest sits under the first; the header itself
+        // must never become a participant.
+        "waiting room", "in the meeting", "in this meeting",
         // Teams meeting-stage chrome (leak in as fake tiles — see docs/teams-probe.md):
         "share content", "shared content", "content view", "mute mic", "unmute mic",
         "encryption status", "calling indicator", "turn audio on", "elapsed time",

@@ -18,6 +18,10 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var running = false
     private(set) var lastError: String?
 
+    /// RMS frame accumulator for the shared SchmittVad (plan B4). Fed in the same
+    /// SCStream audio callback that updates `currentPeak`; the engine drains frames.
+    let rmsFrames = RmsFrameMeter()
+
     /// Latest combined system-output peak in 0..1.
     var currentPeak: Float { peak.current }
 
@@ -61,6 +65,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
         self.stream = nil
         running = false
         peak.set(0)
+        rmsFrames.reset()
         Task { try? await s.stopCapture() }
     }
 
@@ -70,6 +75,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
         guard type == .audio else { return }
         guard let pcm = sampleBuffer.toPCMBuffer() else { return }
         peak.set(MicMeter.peak(of: pcm))
+        rmsFrames.ingest(pcm)
     }
 
     // MARK: SCStreamDelegate

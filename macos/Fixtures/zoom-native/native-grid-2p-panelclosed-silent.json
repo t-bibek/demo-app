@@ -1,0 +1,453 @@
+{
+  "meta" : {
+    "capturedAt" : "2026-07-04T00:26:23Z",
+    "label" : "zoom-native-win3",
+    "maxDepth" : 100,
+    "maxNodes" : 40000,
+    "nodeCount" : 10,
+    "note" : "Zoom Meeting",
+    "truncated" : false
+  },
+  "tree" : {
+    "attributes" : {
+      "AXActivationPoint" : {
+        "x" : 1157,
+        "y" : 58
+      },
+      "AXCancelButton" : null,
+      "AXChildrenInNavigationOrder" : "<7 AXUIElement>",
+      "AXCloseButton" : "<AXUIElement>",
+      "AXDefaultButton" : null,
+      "AXDocument" : null,
+      "AXFocused" : true,
+      "AXFrame" : {
+        "h" : 1050,
+        "w" : 1920,
+        "x" : 1147,
+        "y" : 30
+      },
+      "AXFullScreen" : false,
+      "AXFullScreenButton" : "<AXUIElement>",
+      "AXGrowArea" : null,
+      "AXMain" : true,
+      "AXMinimizeButton" : "<AXUIElement>",
+      "AXMinimized" : false,
+      "AXModal" : false,
+      "AXParent" : "<AXUIElement>",
+      "AXPosition" : {
+        "x" : 1147,
+        "y" : 30
+      },
+      "AXProxy" : null,
+      "AXRole" : "AXWindow",
+      "AXRoleDescription" : "standard window",
+      "AXSections" : "<2 AXUIElement>",
+      "AXSize" : {
+        "h" : 1050,
+        "w" : 1920
+      },
+      "AXSubrole" : "AXStandardWindow",
+      "AXTitle" : "Zoom Meeting",
+      "AXTitleUIElement" : null,
+      "AXToolbarButton" : null,
+      "AXValueDescription" : "Zoom Meeting",
+      "AXZoomButton" : "<AXUIElement>"
+    },
+    "childCount" : 7,
+    "children" : [
+      {
+        "attributes" : {
+          "AXChildrenInNavigationOrder" : "<1 AXUIElement>",
+          "AXDescription" : "Guest Alpha, Computer audio muted",
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 884,
+            "w" : 1571,
+            "x" : 1321.5,
+            "y" : 196
+          },
+          "AXHelp" : "",
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 1321.5,
+            "y" : 196
+          },
+          "AXRole" : "AXTabGroup",
+          "AXRoleDescription" : "Video render",
+          "AXSize" : {
+            "h" : 884,
+            "w" : 1571
+          },
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 1,
+        "children" : [
+          {
+            "attributes" : {
+              "AXDescription" : "View Guest Alpha's profile",
+              "AXEnabled" : true,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 22,
+                "w" : 107,
+                "x" : 1322.5,
+                "y" : 1057
+              },
+              "AXHelp" : null,
+              "AXParent" : "<AXUIElement>",
+              "AXPosition" : {
+                "x" : 1322.5,
+                "y" : 1057
+              },
+              "AXRole" : "AXButton",
+              "AXRoleDescription" : "button",
+              "AXSize" : {
+                "h" : 22,
+                "w" : 107
+              },
+              "AXTitle" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXWindow" : "<AXUIElement>"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "description" : "View Guest Alpha's profile",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 22,
+              "w" : 107,
+              "x" : 1322.5,
+              "y" : 1057
+            },
+            "role" : "AXButton",
+            "roleDescription" : "button"
+          }
+        ],
+        "description" : "Guest Alpha, Computer audio muted",
+        "focused" : false,
+        "frame" : {
+          "h" : 884,
+          "w" : 1571,
+          "x" : 1321.5,
+          "y" : 196
+        },
+        "role" : "AXTabGroup",
+        "roleDescription" : "Video render"
+      },
+      {
+        "attributes" : {
+          "AXChildrenInNavigationOrder" : "<1 AXUIElement>",
+          "AXDescription" : "David Thapa, Computer audio unmuted, Video on",
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 90,
+            "w" : 160,
+            "x" : 2027,
+            "y" : 92
+          },
+          "AXHelp" : "",
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 2027,
+            "y" : 92
+          },
+          "AXRole" : "AXTabGroup",
+          "AXRoleDescription" : "Video render",
+          "AXSize" : {
+            "h" : 90,
+            "w" : 160
+          },
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 1,
+        "children" : [
+          {
+            "attributes" : {
+              "AXDescription" : "View David Thapa's profile",
+              "AXEnabled" : true,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 22,
+                "w" : 77,
+                "x" : 2028,
+                "y" : 159
+              },
+              "AXHelp" : null,
+              "AXParent" : "<AXUIElement>",
+              "AXPosition" : {
+                "x" : 2028,
+                "y" : 159
+              },
+              "AXRole" : "AXButton",
+              "AXRoleDescription" : "button",
+              "AXSize" : {
+                "h" : 22,
+                "w" : 77
+              },
+              "AXTitle" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXWindow" : "<AXUIElement>"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "description" : "View David Thapa's profile",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 22,
+              "w" : 77,
+              "x" : 2028,
+              "y" : 159
+            },
+            "role" : "AXButton",
+            "roleDescription" : "button"
+          }
+        ],
+        "description" : "David Thapa, Computer audio unmuted, Video on",
+        "focused" : false,
+        "frame" : {
+          "h" : 90,
+          "w" : 160,
+          "x" : 2027,
+          "y" : 92
+        },
+        "role" : "AXTabGroup",
+        "roleDescription" : "Video render"
+      },
+      {
+        "attributes" : {
+          "AXChildrenInNavigationOrder" : [
+
+          ],
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 8,
+            "w" : 1920,
+            "x" : 1147,
+            "y" : 188
+          },
+          "AXHelp" : null,
+          "AXMaxValue" : 0.19315895372233399,
+          "AXMinValue" : 0.10261569416498995,
+          "AXNextContents" : "<1 AXUIElement>",
+          "AXOrientation" : "AXHorizontalOrientation",
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 1147,
+            "y" : 188
+          },
+          "AXPreviousContents" : "<1 AXUIElement>",
+          "AXRole" : "AXSplitter",
+          "AXRoleDescription" : "splitter",
+          "AXSize" : {
+            "h" : 8,
+            "w" : 1920
+          },
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXValue" : 0.10261569416498995,
+          "AXValueDescription" : "10%",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "focused" : false,
+        "frame" : {
+          "h" : 8,
+          "w" : 1920,
+          "x" : 1147,
+          "y" : 188
+        },
+        "role" : "AXSplitter",
+        "roleDescription" : "splitter"
+      },
+      {
+        "attributes" : {
+          "AXFrame" : {
+            "h" : 14,
+            "w" : 14,
+            "x" : 1163,
+            "y" : 51
+          },
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 1163,
+            "y" : 51
+          },
+          "AXRole" : "AXButton",
+          "AXRoleDescription" : "close button",
+          "AXSize" : {
+            "h" : 14,
+            "w" : 14
+          },
+          "AXSubrole" : "AXCloseButton",
+          "AXTitle" : null,
+          "AXTopLevelUIElement" : null,
+          "AXWindow" : null
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "enabled" : false,
+        "focused" : false,
+        "frame" : {
+          "h" : 14,
+          "w" : 14,
+          "x" : 1163,
+          "y" : 51
+        },
+        "role" : "AXButton",
+        "roleDescription" : "close button",
+        "selected" : false,
+        "subrole" : "AXCloseButton"
+      },
+      {
+        "attributes" : {
+          "AXFrame" : {
+            "h" : 14,
+            "w" : 14,
+            "x" : 1185,
+            "y" : 51
+          },
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 1185,
+            "y" : 51
+          },
+          "AXRole" : "AXButton",
+          "AXRoleDescription" : "minimize button",
+          "AXSize" : {
+            "h" : 14,
+            "w" : 14
+          },
+          "AXSubrole" : "AXMinimizeButton",
+          "AXTitle" : null,
+          "AXTopLevelUIElement" : null,
+          "AXWindow" : null
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "enabled" : false,
+        "focused" : false,
+        "frame" : {
+          "h" : 14,
+          "w" : 14,
+          "x" : 1185,
+          "y" : 51
+        },
+        "role" : "AXButton",
+        "roleDescription" : "minimize button",
+        "selected" : false,
+        "subrole" : "AXMinimizeButton"
+      },
+      {
+        "attributes" : {
+          "AXFrame" : {
+            "h" : 14,
+            "w" : 14,
+            "x" : 1207,
+            "y" : 51
+          },
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 1207,
+            "y" : 51
+          },
+          "AXRole" : "AXButton",
+          "AXRoleDescription" : "full screen button",
+          "AXSize" : {
+            "h" : 14,
+            "w" : 14
+          },
+          "AXSubrole" : "AXFullScreenButton",
+          "AXTitle" : null,
+          "AXTopLevelUIElement" : null,
+          "AXWindow" : null
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "enabled" : false,
+        "focused" : false,
+        "frame" : {
+          "h" : 14,
+          "w" : 14,
+          "x" : 1207,
+          "y" : 51
+        },
+        "role" : "AXButton",
+        "roleDescription" : "full screen button",
+        "selected" : false,
+        "subrole" : "AXFullScreenButton"
+      },
+      {
+        "attributes" : {
+          "AXDescription" : "Upgrade to Zoom Pro",
+          "AXEnabled" : true,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 26,
+            "w" : 162,
+            "x" : 2884,
+            "y" : 53
+          },
+          "AXHelp" : null,
+          "AXIdentifier" : "upgrade button",
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 2884,
+            "y" : 53
+          },
+          "AXRole" : "AXButton",
+          "AXRoleDescription" : "button",
+          "AXSize" : {
+            "h" : 26,
+            "w" : 162
+          },
+          "AXTitle" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "description" : "Upgrade to Zoom Pro",
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 26,
+          "w" : 162,
+          "x" : 2884,
+          "y" : 53
+        },
+        "identifier" : "upgrade button",
+        "role" : "AXButton",
+        "roleDescription" : "button"
+      }
+    ],
+    "focused" : true,
+    "frame" : {
+      "h" : 1050,
+      "w" : 1920,
+      "x" : 1147,
+      "y" : 30
+    },
+    "role" : "AXWindow",
+    "roleDescription" : "standard window",
+    "subrole" : "AXStandardWindow",
+    "title" : "Zoom Meeting"
+  }
+}

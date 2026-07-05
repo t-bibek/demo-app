@@ -1388,5 +1388,674 @@ do {
     equal(rg.names.sorted(), ["Alice", "Bob"], "transition holder not in ring tiles -> ring overlap set (no phantom)")
 }
 
+// MARK: ZoomSpeakerRules — config'd native-Zoom text grammar (+ web CSS tokens)
+print("ZoomSpeakerRules:")
+do {
+    let zr = ZoomSpeakerRules.builtin
+    equal(zr.audioStatus("bibek thapa, computer audio unmuted"), true, "'computer audio unmuted' -> unmuted")
+    equal(zr.audioStatus("neymar thapa, computer audio muted"), false, "'computer audio muted' -> muted")
+    check(zr.audioStatus("view bibek's profile") == nil, "no status clause -> nil")
+    equal(zr.audioStatus("x, audio unmuted then audio muted later"), true,
+          "unmuted WINS over a stray muted substring (doc §8 fix)")
+    check(zr.isSelfMarker("david thapa (me)"), "'(me)' -> self")
+    check(zr.isSelfMarker("david thapa (host, me)"), "'(Host, me)' -> self via ', me)' token")
+    check(zr.isSelfMarker("david thapa (co-host, me)"), "'(Co-host, me)' -> self")
+    check(!zr.isSelfMarker("bidheyak (guest)"), "'(Guest)' -> NOT self")
+    check(zr.isMeetingTitle("zoom meeting"), "'Zoom Meeting' title -> meeting")
+    check(zr.isMeetingTitle("meeting - weekly sync"), "'Meeting - <topic>' title -> meeting")
+    check(!zr.isMeetingTitle("zoom workplace"), "home-shell title -> NOT meeting")
+
+    var custom = zr
+    custom.selfTokens = ["(ich)"]
+    custom.version = "round-trip-test"
+    if let data = try? JSONEncoder().encode(custom),
+       let back = try? JSONDecoder().decode(ZoomSpeakerRules.self, from: data) {
+        equal(back, custom, "ZoomSpeakerRules Codable round-trip")
+    } else { check(false, "ZoomSpeakerRules encode/decode failed") }
+
+    // A PARTIAL zoom-rules.json (one-token fix) inherits builtin for the rest.
+    let partial = #"{"selfTokens":["(moi)"],"version":"partial-test"}"#.data(using: .utf8)!
+    if let p = try? JSONDecoder().decode(ZoomSpeakerRules.self, from: partial) {
+        equal(p.selfTokens, ["(moi)"], "partial config: overridden field applies")
+        equal(p.audioStatusMarker, zr.audioStatusMarker, "partial config: missing fields fall back to builtin")
+        equal(p.pipTalkingPrefix, zr.pipTalkingPrefix, "partial config: PIP tokens fall back to builtin")
+    } else { check(false, "partial zoom-rules JSON failed to decode") }
+
+    // A localized override actually drives the parser (tokens, not hardcode).
+    var es = zr
+    es.audioStatusMarker = "audio del equipo"
+    es.unmutedToken = "audio del equipo activado"
+    let localized = parseZoomRosterLine("Bibek Thapa, Audio del equipo activado", rules: es)
+    equal(localized, ZoomRosterEntry(name: "Bibek Thapa", unmuted: true, isMe: false),
+          "localized tokens parse a non-English roster line")
+}
+
+// MARK: Zoom native roster-line parse (grid overlays + combined panel rows).
+// Real strings from ax-dump 20260625-200432 / swift run AXDump zoom.
+print("Zoom roster line parse:")
+equal(parseZoomRosterLine("Bibek Thapa, Computer audio unmuted"),
+      ZoomRosterEntry(name: "Bibek Thapa", unmuted: true, isMe: false),
+      "tile overlay unmuted -> entry")
+equal(parseZoomRosterLine("Neymar Thapa, Computer audio muted"),
+      ZoomRosterEntry(name: "Neymar Thapa", unmuted: false, isMe: false),
+      "tile overlay muted -> entry")
+equal(parseZoomRosterLine("David Thapa (Host, me), Computer audio unmuted"),
+      ZoomRosterEntry(name: "David Thapa", unmuted: true, isMe: true),
+      "'(Host, me)' combined row -> self entry, role tag stripped")
+equal(parseZoomRosterLine("David Thapa (Co-host, me), Computer audio muted"),
+      ZoomRosterEntry(name: "David Thapa", unmuted: false, isMe: true),
+      "'(Co-host, me)' muted -> self entry")
+equal(parseZoomRosterLine("bidheyak (Guest), Computer audio muted"),
+      ZoomRosterEntry(name: "bidheyak", unmuted: false, isMe: false),
+      "'(Guest)' tag stripped, NOT self")
+// ", active speaker" (Zoom's lazy promoted-tile tag) is TOLERATED and stripped;
+// nothing depends on it — the doc proves it is not a live speech signal.
+equal(parseZoomRosterLine("David's Iphone, Computer audio unmuted, active speaker"),
+      parseZoomRosterLine("David's Iphone, Computer audio unmuted"),
+      "', active speaker' stripped -> identical entry (never depended on)")
+check(parseZoomRosterLine("David's Iphone, Computer audio unmuted") != nil,
+      "apostrophe device name parses")
+// THE phantom-entry regression guard: the panel row's standalone mic-status
+// AXImage must never become a participant.
+check(parseZoomRosterLine("Computer audio unmuted") == nil,
+      "standalone 'Computer audio unmuted' (panel mic image) -> nil, not a name")
+check(parseZoomRosterLine("Computer audio muted") == nil,
+      "standalone 'Computer audio muted' -> nil")
+check(parseZoomRosterLine("Join With Computer Audio") == nil,
+      "join-dialog button carrying the marker -> nil (stopword head)")
+check(parseZoomRosterLine("Mute my audio") == nil, "toolbar label (no marker) -> nil")
+check(parseZoomRosterLine("Audio options") == nil, "toolbar label -> nil")
+// Participants-panel SECTION HEADERS must never become participants (live-
+// observed: "Waiting room" leaked as a person while a guest waited).
+check(cleanParticipantName("Waiting room") == nil, "'Waiting room' section header rejected")
+check(cleanParticipantName("In the meeting (2)") == nil, "'In the meeting (N)' header rejected")
+check(cleanParticipantName("In this meeting") == nil, "'In this meeting' header rejected")
+
+print("Zoom self line parse:")
+equal(parseZoomSelfLine("David Thapa (Host, me)"), "David Thapa", "'(Host, me)' panel row -> self name")
+equal(parseZoomSelfLine("Bibek Thapa (me)"), "Bibek Thapa", "'(me)' -> self name")
+equal(parseZoomSelfLine("David Thapa (Host, me), Computer audio unmuted"), "David Thapa",
+      "combined self row -> name (status clause cut)")
+check(parseZoomSelfLine("bidheyak (Guest)") == nil, "'(Guest)' -> nil (not self)")
+
+print("Zoom PIP talking parse:")
+equal(parseZoomPipTalking("Talking: David Thapa"), "David Thapa", "'Talking: <name>' -> name")
+check(parseZoomPipTalking("Talking:") == nil, "empty 'Talking:' -> nil (nobody talking)")
+check(parseZoomPipTalking("Show video render") == nil, "PIP button label -> nil")
+
+// MARK: Zoom window fusion — synthetic trees (multi-window semantics)
+print("Zoom window fusion (synthetic):")
+do {
+    // Main meeting window: tile overlays + auto-shown toolbar Leave button.
+    let mainWin = ZoomAXNode(role: "AXWindow", title: "Zoom Meeting", children: [
+        ZoomAXNode(role: "AXTabGroup", desc: "Guest Alpha, Computer audio unmuted"),
+        ZoomAXNode(role: "AXTabGroup", desc: "Bibek Thapa, Computer audio muted"),
+        ZoomAXNode(role: "AXButton", desc: "Leave"),
+    ])
+    // DETACHED Participants panel: split rows (name AXStaticText + mic AXImage).
+    let panelWin = ZoomAXNode(role: "AXWindow", title: "Participants", children: [
+        ZoomAXNode(role: "AXOutline", desc: "Participants list", children: [
+            ZoomAXNode(role: "AXRow", children: [ZoomAXNode(role: "AXCell", children: [
+                ZoomAXNode(role: "AXStaticText", value: "Bibek Thapa (me)"),
+                ZoomAXNode(role: "AXImage", desc: "Computer audio muted"),
+            ])]),
+            ZoomAXNode(role: "AXRow", children: [ZoomAXNode(role: "AXCell", children: [
+                ZoomAXNode(role: "AXStaticText", value: "Guest Alpha"),
+                ZoomAXNode(role: "AXImage", desc: "Computer audio unmuted"),
+                ZoomAXNode(role: "AXImage", desc: "Video on"),
+            ])]),
+        ]),
+    ])
+    let exMain = zoomExtractWindow(mainWin)
+    check(exMain.titleIsMeeting && exMain.callActive, "main window: meeting title + Leave gate")
+    equal(exMain.roster.count, 2, "main window: 2 tile-overlay entries")
+    let exPanel = zoomExtractWindow(panelWin)
+    equal(exPanel.selfNameHint, "Bibek Thapa", "detached panel: '(me)' self hint")
+    equal(exPanel.roster,
+          [ZoomRosterEntry(name: "Bibek Thapa", unmuted: false, isMe: true),
+           ZoomRosterEntry(name: "Guest Alpha", unmuted: true, isMe: false)],
+          "detached panel: SPLIT rows joined (name + sibling mic image), 'Video on' never a name")
+    check(!exPanel.titleIsMeeting && !exPanel.callActive, "detached panel alone: no meeting-title/Leave evidence")
+
+    let fused = zoomFuseWindows([exMain, exPanel])
+    check(fused.inMeeting, "fusion: in meeting (main window carries it)")
+    equal(fused.carrierIndex, 0, "fusion: main window is the ONE carrier (no per-window double emit)")
+    equal(fused.selfName, "Bibek Thapa", "fusion: self resolved from the detached panel")
+    equal(fused.roster.filter { $0.isMe }.map { $0.name }, ["Bibek Thapa"],
+          "fusion: panel '(me)' upgrades the main-window entry — exactly one self")
+    let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(remotes, ["Guest Alpha"], "fusion: remotes exclude self structurally")
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: false, localName: "Bibek Thapa",
+                               remoteActive: true, remoteUnmutedNames: remotes),
+          ["Guest Alpha"], "fusion + gate: single unmuted remote -> named")
+
+    // Self-only roster: self speech gets the REAL name; remote speech stays honest.
+    let selfOnly = zoomFuseWindows([exPanel])
+    check(selfOnly.inMeeting, "panel-only window still carries the call (roster evidence)")
+    equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: true, localName: selfOnly.selfName ?? "You",
+                               remoteActive: false,
+                               remoteUnmutedNames: selfOnly.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }),
+          ["Bibek Thapa"], "self speech -> real roster name, never 'You'")
+
+    // Home shell: zero meeting evidence -> nothing emitted.
+    let homeWin = ZoomAXNode(role: "AXWindow", title: "Zoom Workplace", children: [
+        ZoomAXNode(role: "AXButton", desc: "New meeting"),
+        ZoomAXNode(role: "AXButton", desc: "Join"),
+        ZoomAXNode(role: "AXButton", desc: "Upgrade to Pro"),
+    ])
+    let fusedHome = zoomFuseWindows([zoomExtractWindow(homeWin)])
+    check(!fusedHome.inMeeting && fusedHome.roster.isEmpty,
+          "home shell: not a meeting, empty roster (never starts a call)")
+
+    // PIP thumbnail: roster unreadable -> Zoom's own "Talking:" note surfaces;
+    // with a readable roster the mute-gate wins and the note is suppressed.
+    let pipWin = ZoomAXNode(role: "AXWindow", subrole: "AXSystemDialog", children: [
+        ZoomAXNode(role: "AXStaticText", value: "Talking: Guest Alpha"),
+        ZoomAXNode(role: "AXButton", desc: "Show video render"),
+    ])
+    let exPip = zoomExtractWindow(pipWin)
+    check(exPip.isPip, "PIP: AXSystemDialog + content marker detected")
+    equal(exPip.pipSpeaker, "Guest Alpha", "PIP: 'Talking:' speaker read")
+    let fusedPip = zoomFuseWindows([exPip])
+    check(fusedPip.inMeeting, "PIP alone keeps the call alive")
+    equal(fusedPip.pipSpeaker, "Guest Alpha", "PIP alone: speaker surfaces")
+    equal(zoomFuseWindows([exMain, exPip]).pipSpeaker, nil,
+          "PIP + readable roster: note suppressed (mute-gate is the better source)")
+    // Idle PIP (nobody talking): the shown name label is who the PIP tracks.
+    let pipIdle = ZoomAXNode(role: "AXWindow", subrole: "AXSystemDialog", children: [
+        ZoomAXNode(role: "AXStaticText", value: "Guest Alpha"),
+        ZoomAXNode(role: "AXButton", desc: "Show video render"),
+    ])
+    equal(zoomExtractWindow(pipIdle).pipSpeaker, "Guest Alpha", "idle PIP: name label fallback")
+}
+
+// MARK: Zoom pure extraction — REAL captured fixture (macos/Fixtures/zoom-native,
+// raw AXSnapshot dumps). The SAME zoomExtractWindow/zoomFuseWindows the scanner
+// ships runs here, so the deterministic loop tests the shipping extraction.
+print("Zoom extraction (captured fixtures):")
+func loadZoomFixture(_ name: String) -> ZoomAXNode? {
+    let byFile = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()   // SpeakerCoreSelfTest/
+        .deletingLastPathComponent()   // Sources/
+        .deletingLastPathComponent()   // macos/
+        .appendingPathComponent("Fixtures/zoom-native/\(name).json")
+    let url = FileManager.default.fileExists(atPath: byFile.path)
+        ? byFile
+        : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Fixtures/zoom-native/\(name).json")
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    do { return try AXSnapshotFixture.load(data) }
+    catch {
+        // Surface WHY a fixture won't replay (schema drift ≠ missing file).
+        print("  !! zoom fixture '\(name)' failed to decode: \(error)")
+        return nil
+    }
+}
+
+// CELL: 3 participants × gallery/speaker grid × panel OPEN (docked) — the seed
+// dump (20260625-200432): tile overlays with a ', active speaker' tag on the
+// promoted thumbnail, split panel rows, '(Host, me)' self.
+if let root = loadZoomFixture("native-grid-3p-panelopen-talk") {
+    let ex = zoomExtractWindow(root)
+    equal(ex.roster.map { $0.name }.sorted(), ["David Thapa", "David's Iphone", "bidheyak"],
+          "3p/panel-open: exactly the real roster — no phantom 'Computer audio unmuted', no chrome")
+    check(ex.roster.allSatisfy { $0.unmuted }, "3p/panel-open: all three explicitly unmuted")
+    equal(ex.roster.filter { $0.isMe }.map { $0.name }, ["David Thapa"],
+          "3p/panel-open: self via the panel's '(Host, me)' row upgrades the tile entry")
+    check(ex.titleIsMeeting, "3p/panel-open: 'Zoom Meeting' title gate")
+    check(!ex.isPip, "3p/panel-open: not the PIP")
+    let fused = zoomFuseWindows([ex])
+    check(fused.inMeeting && fused.carrierIndex == 0, "3p/panel-open: fused carrier = the meeting window")
+    // Engine cell: 2 unmuted remotes -> remote speech is honestly 'Someone';
+    // self speech gets the real host name.
+    let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(remotes.count, 2, "3p/panel-open: two unmuted remotes (self excluded)")
+    equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: true, localName: "David Thapa",
+                               remoteActive: true, remoteUnmutedNames: remotes),
+          ["David Thapa", "Someone"],
+          "3p/panel-open: self named + 2-remote ambiguity stays honest 'Someone'")
+} else { check(false, "fixture native-grid-3p-panelopen-talk.json missing") }
+
+// CELL: LIVE 2-participant call (Zoom 7.0.5, 2026-07-04) — host self + a web
+// guest admitted from the waiting room. Panel OPEN: self resolves via the
+// panel's "(Host, me)" row; the single unmuted remote is named by the mute-gate
+// (matches the live detector's speech_on {Guest Alpha, zoom.mute_gate}).
+if let talk = loadZoomFixture("native-grid-2p-panelopen-talk"),
+   let silent = loadZoomFixture("native-grid-2p-panelopen-silent") {
+    let exTalk = zoomExtractWindow(talk)
+    equal(exTalk.roster.map { $0.name }.sorted(), ["David Thapa", "Guest Alpha"],
+          "2p/panel-open: exactly host + guest, no chrome")
+    equal(exTalk.roster.filter { $0.isMe }.map { $0.name }, ["David Thapa"],
+          "2p/panel-open: self is the host via '(Host, me)'")
+    let remotesTalk = zoomFuseWindows([exTalk]).roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "David Thapa",
+                               remoteActive: true, remoteUnmutedNames: remotesTalk),
+          ["Guest Alpha"], "2p/panel-open: single unmuted remote -> NAMED (live: zoom.mute_gate)")
+
+    // NO AX co-variance with speech: talk↔silent differ ONLY in Guest Alpha's
+    // mute clause (the web guest's mic was flipped between captures); the parsed
+    // structure is otherwise identical — the fixture-level proof that native Zoom
+    // exposes no speaking signal.
+    let exSilent = zoomExtractWindow(silent)
+    equal(exSilent.roster.first(where: { $0.name == "David Thapa" }),
+          exTalk.roster.first(where: { $0.name == "David Thapa" }),
+          "2p talk vs silent: self entry byte-identical (no covariance)")
+    equal(exSilent.roster.first(where: { $0.name == "Guest Alpha" })?.unmuted, false,
+          "2p silent: guest muted (the ONLY delta from talk)")
+    equal(exTalk.roster.first(where: { $0.name == "Guest Alpha" })?.unmuted, true,
+          "2p talk: guest unmuted")
+    equal(exTalk.isPip, exSilent.isPip, "2p talk vs silent: PIP flag identical (false)")
+} else { check(false, "fixture native-grid-2p-panelopen-{talk,silent}.json missing") }
+
+// CELL: LIVE 2p, panel CLOSED. Native Zoom still exposes name + mute in the GRID
+// TILE OVERLAYS (roster is NOT zeroed on 7.0.5), but the "(me)" self marker is
+// panel-only — so the meeting window ALONE can't identify self.
+if let closed = loadZoomFixture("native-grid-2p-panelclosed-silent") {
+    let ex = zoomExtractWindow(closed)
+    equal(ex.roster.map { $0.name }.sorted(), ["David Thapa", "Guest Alpha"],
+          "2p/panel-closed: tile overlays still expose the roster (name+mute)")
+    check(ex.roster.allSatisfy { !$0.isMe },
+          "2p/panel-closed (meeting window alone): no '(me)' -> self not yet resolved")
+
+    // THE FIX: the home/Workplace window's profile button ("Zoom, <Name>,
+    // Available, Basic account") is an APP-WIDE self signal that survives the
+    // closed panel. Fusing it with the panel-closed meeting window resolves self
+    // WITHOUT the panel, so the single remote is NAMED (not "Someone") and self
+    // is named on mic activity.
+    if let home = loadZoomFixture("native-home-negative") {
+        let fused = zoomFuseWindows([zoomExtractWindow(closed), zoomExtractWindow(home)])
+        equal(fused.selfName, "David Thapa",
+              "2p/panel-closed + home: self resolved via the account profile button")
+        equal(fused.roster.filter { $0.isMe }.map { $0.name }, ["David Thapa"],
+              "2p/panel-closed + home: exactly one self, marked from the account name")
+        // This fixture is the SILENT capture (guest muted), so there is correctly
+        // NO unmuted remote — the point proven here is that SELF is now excluded
+        // (David isn't miscounted as a remote), and self speech gets the real name.
+        let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+        check(!fused.roster.first(where: { $0.name == "David Thapa" })!.isMe == false,
+              "2p/panel-closed + home: David is self, never a remote")
+        equal(zoomMuteGateSpeakers(micActive: true, localUnmuted: true, localName: fused.selfName ?? "You",
+                                   remoteActive: false, remoteUnmutedNames: remotes),
+              ["David Thapa"],
+              "2p/panel-closed + home: self speech -> real name (not 'You')")
+    } else { check(false, "fixture native-home-negative.json missing") }
+} else { check(false, "fixture native-grid-2p-panelclosed-silent.json missing") }
+
+// LIVE PAIR (Zoom 7.0.5): the REAL panel-closed meeting window + the REAL home
+// window whose profile button reads "Zoom, David Thapa, In a Zoom Meeting, Basic
+// account". Fusing them names the unmuted remote with the panel CLOSED — the
+// exact fix, on captured live data (mirrors the live detector: is_local David +
+// speech_on {Guest Alpha, zoom.mute_gate}).
+if let mtg = loadZoomFixture("native-grid-2p-panelclosed-talk"),
+   let home = loadZoomFixture("native-home-inmeeting") {
+    let fused = zoomFuseWindows([zoomExtractWindow(mtg), zoomExtractWindow(home)])
+    equal(fused.selfName, "David Thapa",
+          "LIVE panel-closed + home: self resolved via 'In a Zoom Meeting' account button")
+    equal(fused.roster.filter { $0.isMe }.map { $0.name }, ["David Thapa"],
+          "LIVE panel-closed + home: exactly one self")
+    let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(remotes, ["Guest Alpha"], "LIVE panel-closed + home: single unmuted remote isolated")
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: fused.selfName ?? "You",
+                               remoteActive: true, remoteUnmutedNames: remotes),
+          ["Guest Alpha"], "LIVE panel-closed + home: remote NAMED (was 'Someone')")
+    // Meeting window ALONE (no home) still can't ID self — proves the home
+    // window is what carries the fix.
+    let alone = zoomFuseWindows([zoomExtractWindow(mtg)])
+    check(alone.selfName == nil, "LIVE panel-closed meeting alone: self still unresolved (home window supplies it)")
+} else { check(false, "fixture native-grid-2p-panelclosed-talk / native-home-inmeeting missing") }
+
+// The naming follows once self is resolved: a panel-closed call whose remote is
+// UNMUTED now NAMES that remote instead of "Someone" (self excluded via the
+// account hint). Synthetic to isolate the mute-gate consequence.
+do {
+    // meeting window, panel closed, guest UNMUTED (tile overlays, no "(me)");
+    // home window carries the account button.
+    let meetingClosed = ZoomAXNode(role: "AXWindow", title: "Zoom Meeting", children: [
+        ZoomAXNode(role: "AXTabGroup", desc: "David Thapa, Computer audio unmuted, Video on"),
+        ZoomAXNode(role: "AXTabGroup", desc: "Guest Alpha, Computer audio unmuted"),
+        ZoomAXNode(role: "AXButton", desc: "Leave"),
+    ])
+    let home = ZoomAXNode(role: "AXWindow", title: "Zoom Workplace", children: [
+        ZoomAXNode(role: "AXButton", desc: "Zoom, David Thapa, Available, Basic account"),
+    ])
+    let fused = zoomFuseWindows([zoomExtractWindow(meetingClosed), zoomExtractWindow(home)])
+    equal(fused.selfName, "David Thapa", "synthetic panel-closed: self via account hint")
+    let remotes = fused.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(remotes, ["Guest Alpha"], "synthetic panel-closed: single unmuted remote isolated (self excluded)")
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: fused.selfName ?? "You",
+                               remoteActive: true, remoteUnmutedNames: remotes),
+          ["Guest Alpha"],
+          "synthetic panel-closed: remote speech -> NAMED 'Guest Alpha' (was 'Someone')")
+    // WITHOUT the home window (account hint absent), the old honest floor holds.
+    let noHome = zoomFuseWindows([zoomExtractWindow(meetingClosed)])
+    let remotesNoHome = noHome.roster.filter { !$0.isMe && $0.unmuted }.map { $0.name }
+    equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: true, localName: "You",
+                               remoteActive: true, remoteUnmutedNames: remotesNoHome),
+          ["Someone"],
+          "synthetic panel-closed, NO account hint: falls back to honest 'Someone' (graceful)")
+}
+
+// The account-name parser: extract the field before the presence word; reject
+// anything that isn't a profile button.
+equal(ZoomSpeakerRules.builtin.accountSelfName("Zoom, David Thapa, Available, Basic account"),
+      "David Thapa", "account button -> self name (field before presence)")
+equal(ZoomSpeakerRules.builtin.accountSelfName("Zoom, Bibek Thapa, Do not disturb, Pro account"),
+      "Bibek Thapa", "account button, 'Do not disturb' + Pro tier -> name")
+equal(ZoomSpeakerRules.builtin.accountSelfName("Zoom, David Thapa, In a Zoom Meeting, Basic account"),
+      "David Thapa", "account button MID-CALL ('In a Zoom Meeting' status) -> name (live-observed)")
+check(ZoomSpeakerRules.builtin.accountSelfName("Guest Alpha, Computer audio unmuted") == nil,
+      "a roster tile is NOT an account button (no presence + 'account')")
+check(ZoomSpeakerRules.builtin.accountSelfName("View David Thapa's profile") == nil,
+      "a per-tile profile button is NOT the account button")
+
+// CELL: LIVE PIP / minimal view — the floating AXSystemDialog is detected as PIP
+// so the call stays alive when minimized (its tree lacks the Leave button).
+if let pip = loadZoomFixture("native-pip-2p") {
+    let ex = zoomExtractWindow(pip)
+    check(ex.isPip, "PIP fixture: AXSystemDialog + content marker -> isPip")
+    check(zoomFuseWindows([ex]).inMeeting, "PIP alone keeps the call alive")
+} else { check(false, "fixture native-pip-2p.json missing") }
+
+// NEGATIVE CELL: LIVE Zoom Workplace home shell (post-call) — no roster, no
+// meeting evidence, so nothing is emitted (never starts/keeps a call).
+if let home = loadZoomFixture("native-home-negative") {
+    let fused = zoomFuseWindows([zoomExtractWindow(home)])
+    check(!fused.inMeeting, "home shell: not a meeting")
+    check(fused.roster.isEmpty, "home shell: empty roster (toolbar chrome is not participants)")
+} else { check(false, "fixture native-home-negative.json missing") }
+
+// Engine-cell semantics, panel CLOSED (roster unreadable): audio-only honesty —
+// never a fabricated name (B2).
+equal(zoomMuteGateSpeakers(micActive: false, localUnmuted: false, localName: "You",
+                           remoteActive: true, remoteUnmutedNames: []),
+      ["Someone"], "panel closed / empty roster: remote speech -> honest 'Someone' (B2)")
+
+// =====================================================================
+// MARK: Zoom WEB event mode (plan A1/A5) — active-moved diff + self-exclusion +
+// transition disambiguation. Chromium is AX-silent on class flips, so the diff +
+// TransitionConfidence are unit-tested with NO AX (mirrors the Meet/Teams edge tests).
+// =====================================================================
+print("Zoom web event mode — active diff + snapshot + transition:")
+// Pure snapshot/diff (A5 appear/move/disappear/no-edge-on-loss/first-snapshot/multi).
+equal(zoomWebEdgesFromDiff(prev: nil, next: ZoomWebTileSnapshot(activeHolders: ["Alice"]), at: 100).map { $0.to },
+      ["Alice"], "diff: first snapshot with a holder -> one active-moved edge")
+equal(zoomWebEdgesFromDiff(prev: nil, next: ZoomWebTileSnapshot(activeHolders: ["Alice"]), at: 100).first?.from,
+      nil, "diff: first-snapshot edge has no `from`")
+equal(zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                           next: ZoomWebTileSnapshot(activeHolders: ["Alice"]), at: 100).count, 0,
+      "diff: unchanged active -> no edge")
+do {
+    let e = zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                                 next: ZoomWebTileSnapshot(activeHolders: ["Bob"]), at: 100)
+    equal(e.map { $0.to }, ["Bob"], "diff: swap Alice->Bob -> active-moved to Bob")
+    equal(e.first?.from, "Alice", "diff: swap carries from=Alice (single prior holder)")
+}
+equal(zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                           next: ZoomWebTileSnapshot(activeHolders: []), at: 100).count, 0,
+      "diff: active going out -> NO edge (a lost highlight isn't a move)")
+equal(zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice"]),
+                           next: ZoomWebTileSnapshot(activeHolders: ["Alice", "Bob"]), at: 100).map { $0.to },
+      ["Bob"], "diff: multi-active linger overlap -> ONLY the newly-lit Bob (Alice not re-emitted)")
+do {
+    // 2+ prior holders (ambiguous) -> the new holder's from is nil.
+    let e = zoomWebEdgesFromDiff(prev: ZoomWebTileSnapshot(activeHolders: ["Alice", "Bob"]),
+                                 next: ZoomWebTileSnapshot(activeHolders: ["Carol"]), at: 100)
+    equal(e.map { $0.to }, ["Carol"], "diff: 2 prior -> Carol edge")
+    equal(e.first?.from, nil, "diff: ambiguous multi-prior -> from=nil")
+}
+// Snapshot self-exclusion at BUILD level (INV-15): a self-active tile is NEVER a holder.
+do {
+    let snap = ZoomWebTileSnapshot.from(tiles: [
+        ZoomWebTileObservation(name: "Me", active: true, isMe: true, surface: "filmstrip"),
+        ZoomWebTileObservation(name: "Alice", active: true, surface: "filmstrip"),
+        ZoomWebTileObservation(name: "Bob", active: false, surface: "gallery"),
+    ])
+    equal(snap.activeHolders, ["Alice"], "snapshot: self-active tile excluded, only remote is a holder")
+    check(snap.selfActive, "snapshot: self-active recorded as telemetry (selfActive)")
+    equal(snap.presentNames, ["Me", "Alice", "Bob"], "snapshot: presentNames keeps self (roster source)")
+    // A self-active tile yields no edge (the falsification a self ring can't happen).
+    equal(zoomWebEdgesFromDiff(prev: nil, next: snap, at: 100).map { $0.to }, ["Alice"],
+          "self-exclusion: self-active tile yields no self edge (only Alice)")
+}
+// Muted-tile handling: mute is carried but never affects the active holder.
+do {
+    let snap = ZoomWebTileSnapshot.from(tiles: [
+        ZoomWebTileObservation(name: "Alice", active: true, muted: false, surface: "speaker"),
+        ZoomWebTileObservation(name: "Bob", active: false, muted: true, surface: "speaker"),
+    ])
+    equal(snap.activeHolders, ["Alice"], "muted-tile: active read is independent of mute state")
+}
+// Transition disambiguation in zoomWebActiveSpeaker: two lit tiles (stale + fresh)
+// -> the fresh transition holder wins alone; a stale holder not among lit is ignored.
+do {
+    let two = ZoomWebTileSnapshot(activeHolders: ["Alice", "Bob"])
+    var tc = TransitionConfidence()
+    tc.edge(to: "Alice", at: 0)
+    tc.edge(to: "Bob", at: 1_600)
+    let stBob = ZoomWebTransitionState(holder: tc.holder, confidence: tc.holderConfidence(at: 1_600), nowMs: 1_600)
+    equal(zoomWebActiveSpeaker(snapshot: two, transition: stBob), "Bob",
+          "transition: stale Alice + fresh Bob (both lit) -> Bob wins alone")
+    let stGhost = ZoomWebTransitionState(holder: "Carol", confidence: 0.9, nowMs: 2_000)
+    equal(zoomWebActiveSpeaker(snapshot: two, transition: stGhost), "Alice",
+          "transition: holder not among lit tiles -> first lit (no phantom)")
+    equal(zoomWebActiveSpeaker(snapshot: ZoomWebTileSnapshot(activeHolders: ["Alice"]), transition: nil),
+          "Alice", "single active + no transition -> that tile")
+    equal(zoomWebActiveSpeaker(snapshot: ZoomWebTileSnapshot(activeHolders: []), transition: nil),
+          nil, "no active tile -> nil")
+}
+
+// =====================================================================
+// MARK: Zoom NATIVE PIP edge mode (plan B1) — talking-changed diff + self-exclusion.
+// =====================================================================
+print("Zoom native event mode — PIP talking diff + self-exclusion:")
+equal(ZoomNativeSnapshot.from(pipTalking: "David Thapa", selfName: "Bibek Thapa").pipTalking,
+      "David Thapa", "snapshot: remote PIP talker -> pipTalking")
+do {
+    let s = ZoomNativeSnapshot.from(pipTalking: "Bibek Thapa", selfName: "Bibek Thapa")
+    equal(s.pipTalking, nil, "snapshot: self PIP talker excluded -> pipTalking nil (INV-15)")
+    check(s.selfTalking, "snapshot: self PIP talker recorded as selfTalking telemetry")
+}
+equal(ZoomNativeSnapshot.from(pipTalking: nil, selfName: "Bibek Thapa").pipTalking, nil,
+      "snapshot: nobody talking -> nil")
+equal(zoomNativeEdgesFromDiff(prev: nil,
+        next: ZoomNativeSnapshot(pipTalking: "David Thapa"), at: 50).map { $0.to },
+      ["David Thapa"], "diff: first snapshot names a talker -> one talking-changed edge")
+equal(zoomNativeEdgesFromDiff(prev: ZoomNativeSnapshot(pipTalking: "David Thapa"),
+        next: ZoomNativeSnapshot(pipTalking: "David Thapa"), at: 50).count, 0,
+      "diff: same talker -> no edge")
+do {
+    let e = zoomNativeEdgesFromDiff(prev: ZoomNativeSnapshot(pipTalking: "David Thapa"),
+        next: ZoomNativeSnapshot(pipTalking: "Guest Alpha"), at: 50)
+    equal(e.map { $0.to }, ["Guest Alpha"], "diff: talker change -> talking-changed to Guest Alpha")
+    equal(e.first?.from, "David Thapa", "diff: talker change carries from")
+}
+equal(zoomNativeEdgesFromDiff(prev: ZoomNativeSnapshot(pipTalking: "David Thapa"),
+        next: ZoomNativeSnapshot(), at: 50).count, 0,
+      "diff: talker going to nobody -> NO edge (a lost talker isn't a move)")
+// Self-exclusion end to end: a PIP that flips to self yields no edge.
+equal(zoomNativeEdgesFromDiff(
+        prev: ZoomNativeSnapshot.from(pipTalking: "David Thapa", selfName: "Bibek Thapa"),
+        next: ZoomNativeSnapshot.from(pipTalking: "Bibek Thapa", selfName: "Bibek Thapa"),
+        at: 50).count, 0,
+      "self-exclusion: PIP flips to self -> no edge (self talker excluded at build)")
+
+// =====================================================================
+// MARK: SchmittVad hysteresis (plan B4) — time-injected; enter/exit boundaries,
+// spike rejection, re-enter during hangover. NO clock (INV-16).
+// =====================================================================
+print("SchmittVad hysteresis:")
+do {
+    let cfg = VadConfig(frameMs: 50, enterLevel: 0.03, exitLevel: 0.015, enterFrames: 2, hangoverMs: 400)
+    // Enter boundary: ONE loud frame is not enough (spike rejection), TWO opens.
+    var v = SchmittVad(config: cfg)
+    check(!v.ingest(rms: 0.10, atMs: 0), "enter: 1 loud frame -> still closed (spike rejected)")
+    check(v.ingest(rms: 0.10, atMs: 50), "enter: 2nd consecutive loud frame -> open")
+    // A single ding (one loud frame) between quiet frames never opens.
+    var vd = SchmittVad(config: cfg)
+    check(!vd.ingest(rms: 0.9, atMs: 0), "ding: single loud frame -> closed")
+    check(!vd.ingest(rms: 0.001, atMs: 50), "ding: next frame quiet -> run reset, still closed")
+    check(!vd.ingest(rms: 0.9, atMs: 100), "ding: lone loud again after quiet -> still closed (run was reset)")
+    // Enter run resets on a below-enter frame (must be CONSECUTIVE).
+    var vr = SchmittVad(config: cfg)
+    _ = vr.ingest(rms: 0.10, atMs: 0)      // run=1
+    _ = vr.ingest(rms: 0.02, atMs: 50)     // below enter -> run reset to 0
+    check(!vr.ingest(rms: 0.10, atMs: 100), "enter: non-consecutive loud frames -> still closed")
+    check(vr.ingest(rms: 0.10, atMs: 150), "enter: now 2 consecutive -> open")
+    // Exit hangover boundary: just-under sustained stays open; sustained >= hangover closes.
+    var ve = SchmittVad(config: cfg)
+    _ = ve.ingest(rms: 0.10, atMs: 0); _ = ve.ingest(rms: 0.10, atMs: 50)  // open
+    check(ve.active, "exit: open before quiet")
+    check(ve.ingest(rms: 0.001, atMs: 100), "exit: quiet begins (hangover origin) -> still open")
+    check(ve.ingest(rms: 0.001, atMs: 100 + 399), "exit: quiet 399ms (< hangover) -> still open")
+    check(!ve.ingest(rms: 0.001, atMs: 100 + 400), "exit: quiet sustained 400ms (>= hangover) -> closed")
+    // Re-enter during hangover: a loud frame before the hangover elapses keeps it open
+    // (the segment simply never closes) and clears the pending close.
+    var vh = SchmittVad(config: cfg)
+    _ = vh.ingest(rms: 0.10, atMs: 0); _ = vh.ingest(rms: 0.10, atMs: 50)  // open
+    _ = vh.ingest(rms: 0.001, atMs: 100)                                   // quiet starts
+    check(vh.ingest(rms: 0.10, atMs: 300), "hangover: loud frame mid-hangover -> still open (close cancelled)")
+    check(vh.ingest(rms: 0.001, atMs: 350), "hangover: quiet resumes -> still open (timer restarted from 350)")
+    check(!vh.ingest(rms: 0.001, atMs: 350 + 400), "hangover: new sustained quiet -> closes on fresh 400ms (not the cancelled earlier timer)")
+    // A pause SHORTER than the hangover keeps one utterance one segment.
+    var vp = SchmittVad(config: cfg)
+    _ = vp.ingest(rms: 0.10, atMs: 0); _ = vp.ingest(rms: 0.10, atMs: 50)  // open
+    _ = vp.ingest(rms: 0.001, atMs: 100)                                   // brief pause
+    _ = vp.ingest(rms: 0.001, atMs: 300)                                   // 200ms quiet (< 400)
+    check(vp.ingest(rms: 0.10, atMs: 350), "pause: intra-sentence pause < hangover -> still one segment")
+}
+
+// SHIPPED DEFAULT config (REMOTE stream: enterFrames=3, enter 0.0018 RMS) — locks the
+// calibration re-fit to the MEASURED remote-speech RMS distribution (vad-quality-live
+// iteration 1: remote per-tick-max median 0.0039 / peak 0.0074, silence < 0.0006). The
+// FIRST estimate (0.006, a crest-factor guess) sat at the TOP of the speech band and
+// named NOBODY live; 0.0018 sits between silence and speech so remote_active fires on
+// real remote speech again. enterFrames stays 3 so vad-quality-live's transient
+// rejection is robust to frame-boundary straddle: a ~40ms tone pulse lands as at most
+// TWO consecutive over-enter frames; enterFrames=3 rejects that 2-frame transient while
+// continuous voicing clears 3 frames and opens.
+do {
+    let def = VadConfig()   // the shipped default the engine uses for the REMOTE stream
+    equal(def.enterFrames, 3, "default enterFrames is 3 (straddle-robust transient rejection)")
+    check(def.enterLevel > 0 && def.enterLevel <= 0.01, "default enterLevel is RMS-scale (<= 0.01, not the peak-scale 0.03 that named nobody live)")
+    check(def.exitLevel < def.enterLevel, "default exit < enter (hysteresis band)")
+    // Re-fit regression guard: enter must sit BETWEEN the measured silence ceiling
+    // (~0.0006) and the median remote-speech tick-max (~0.0039), or remote speech goes
+    // unnamed again (the iteration-1 failure). This is the range the 0.006 guess violated.
+    check(def.enterLevel > 0.0006 && def.enterLevel < 0.0039,
+          "default enter is between measured silence (0.0006) and speech (0.0039) — not the 0.006 that named nobody")
+    // A straddling transient = exactly TWO consecutive over-enter frames, then quiet.
+    var t = SchmittVad(config: def)
+    check(!t.ingest(rms: 0.42, atMs: 0), "transient: frame 1 over enter -> still closed")
+    check(!t.ingest(rms: 0.42, atMs: 50), "transient: frame 2 (straddle tail) over enter -> STILL closed (< 3)")
+    check(!t.ingest(rms: 0.0001, atMs: 100), "transient: quiet after 2-frame burst -> run reset, never opened")
+    // Real speech = 3+ consecutive frames of energy -> opens on the 3rd.
+    var s = SchmittVad(config: def)
+    _ = s.ingest(rms: 0.05, atMs: 0)
+    check(!s.ingest(rms: 0.05, atMs: 50), "speech: 2 sustained frames -> not yet")
+    check(s.ingest(rms: 0.05, atMs: 100), "speech: 3rd sustained frame -> open")
+
+    // MEASURED remote-speech replay: feed frames at the recorded median tick-max
+    // (~0.0039) — the level the pre-fix 0.006 gate could not open on. With enter 0.0018
+    // three such frames MUST open (this is the exact regression the fix targets).
+    var m = SchmittVad(config: def)
+    _ = m.ingest(rms: 0.0039, atMs: 0)
+    _ = m.ingest(rms: 0.0039, atMs: 50)
+    check(m.ingest(rms: 0.0039, atMs: 100), "measured remote speech (0.0039 RMS) opens on the 3rd frame (0.006 could NOT)")
+    // MEASURED silence (~0.0005 tick-max) must NEVER open.
+    var q = SchmittVad(config: def)
+    _ = q.ingest(rms: 0.0005, atMs: 0); _ = q.ingest(rms: 0.0005, atMs: 50)
+    check(!q.ingest(rms: 0.0005, atMs: 100), "measured silence (0.0005 RMS) stays closed (below enter)")
+}
+
+// MIC stream keeps a HIGHER bar than the remote stream — close-mic local voice reads
+// far hotter than the attenuated system tap (measured mic ambient/leakage floor
+// ~0.0107 RMS vs remote speech ~0.004). A remote-scale enter here would name the local
+// user on room noise / speaker bleed, so VadConfig.mic() sits above the ambient floor.
+do {
+    let m = VadConfig.mic()
+    check(m.enterLevel > VadConfig().enterLevel, "mic enter is HIGHER than remote enter (close-mic reads hotter)")
+    check(m.enterLevel > 0.0107, "mic enter is above the measured mic ambient/leakage floor (0.0107) — ambient never names self")
+    equal(m.enterFrames, 3, "mic enterFrames is 3 (same straddle-robust debounce)")
+    check(m.exitLevel < m.enterLevel, "mic exit < enter (hysteresis band)")
+    // Measured mic ambient (~0.0107 median) must NOT open self.
+    var a = SchmittVad(config: m)
+    _ = a.ingest(rms: 0.0107, atMs: 0); _ = a.ingest(rms: 0.0107, atMs: 50)
+    check(!a.ingest(rms: 0.0107, atMs: 100), "mic ambient (0.0107 RMS) stays closed -> self not named on room noise")
+    // Real local speech (well above the mic bar) opens.
+    var sp = SchmittVad(config: m)
+    _ = sp.ingest(rms: 0.05, atMs: 0); _ = sp.ingest(rms: 0.05, atMs: 50)
+    check(sp.ingest(rms: 0.05, atMs: 100), "local speech (0.05 RMS) opens the mic gate")
+}
+
+// =====================================================================
+// MARK: ZoomSpeakerRules — NEW web class-anchor fields + locale table (plan A2/B5).
+// Every existing zoom-rules.json must still decode (partial-override back-compat).
+// =====================================================================
+print("ZoomSpeakerRules web anchors + locale:")
+do {
+    let zr = ZoomSpeakerRules.builtin
+    // webActiveClass back-compat: the legacy exact filmstrip class still matches.
+    check(zr.webTileIsActive(classList: ["speaker-bar-container__video-frame",
+                                         "speaker-bar-container__video-frame--active"]),
+          "webActiveClass back-compat: legacy filmstrip --active matches")
+    // Generalized --active across the three prefix families.
+    check(zr.webTileIsActive(classList: ["gallery-video-container__video-frame",
+                                         "gallery-video-container__video-frame--active"]),
+          "gallery-view --active matches (NEW prefix)")
+    check(zr.webTileIsActive(classList: ["speaker-active-container__video-frame",
+                                         "speaker-active-container__video-frame--active"]),
+          "speaker-view --active matches")
+    check(!zr.webTileIsActive(classList: ["speaker-bar-container__video-frame"]),
+          "idle tile (no --active) -> not active")
+    equal(zr.webTileSurface(classList: ["gallery-video-container__video-frame"]), "gallery",
+          "surface: gallery prefix -> 'gallery'")
+    equal(zr.webTileSurface(classList: ["speaker-bar-container__video-frame"]), "filmstrip",
+          "surface: filmstrip prefix -> 'filmstrip'")
+    check(zr.webTileSurface(classList: ["some-other-class"]) == nil, "surface: non-tile -> nil")
+    check(zr.webTileMuted(classList: ["video-avatar__avatar-footer",
+                                      "video-avatar__avatar-footer--view-mute-computer"]),
+          "per-tile mute class -> muted")
+    check(!zr.webTileMuted(classList: ["video-avatar__avatar-footer"]), "footer without mute modifier -> not muted")
+    // Self mic-control cross-validation ("unmute my microphone" = you ARE muted).
+    equal(zr.webSelfUnmuted("unmute my microphone"), false, "self mic: 'unmute my microphone' -> muted")
+    equal(zr.webSelfUnmuted("mute my microphone"), true, "self mic: 'mute my microphone' -> unmuted")
+    check(zr.webSelfUnmuted("participants list") == nil, "self mic: unrelated label -> nil")
+
+    // Round-trip incl. the new fields + a locale table.
+    var custom = zr
+    custom.webGalleryFramePrefix = "gv__frame"
+    custom.webActiveModifier = "--live"
+    custom.locales = ["de": PartialZoomRules(unmutedToken: "ton an", mutedToken: "ton aus")]
+    custom.version = "web-roundtrip"
+    if let data = try? JSONEncoder().encode(custom),
+       let back = try? JSONDecoder().decode(ZoomSpeakerRules.self, from: data) {
+        equal(back, custom, "ZoomSpeakerRules (new fields + locales) Codable round-trip")
+    } else { check(false, "ZoomSpeakerRules with new fields failed to encode/decode") }
+
+    // BACK-COMPAT: an OLD zoom-rules.json (pre-new-fields) still decodes — the new
+    // fields fall back to builtin, the locales default to empty.
+    let oldJson = #"{"selfTokens":["(me)"],"webActiveClass":"speaker-bar-container__video-frame--active","version":"old-config"}"#.data(using: .utf8)!
+    if let p = try? JSONDecoder().decode(ZoomSpeakerRules.self, from: oldJson) {
+        equal(p.webGalleryFramePrefix, zr.webGalleryFramePrefix, "old config: missing new gallery prefix -> builtin")
+        equal(p.webActiveModifier, zr.webActiveModifier, "old config: missing active modifier -> builtin")
+        equal(p.webAvatarFooterClass, zr.webAvatarFooterClass, "old config: missing footer class -> builtin")
+        equal(p.webSelfMuteButtonMarkers, zr.webSelfMuteButtonMarkers, "old config: missing self-mute markers -> builtin")
+        equal(p.locales.count, 0, "old config: no locales -> empty table")
+        check(p.webTileIsActive(classList: ["speaker-bar-container__video-frame--active"]),
+              "old config: back-compat active detection still works")
+    } else { check(false, "old zoom-rules.json (no new fields) failed to decode") }
+
+    // Locale table drives the parser (B5): a synthetic 'de' overrides the tokens.
+    var withLocale = zr
+    withLocale.locales = ["de": PartialZoomRules(
+        unmutedToken: "computer-audio aktiviert", mutedToken: "computer-audio stummgeschaltet")]
+    let de = withLocale.resolved(locale: "de")
+    equal(de.unmutedToken, "computer-audio aktiviert", "locale 'de': unmutedToken overridden")
+    equal(de.audioStatusMarker, zr.audioStatusMarker, "locale 'de': un-set field inherits base")
+    equal(de.audioStatus("bibek, computer-audio aktiviert"), true, "locale 'de': parser follows overridden token")
+    equal(withLocale.resolved(locale: nil).unmutedToken, zr.unmutedToken, "locale nil -> base unchanged")
+    equal(withLocale.resolved(locale: "fr").unmutedToken, zr.unmutedToken, "locale unknown -> base unchanged")
+}
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

@@ -291,11 +291,85 @@ ScreenCaptureKit. It is *not* a per-participant level (Zoom exposes none in AX; 
 panel meter is Metal-drawn). That one mixed level is what drives `remoteActive` in
 the mute-gate.
 
-**Limits (by design, = Recall's desktop ceiling):** named attribution needs the
-**Participants panel open** (that's where the mute text lives); panel closed →
-`Someone` on meeting audio (B2). And it's mute-gated, not true VAD — multiple
-unmuted simultaneous talkers → `Someone`. **R1** (real VAD) + **B3** (one shared
-resolver) lift that later.
+**Limits (by design, = Recall's desktop ceiling):** it's mute-gated, not true
+VAD — multiple unmuted simultaneous talkers → `Someone`. **R1** (real VAD) + **B3**
+(one shared resolver) lift that later.
+
+---
+
+## 7a. Structural hardening (2026-07-04) — pure extraction, per-app fusion
+
+The scanner's five separate native-Zoom AX walks were replaced by ONE bounded
+tree conversion per window feeding **pure SpeakerCore extractors** that the
+fixture replay in `SpeakerCoreSelfTest` exercises byte-for-byte (the Teams
+`teamsExtractWindow` pattern), so the deterministic loop tests the shipping code:
+
+- **`ZoomSpeakerRules`** ([SpeakerCore](../Sources/SpeakerCore/ZoomSpeakerRules.swift))
+  — every native token (`"computer audio"`, `"audio muted/unmuted"`, `"(me)"` /
+  `", me)"`, the panel label, the `"Zoom Meeting"`/`"Meeting -"` title + Leave
+  gates, the PIP `"Talking:"` prefix + content markers) AND the Zoom-web CSS
+  tokens are now `Codable` + overridable via
+  `~/Library/Application Support/MeetSpeakerDetector/zoom-rules.json` (partial
+  overrides inherit `builtin`). A Zoom release that rewords a phrase is a config
+  drop, not a rebuild — the same discipline Recall's per-version JS scrapers use.
+- **`zoomExtractWindow` + `zoomFuseWindows`**
+  ([SpeakerCore](../Sources/SpeakerCore/ZoomNativeExtraction.swift)) — combined
+  tile-overlay lines (P1) **and** split Participants-panel rows (P2: an
+  `AXStaticText` name joined to its sibling mic-state `AXImage`, the detached-
+  panel format) are parsed and then UNIONED across the main window, a **detached
+  panel window**, and the PIP into ONE per-app result. This fixes two live bugs:
+  (a) the panel's standalone `"Computer audio unmuted"` `AXImage` used to survive
+  `cleanParticipantName` as a **phantom unmuted participant** (now guarded — the
+  text before the audio marker must itself clean to a name); (b) a detached panel
+  / PIP each used to emit their **own** `ScannedWindow` into the constant
+  `zoom::meeting` id and double-attribute conflicting speakers per tick (now one
+  carrier window).
+
+**Verified live (Zoom 7.0.5, 2026-07-04 — [qa/zoom-live/live-evidence.md](../../qa/zoom-live/live-evidence.md)),
+2-party call, host self + admitted web guest:**
+
+| State | Detector output |
+|---|---|
+| panel OPEN | `participant_joined` David Thapa **`is_local`** (via `"(Host, me)"`) + Guest Alpha; `speech_on {Guest Alpha, zoom.mute_gate}` (single unmuted remote NAMED) |
+| panel CLOSED | `speech_on {Someone, audio.someone}` |
+
+**Panel-closed self, via the account button (2026-07-04 fix).** On 7.0.5 the
+grid tile overlays still carry name + mute with the panel closed, so the roster
+is NOT zeroed — but the `"(me)"` marker is **panel-only**. The self signal that
+survives is the **home/Workplace window's profile button**, whose description is
+`"Zoom, <Name>, <presence>, <tier> account"` (live: `"…, In a Zoom Meeting,
+Basic account"` mid-call). `ZoomSpeakerRules.accountSelfName` reads the name (the
+comma-field before the presence word) and `zoomFuseWindows` uses it as a
+second-priority self hint (after `"(me)"`), accepted only when it matches a
+roster entry. So a panel-closed 2-party call now **names the single remote** and
+names **self on mic activity** instead of `Someone`:
+
+```
+panel CLOSED, guest unmuted →  participant_joined David Thapa is_local:true
+                               speech_on {Guest Alpha, zoom.mute_gate}   ← was "Someone"
+```
+
+Graceful fallback: if the home window is absent (account hint gone), it reverts
+to the honest `Someone` floor. Reliable **remote** mute still needs the panel
+(docked or detached); tile overlays are the fallback for it.
+
+**Zoom WEB is a different mechanism — no self gap.** The web client (browser)
+DOES expose a per-tile speaking signal: the active tile's
+`speaker-bar-container__video-frame--active` CSS class. `zoomWebSpeakerBar` reads
+the active tile's name (self included) and the engine names it directly
+(`zoom.web_active`, VAD-gated) — so web never mute-gates and never falls to
+`Someone` for a readable tree; when YOU are the active speaker your own tile
+carries the class and you are named. The account-button fix is native-only.
+
+**Two-tier QA.** Deterministic tier: committed raw-AXSnapshot fixtures
+(`macos/Fixtures/zoom-native/*.json` — a 3-party docked-panel seed + live 2-party
+talk/silent/panel-closed/PIP/home-negative) replayed through the pure extractors
+in `SpeakerCoreSelfTest`, incl. a **talk↔silent pair** whose parsed output is
+byte-identical except the flipped mute clause (the fixture proof of no AX
+speaking signal). Live tier: `qa/qa.zoom.config.mjs` +
+`qa/zoom-live/run-zoom-live-qa.mjs` drive a real call via `ZoomDrive` (New meeting
+→ admit web guest from the waiting room) and gate detect / roster / mute-gate /
+panel-closed — **all GREEN** on 7.0.5.
 
 ---
 

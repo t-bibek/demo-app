@@ -325,6 +325,124 @@ guard('INV-14 teams event mode', () => {
   else fail('INV-14 teams event mode', 'no self-test for the Teams diff / rapid-swap disambiguation');
 });
 
+// INV-15 — ZOOM event/edge attribution paths exclude the SELF tile at snapshot
+// BUILD level (the Meet/Teams pattern INV-1/5/10 guard): both ZoomWebEdgeEvents.swift
+// and ZoomNativeEdgeEvents.swift must filter isMe / self-name so a self-active tile or
+// a self PIP "Talking:" never becomes an edge holder, AND a self-exclusion self-test
+// must exist. A missing file (parallel Swift work not landed) FAILS with a clear
+// message rather than crashing.
+guard('INV-15 zoom event self-exclusion', () => {
+  const selfTok = /!\s*\$0\.isMe|isMe\s*==\s*false|!\s*\w*\.?isMe|isMe\s*!=\s*true|selfActive|selfTalking|== *self|!=\s*self/;
+  for (const f of ['macos/Sources/SpeakerCore/ZoomWebEdgeEvents.swift', 'macos/Sources/SpeakerCore/ZoomNativeEdgeEvents.swift']) {
+    const src = readOrNull(f);
+    if (src == null) { fail('INV-15 zoom event self-exclusion', `${f} is missing — the zoom edge path is unverifiable (parallel Swift work not landed?)`); continue; }
+    if (selfTok.test(stripComments(src))) pass('INV-15 zoom event self-exclusion', `${f.split('/').pop()} excludes the self tile/PIP at snapshot build`);
+    else fail('INV-15 zoom event self-exclusion', `${f.split('/').pop()} does NOT exclude self — a self-active tile / self PIP could become an edge holder`);
+  }
+  const tests = readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift');
+  if (tests == null) { fail('INV-15 zoom event self-exclusion', 'SpeakerCoreSelfTest/main.swift is missing — no zoom self-exclusion self-test'); return; }
+  const stripped = stripComments(tests);
+  // A test that a self-owned zoom-web active tile / self PIP talking yields no holder/edge.
+  if (/isMe\s*:\s*true/.test(stripped) && /(zoomWeb|ZoomWeb|zoomNative|ZoomNative|pipTalking|active)/.test(stripped)) {
+    pass('INV-15 zoom event self-exclusion', 'a self-active zoom tile / self-PIP-yields-no-edge self-test exists');
+  } else {
+    fail('INV-15 zoom event self-exclusion', 'no zoom self-exclusion self-test (expected an isMe:true zoom-web active / self-PIP talking asserted to yield no holder)');
+  }
+});
+
+// INV-16 — the new PURE modules are TIME-INJECTED (all timestamps passed in as
+// monotonic nowMs; clock = AXKit.monotonicMs() injected by the engine), never read
+// from a clock inside SpeakerCore — otherwise the VAD hysteresis + zoom decay
+// self-tests are non-deterministic. Comment-stripped so a clock call named only in a
+// comment doesn't false-alarm. AND a VAD-hysteresis self-test must exist.
+guard('INV-16 zoom+vad time-injected', () => {
+  const banned = [/\bDate\s*\(\s*\)/, /DispatchTime\.now/, /CACurrentMediaTime/, /mach_absolute_time/];
+  for (const f of ['macos/Sources/SpeakerCore/VoiceActivity.swift', 'macos/Sources/SpeakerCore/ZoomWebEdgeEvents.swift', 'macos/Sources/SpeakerCore/ZoomNativeEdgeEvents.swift']) {
+    const src = readOrNull(f);
+    if (src == null) { fail('INV-16 zoom+vad time-injected', `${f} is missing — purity unverifiable (parallel Swift work not landed?)`); continue; }
+    const stripped = stripComments(src);
+    const hits = banned.filter((re) => re.test(stripped)).map((re) => re.source);
+    if (hits.length) fail('INV-16 zoom+vad time-injected', `${f.split('/').pop()} reads a clock directly (${hits.join(', ')}) — inject nowMs instead; the tests become non-deterministic`);
+    else pass('INV-16 zoom+vad time-injected', `${f.split('/').pop()} has no direct clock call`);
+  }
+  const tests = readOrNull('macos/Sources/SpeakerCoreSelfTest/main.swift');
+  if (tests == null) { fail('INV-16 zoom+vad time-injected', 'SpeakerCoreSelfTest/main.swift is missing — no VAD hysteresis self-test'); return; }
+  const stripped = stripComments(tests);
+  // A VAD hysteresis test references the state machine + an enter/exit/hangover boundary.
+  if (/SchmittVad|VadConfig|hangover|enterFrames|enterLevel|exitLevel/.test(stripped) && /ingest\s*\(/.test(stripped)) {
+    pass('INV-16 zoom+vad time-injected', 'a SchmittVad hysteresis self-test exists (injected timestamps)');
+  } else {
+    fail('INV-16 zoom+vad time-injected', 'no VAD hysteresis self-test found (expected a SchmittVad/VadConfig ingest(rms:atMs:) enter/exit/hangover boundary assertion)');
+  }
+});
+
+// INV-17 — the ZOOM LIVE manifests must NEVER be wired into CI (INV-7 family). CI
+// runs the default, deterministic manifest only; qa.zoom.config.mjs +
+// qa.zoomweb.config.mjs launch the native Zoom app, Chrome, and the detector, and
+// must stay out of the GitHub Actions workflow.
+guard('INV-17 zoom live manifests not in CI', () => {
+  const ci = readOrNull('.github/workflows/meet-detector-qa.yml');
+  if (ci == null) { fail('INV-17 zoom live manifests not in CI', 'CI workflow .github/workflows/meet-detector-qa.yml is missing'); return; }
+  for (const manifest of ['qa.zoom.config.mjs', 'qa.zoomweb.config.mjs']) {
+    if (new RegExp(manifest.replace(/\./g, '\\.')).test(ci)) fail('INV-17 zoom live manifests not in CI', `CI references ${manifest} — the live gate would try to launch apps in CI`);
+    else pass('INV-17 zoom live manifests not in CI', `CI does not reference ${manifest}`);
+  }
+});
+
+// INV-18 — the A/B flag is wired in the engine for the ZOOM WEB path: the source
+// handles BOTH MSD_MODE=event (the observer/edge path) and the legacy default
+// (byte-identical zoomWebSpeakerBar direct read). cpu-compare-live's baseline depends
+// on legacy still counting full_walks; zoomweb-events depends on event mode emitting
+// edges; zoomweb-legacy-silent depends on the no-env path being byte-silent.
+guard('INV-18 zoom A/B flag wired', () => {
+  const files = [
+    'macos/Sources/MeetSpeakerDetector/ViewModel/AppModel.swift',
+    'macos/Sources/MeetSpeakerDetector/Engine/DetectionEngine.swift',
+    'macos/Sources/MeetSpeakerDetector/Engine/AccessibilityScanner.swift',
+  ];
+  const present = files.map((f) => ({ f, src: readOrNull(f) }));
+  const missing = present.filter((p) => p.src == null).map((p) => p.f);
+  if (missing.length === present.length) { fail('INV-18 zoom A/B flag wired', `engine/app sources all missing (${missing.join(', ')}) — zoom A/B flag unverifiable`); return; }
+  const all = present.map((p) => stripComments(p.src || '')).join('\n');
+  const handlesMode = /MSD_MODE/.test(all);
+  const handlesEvent = /eventDrivenZoomWeb|zoom\.web_active\.edge|zoomWebEdges|ZoomWebTileObserver/.test(all);
+  const handlesLegacy = /zoomWebSpeakerBar/.test(all); // the legacy direct-read path must survive
+  if (handlesMode && handlesEvent && handlesLegacy) pass('INV-18 zoom A/B flag wired', 'engine handles MSD_MODE=event (zoom web observer/edge) and the legacy zoomWebSpeakerBar default');
+  else fail('INV-18 zoom A/B flag wired', `zoom A/B flag incomplete (MSD_MODE:${handlesMode} event:${handlesEvent} legacy:${handlesLegacy}) — cpu-compare / legacy-silent cannot A/B`);
+});
+
+// INV-19 — NO caption/transcript dependence anywhere in the ZOOM sources (Swift +
+// qa/zoom* JS). Standing product decision: speaker detection must never depend on
+// captions or transcripts on ANY platform. Comment-stripped so the word appearing in
+// a "we do NOT use captions" comment doesn't false-alarm; a token in LIVE code fails.
+guard('INV-19 zoom no caption dependence', () => {
+  const banned = /caption|transcript|closed[- ]?caption|\bcc-selector\b|liveTranscript|live-transcript/i;
+  const zoomFiles = [
+    'macos/Sources/SpeakerCore/ZoomWebEdgeEvents.swift',
+    'macos/Sources/SpeakerCore/ZoomNativeEdgeEvents.swift',
+    'macos/Sources/SpeakerCore/ZoomSpeakerRules.swift',
+    'macos/Sources/SpeakerCore/ZoomNativeExtraction.swift',
+    'macos/Sources/MeetSpeakerDetector/Engine/ZoomWebTileObserver.swift',
+    'macos/Sources/MeetSpeakerDetector/Engine/ZoomNativeObserver.swift',
+    'qa/zoom-live/run-zoom-live-qa.mjs',
+    'qa/zoom-live/zoom-web-guest.mjs',
+    'qa/zoom-live/zoom-host-lib.mjs',
+    'qa/zoomweb-live/run-zoomweb-live-qa.mjs',
+    'qa/zoomweb-live/zoomweb-guest.mjs',
+  ];
+  let anyPresent = false;
+  for (const f of zoomFiles) {
+    const src = readOrNull(f);
+    if (src == null) continue; // a not-yet-written Swift file is covered by INV-15/16; skip here
+    anyPresent = true;
+    // JS uses // comments; Swift uses // and /* */. stripComments handles // ; also drop /* */ blocks.
+    const stripped = stripComments(src).replace(/\/\*[\s\S]*?\*\//g, '');
+    if (banned.test(stripped)) fail('INV-19 zoom no caption dependence', `${f} references a caption/transcript token in LIVE code — speaker detection must not depend on captions (any platform)`);
+    else pass('INV-19 zoom no caption dependence', `${f.split('/').pop()} has no caption/transcript dependence`);
+  }
+  if (!anyPresent) fail('INV-19 zoom no caption dependence', 'no Zoom source files found to scan (Swift + qa/zoom* JS all missing?)');
+});
+
 // --- report ---------------------------------------------------------------
 const bad = results.filter((r) => !r.ok);
 console.log('QA-check review — executable invariants over the checks themselves');
