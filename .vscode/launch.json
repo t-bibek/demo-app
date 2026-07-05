@@ -279,6 +279,206 @@
             "target": "AXDump",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release AXDump (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug ZoomProbe (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "ZoomProbe",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ZoomProbe (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release ZoomProbe (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "ZoomProbe",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ZoomProbe (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug TeamsDrive (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "TeamsDrive",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug TeamsDrive (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release TeamsDrive (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "TeamsDrive",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release TeamsDrive (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug SpeakerCoreSelfTest (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "SpeakerCoreSelfTest",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SpeakerCoreSelfTest (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release SpeakerCoreSelfTest (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "SpeakerCoreSelfTest",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SpeakerCoreSelfTest (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug MeetSpeakerDetector (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "MeetSpeakerDetector",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MeetSpeakerDetector (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release MeetSpeakerDetector (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "MeetSpeakerDetector",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MeetSpeakerDetector (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug MeetProbe (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "MeetProbe",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MeetProbe (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release MeetProbe (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "MeetProbe",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MeetProbe (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug AXSnapshot (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "AXSnapshot",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXSnapshot (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release AXSnapshot (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "AXSnapshot",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXSnapshot (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug AXObserve (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "AXObserve",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXObserve (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release AXObserve (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "AXObserve",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXObserve (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Debug AXDump (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "AXDump",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AXDump (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/.claude/worktrees/teams-structural-hardening/macos",
+            "name": "Release AXDump (.claude/worktrees/teams-structural-hardening/macos)",
+            "target": "AXDump",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AXDump (.claude/worktrees/teams-structural-hardening/macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug TeamsDrive (macos)",
+            "target": "TeamsDrive",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug TeamsDrive (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release TeamsDrive (macos)",
+            "target": "TeamsDrive",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release TeamsDrive (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Debug ZoomDrive (macos)",
+            "target": "ZoomDrive",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ZoomDrive (macos)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:demo-app}/macos",
+            "name": "Release ZoomDrive (macos)",
+            "target": "ZoomDrive",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ZoomDrive (macos)"
         }
     ]
 }
