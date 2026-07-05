@@ -32,6 +32,17 @@ logs
 /research/meet-dom-detector/live/.audio-device-index
 /research/meet-dom-detector/live/.bh-device-index
 /research/meet-dom-detector/live/struct-loop-results.json
+# Rig per-run state + result files — regenerated every run; distilled findings
+# live in the p8-verdict / qa docs. Previously-tracked copies untracked 2026-07-05.
+/research/meet-dom-detector/live/.roster-rig-state.json
+/research/meet-dom-detector/live/live-qa-edges.ndjson
+/research/meet-dom-detector/live/live-qa-results.ndjson
+/research/meet-dom-detector/live/roster-rig-turns-results.json
+/research/meet-dom-detector/live/.rig-boot.log
+/research/meet-dom-detector/live/.forced-capture.log
+/research/meet-dom-detector/live/.p8-rig-boot.log
+/research/meet-dom-detector/live/.p8-probe-alpha-active.json
+/research/meet-dom-detector/live/.p8-tmp-probe.json
 # Teams live rig per-run outputs — regenerated each run; the distilled numbers live
 # in docs/teams-active-speaker-detection.md §9. NEVER commit raw traces.
 /qa/teams-live/teams-live-results.ndjson
