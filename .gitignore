@@ -50,6 +50,9 @@ logs
 /qa/teams-live/teams-ring-probe-marks.json
 /qa/teams-live/teams-throttle-trace.ndjson
 /qa/teams-live/teams-axobserve-probe.log
+# Teams-WEB Phase-2 capture rig per-run outputs — flip-timeline NDJSON + BLOCKED
+# DOM snapshots, regenerated each run. NEVER commit raw traces (same as above).
+/qa/teams-web/artifacts/
 node_modules/
 # Claude Code session worktrees (transient agent workspaces)
 .claude/worktrees/
