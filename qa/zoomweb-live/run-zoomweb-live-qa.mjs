@@ -35,9 +35,8 @@
 //                          band = near-miss only. Raw samples always recorded.
 //   zoomweb-silence-live — an unmuted-but-SILENT guest for 60s → ZERO web speaker
 //                          attribution (the falsification scenario).
-//   zoomweb-legacy-silent— a ~30s detector block with NO MSD_MODE during the live
-//                          meeting → zero zoomweb_edge/_observer/_walk_stats output
-//                          while the meeting is still detected legacy (byte-silence).
+//   zoomweb-legacy-silent— the default-flip probe: explicit legacy byte-silent +
+//                          no-env runs event mode (default flipped 2026-07-05)
 //
 //   node qa/zoomweb-live/run-zoomweb-live-qa.mjs --all
 //
@@ -427,38 +426,46 @@ async function scenarioSilence() {
 }
 
 // ===================================================================== scenario 5
-// zoomweb-legacy-silent: a ~30s detector block with NO MSD_MODE during the live
-// meeting → ZERO zoomweb_edge/_observer/_walk_stats output while the meeting is
-// still detected via the legacy path (the runtime byte-silence probe).
+// zoomweb-legacy-silent: the DEFAULT-FLIP probe (2026-07-05: event-driven is the
+// default on every platform; MSD_MODE=legacy is the explicit opt-out). Two parts:
+//   A) explicit MSD_MODE=legacy → byte-silent observer (zero edge/observer/selector
+//      lines; only the single closing all-zero walk_stats baseline line allowed)
+//   B) NO env at all → the observer MUST run (default = event): observer/edge or
+//      event_mode:true walk-stats lines present while the meeting is detected.
 async function scenarioLegacySilent() {
-  log('=== zoomweb-legacy-silent ===');
+  log('=== zoomweb-legacy-silent (default-flip probe) ===');
   if (!rig.observer) { record('zoomweb-legacy-silent', 'REVIEW', { reason: 'observer never joined — no web surface to probe' }); return; }
-  // Have Alpha speak so the meeting is genuinely active during the probe.
+  // Have Alpha speak so the meeting is genuinely active during both probes.
   if (rig.alpha) await speak(['alpha']);
-  const det = startDetector({ seconds: 35, mode: null, edgeLog: null, tag: 'legacy-silent' }); // NO MSD_MODE
-  await sleep(4000);
-  await sleep(30_000);
-  const meetingSeen = det.events.some((e) => isZoom(e) && (e.type === 'meeting_initialized' || e.type === 'participant_joined'));
-  det.kill(); await det.done.catch(() => {});
-  if (rig.alpha) await speak([]);
 
-  // Byte-silence semantics: with NO MSD_MODE the Zoom-web OBSERVER must never run, so
-  // there must be ZERO zoomweb_edge / zoomweb_observer / zoomweb_selector_dump lines.
-  // The engine ALWAYS emits ONE closing zoomweb_walk_stats line for the A/B baseline
-  // (by design — see DetectionEngine.emitZoomWebWalkStats on stop), so that one line
-  // is allowed ONLY IF it proves the observer did NO work: event_mode:false AND
-  // full_walks/subtree_reads/edges all 0. Any per-tick/reconcile walk-stats (there'd
-  // be several) or any nonzero counter means the observer ran = NOT byte-silent.
-  const observerLines = det.raw.filter((r) => /^zoomweb_(edge|observer|selector_dump)$/.test(r.type || '') || r.kind === 'active-moved');
-  const walkLines = det.raw.filter((r) => r.type === 'zoomweb_walk_stats');
-  const walkSilent = walkLines.every((w) => w.event_mode === false && !w.full_walks && !w.subtree_reads && !w.edges);
-  const walkCountOk = walkLines.length <= 1; // only the single closing baseline line is allowed
-  const verdict = (meetingSeen && observerLines.length === 0 && walkSilent && walkCountOk) ? 'PASS' : 'FAIL';
+  // Part A — explicit legacy opt-out must be byte-silent.
+  const legacy = startDetector({ seconds: 22, mode: 'legacy', edgeLog: null, tag: 'legacy-optout' });
+  await sleep(24_000);
+  const legacyMeetingSeen = legacy.events.some((e) => isZoom(e) && (e.type === 'meeting_initialized' || e.type === 'participant_joined'));
+  legacy.kill(); await legacy.done.catch(() => {});
+  const legacyObserverLines = legacy.raw.filter((r) => /^zoomweb_(edge|observer|selector_dump)$/.test(r.type || '') || r.kind === 'active-moved');
+  const legacyWalkLines = legacy.raw.filter((r) => r.type === 'zoomweb_walk_stats');
+  const walkSilent = legacyWalkLines.every((w) => w.event_mode === false && !w.full_walks_event && !w.subtree_reads && !w.edges);
+  const walkCountOk = legacyWalkLines.length <= 1;
+
+  // Part B — no env: default must be EVENT (observer runs).
+  const dflt = startDetector({ seconds: 22, mode: null, edgeLog: null, tag: 'default-event' }); // NO MSD_MODE
+  await sleep(24_000);
+  const defaultMeetingSeen = dflt.events.some((e) => isZoom(e) && (e.type === 'meeting_initialized' || e.type === 'participant_joined'));
+  dflt.kill(); await dflt.done.catch(() => {});
+  if (rig.alpha) await speak([]);
+  const defaultEventLines = dflt.raw.filter((r) =>
+    /^zoomweb_(edge|observer)$/.test(r.type || '') || r.kind === 'active-moved' ||
+    (r.type === 'zoomweb_walk_stats' && r.event_mode === true));
+  const defaultIsEvent = defaultEventLines.length > 0;
+
+  const verdict = (legacyMeetingSeen && legacyObserverLines.length === 0 && walkSilent && walkCountOk
+    && defaultMeetingSeen && defaultIsEvent) ? 'PASS' : 'FAIL';
   record('zoomweb-legacy-silent', verdict, {
-    meetingDetectedLegacy: meetingSeen,
-    observerLineCount: observerLines.length, observerTypes: [...new Set(observerLines.map((r) => r.type || r.kind))],
-    walkStatsLineCount: walkLines.length, walkStatsSample: walkLines[0] || null,
-    walkSilent, note: 'legacy (no MSD_MODE): observer inert — zero edge/observer/selector lines; the one closing walk_stats must show event_mode:false + all-zero counters.',
+    legacyMeetingSeen, legacyObserverLineCount: legacyObserverLines.length,
+    legacyWalkStatsLineCount: legacyWalkLines.length, walkSilent,
+    defaultMeetingSeen, defaultIsEvent, defaultEventLineCount: defaultEventLines.length,
+    note: 'default-flip probe: MSD_MODE=legacy byte-silent; NO env => event mode active (observer/edge or event_mode:true walk-stats present).',
   });
 }
 

@@ -393,7 +393,7 @@ guard('INV-17 zoom live manifests not in CI', () => {
 // handles BOTH MSD_MODE=event (the observer/edge path) and the legacy default
 // (byte-identical zoomWebSpeakerBar direct read). cpu-compare-live's baseline depends
 // on legacy still counting full_walks; zoomweb-events depends on event mode emitting
-// edges; zoomweb-legacy-silent depends on the no-env path being byte-silent.
+// edges; zoomweb-legacy-silent is the default-flip probe: explicit legacy must be byte-silent, no-env must run event (default flipped 2026-07-05).
 guard('INV-18 zoom A/B flag wired', () => {
   const files = [
     'macos/Sources/MeetSpeakerDetector/ViewModel/AppModel.swift',

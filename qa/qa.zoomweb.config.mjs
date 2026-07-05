@@ -74,9 +74,9 @@ export default {
       match: '"verdict":"PASS"',
     },
     {
-      // ~30s detector block with NO MSD_MODE during the live meeting → zero
-      // zoomweb_edge/_observer/_walk_stats output while the meeting is still
-      // detected legacy (the runtime byte-silence probe).
+      // Default-flip probe: MSD_MODE=legacy must be byte-silent AND no-env must run
+      // event mode (2026-07-05 default flip: event-driven is the default everywhere,
+      // legacy is the explicit opt-out).
       id: 'zoomweb-legacy-silent',
       cwd: '.',
       cmd: `node qa/live-scenario-verdict.mjs zoomweb-legacy-silent ${RESULTS}`,

@@ -269,10 +269,11 @@ QA_CONFIG=qa/qa.live.config.mjs    qa/run_autonomous_qa.sh --skip-review
   medians: `eventCpu ≤ 0.6× polling` AND event full walks `< 0.5×` legacy from
   `zoomweb_walk_stats`; REVIEW band = near-miss only), `zoomweb-silence-live`
   (unmuted-but-silent guest 60s → ZERO web speaker attribution — the falsification
-  scenario), and `zoomweb-legacy-silent` (a ~30s detector block with **no** `MSD_MODE`
-  during the live meeting → zero `zoomweb_edge`/`zoomweb_observer`/`zoomweb_walk_stats`
-  activity while the meeting is still detected legacy — the runtime byte-silence
-  probe). Verdicts → `qa/zoomweb-live/zoomweb-live-results.ndjson`.
+  scenario), and `zoomweb-legacy-silent` (the **default-flip probe** — since 2026-07-05
+  event-driven is the DEFAULT on every platform: an explicit `MSD_MODE=legacy` block must
+  be byte-silent (zero `zoomweb_edge`/`zoomweb_observer` activity, one all-zero closing
+  walk-stats line allowed), and a **no-env** block must run event mode — observer/edge or
+  `event_mode:true` walk-stats present). Verdicts → `qa/zoomweb-live/zoomweb-live-results.ndjson`.
 
 The web rig's **topology** (no signed-in Zoom web-host profile exists): host NATIVELY
 via the proven ZoomDrive bootstrap/harvest/admit flow — refactored into the shared

@@ -124,9 +124,10 @@ final class AppModel: ObservableObject {
 
     /// Build the engine config from environment variables — the detector is a SwiftUI
     /// `@main` app so argv is unusable; QA A/Bs legacy vs event mode via env WITHOUT a
-    /// rebuild. With NO env vars set, this returns a default `EngineConfig` (byte-for-byte
-    /// legacy 500ms polling). See plan step 6.
-    ///   MSD_MODE=event|legacy      master A/B switch for Meet (default legacy)
+    /// rebuild. EVENT-DRIVEN IS THE DEFAULT on every platform (2026-07-05, after the
+    /// Meet/Zoom/Teams event paths each went GREEN through their live QA loops);
+    /// MSD_MODE=legacy is the explicit opt-out and restores byte-for-byte 500ms polling.
+    ///   MSD_MODE=event|legacy      master A/B switch for Meet + Zoom (default EVENT)
     ///   MSD_TEAMS_MODE=legacy      DISABLE Teams rapid-swap disambiguation (default is event/on)
     ///   MSD_SKIP_MEET_FULLSCAN     0/1 — override the event-implied Meet sub-walk skip
     ///   MSD_RECONCILE_MS           reconcile-sweep cadence (ms)
@@ -141,19 +142,20 @@ final class AppModel: ObservableObject {
         let env = ProcessInfo.processInfo.environment
         var cfg = EngineConfig()
 
-        let mode = (env["MSD_MODE"] ?? "").lowercased()
-        cfg.eventDrivenMeet = (mode == "event")
-        // Zoom WEB + native use the SAME MSD_MODE=event flag as Meet (the master A/B
-        // switch). With NO env vars set, Zoom is byte-for-byte legacy: zero zoom
-        // observer/edge NDJSON output (a live scenario probes this at runtime).
-        cfg.eventDrivenZoomWeb = (mode == "event")
-        cfg.eventDrivenZoomNative = (mode == "event")
+        // DEFAULT = EVENT on all platforms; only an explicit MSD_MODE=legacy opts out
+        // (mirrors the Teams flag below). The legacy path stays byte-identical and the
+        // CPU A/B suites still set MSD_MODE=legacy explicitly for their baseline.
+        let mode = (env["MSD_MODE"] ?? "event").lowercased()
+        cfg.eventDrivenMeet = (mode != "legacy")
+        // Zoom WEB + native use the SAME MSD_MODE flag as Meet (the master A/B switch).
+        cfg.eventDrivenZoomWeb = (mode != "legacy")
+        cfg.eventDrivenZoomNative = (mode != "legacy")
         // Teams rapid-swap disambiguation (no AXObserver — docs §10). DEFAULT ON;
         // MSD_TEAMS_MODE=legacy restores the byte-for-byte overlap-set behavior.
         cfg.eventDrivenTeams = ((env["MSD_TEAMS_MODE"] ?? "event").lowercased() != "legacy")
         // Event mode IMPLIES the Meet sub-walk short-circuit unless explicitly disabled
         // (the live CPU-compare suite depends on event mode eliminating the sub-walks).
-        // MSD_MODE=legacy (or unset) keeps full_walks counting per scan so the A/B
+        // An explicit MSD_MODE=legacy keeps full_walks counting per scan so the A/B
         // baseline works (INV-8).
         if cfg.eventDrivenMeet {
             let skipRaw = env["MSD_SKIP_MEET_FULLSCAN"]
