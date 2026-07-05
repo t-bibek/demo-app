@@ -1,0 +1,41 @@
+>>> Watching the tile region for 12s. UNMUTE AND TALK NOW (try it once with camera OFF, once with camera ON). Tokens that toggle print below. <<<
+[  0.02s] baseline: 69 tokens
+[  0.02s] 🗣  extractMeetSpeakers → Guest Bravo
+[  0.28s] +class:Oaajhc -class:wEsLMd
+[  1.07s] +class:wEsLMd -class:Oaajhc
+[  1.33s] +class:Oaajhc -class:wEsLMd
+[  2.12s] +class:OgVli -class:Oaajhc
+[  2.38s] +class:Oaajhc -class:OgVli -class:sxlEM
+[  2.65s] +class:OgVli +class:sxlEM -class:Oaajhc
+[  2.91s] +class:wEsLMd -class:OgVli
+[  3.17s] +class:Oaajhc -class:wEsLMd
+[  4.22s] +class:HX2H7 -class:Oaajhc
+[  4.48s] +class:Oaajhc -class:HX2H7
+[  4.74s] +class:HX2H7 -class:Oaajhc
+[  5.00s] +class:Oaajhc -class:HX2H7
+[  5.53s] +class:HX2H7 -class:Oaajhc
+[  5.79s] +class:Oaajhc -class:HX2H7
+[  6.58s] +class:wEsLMd -class:Oaajhc
+[  6.84s] +class:Oaajhc -class:wEsLMd
+[  7.11s] +class:OgVli -class:Oaajhc
+[  7.36s] +class:Oaajhc -class:OgVli
+[  8.95s] -class:BlxGDf -class:Oaajhc -class:sxlEM
+[  8.95s] 🗣  extractMeetSpeakers → (none)
+[  9.22s] +class:BlxGDf +class:Oaajhc +class:sxlEM
+[  9.22s] 🗣  extractMeetSpeakers → Guest Bravo
+[  9.48s] +class:HX2H7 -class:Oaajhc
+[ 10.01s] +class:Oaajhc -class:HX2H7
+[ 10.27s] +class:HX2H7 -class:Oaajhc
+[ 10.53s] +class:Oaajhc -class:HX2H7 -class:sxlEM
+[ 11.06s] +class:HX2H7 +class:sxlEM -class:Oaajhc
+[ 11.32s] +class:Oaajhc -class:HX2H7
+[ 11.58s] +class:OgVli -class:Oaajhc
+[ 11.85s] +class:wEsLMd -class:OgVli
+
+=== TRANSIENT tokens (present in some frames, absent in others) ===
+class:BlxGDf
+class:HX2H7
+class:Oaajhc
+class:OgVli
+class:sxlEM
+class:wEsLMd

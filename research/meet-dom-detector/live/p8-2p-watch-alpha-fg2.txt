@@ -1,0 +1,57 @@
+>>> Watching the tile region for 15s. UNMUTE AND TALK NOW (try it once with camera OFF, once with camera ON). Tokens that toggle print below. <<<
+[  0.03s] baseline: 63 tokens
+[  0.03s] 🗣  extractMeetSpeakers → Guest Alpha
+[  0.28s] +class:wEsLMd -class:OgVli
+[  0.53s] +class:gjg47c -class:BlxGDf -class:wEsLMd
+[  0.79s] +class:BlxGDf +class:HX2H7 -class:gjg47c
+[  1.04s] +class:Oaajhc -class:HX2H7 -class:sxlEM
+[  1.82s] +class:sxlEM +class:wEsLMd -class:Oaajhc
+[  2.07s] +class:Oaajhc -class:wEsLMd
+[  2.33s] +class:gjg47c -class:BlxGDf -class:Oaajhc
+[  2.58s] +class:BlxGDf +class:Oaajhc -class:gjg47c
+[  2.84s] +class:OgVli -class:Oaajhc
+[  3.10s] +class:Oaajhc -class:OgVli
+[  3.36s] +class:wEsLMd -class:Oaajhc
+[  3.62s] +class:Oaajhc -class:wEsLMd
+[  3.88s] +class:wEsLMd -class:Oaajhc
+[  4.39s] +class:Oaajhc -class:wEsLMd
+[  4.64s] +class:gjg47c -class:BlxGDf -class:Oaajhc
+[  4.90s] +class:BlxGDf +class:wEsLMd -class:gjg47c
+[  5.42s] +class:Oaajhc -class:wEsLMd
+[  5.68s] +class:OgVli -class:Oaajhc
+[  5.93s] +class:Oaajhc -class:OgVli
+[  6.19s] +class:gjg47c -class:BlxGDf -class:Oaajhc
+[  6.45s] +class:BlxGDf +class:wEsLMd -class:gjg47c
+[  6.70s] +class:Oaajhc -class:wEsLMd
+[  7.21s] +class:OgVli -class:Oaajhc
+[  7.48s] +class:gjg47c -class:BlxGDf -class:OgVli
+[  7.73s] +class:BlxGDf +class:wEsLMd -class:gjg47c
+[  7.99s] +class:Oaajhc -class:wEsLMd
+[  8.24s] +class:wEsLMd -class:Oaajhc
+[  8.49s] +class:Oaajhc -class:wEsLMd
+[  9.25s] +class:gjg47c -class:BlxGDf -class:Oaajhc
+[  9.51s] +class:BlxGDf +class:wEsLMd -class:gjg47c
+[  9.77s] +class:Oaajhc -class:wEsLMd
+[ 10.28s] +class:wEsLMd -class:Oaajhc
+[ 10.54s] +class:Oaajhc -class:wEsLMd
+[ 10.79s] +class:OgVli -class:Oaajhc
+[ 11.05s] +class:wEsLMd -class:OgVli
+[ 11.56s] +class:OgVli -class:wEsLMd
+[ 11.82s] +class:Oaajhc -class:OgVli
+[ 12.07s] +class:wEsLMd -class:Oaajhc
+[ 12.33s] +class:HX2H7 -class:wEsLMd
+[ 12.59s] +class:Oaajhc -class:HX2H7
+[ 13.10s] +class:wEsLMd -class:Oaajhc
+[ 13.36s] +class:Oaajhc -class:wEsLMd
+[ 14.13s] +class:OgVli -class:Oaajhc
+[ 14.39s] +class:wEsLMd -class:OgVli
+[ 14.90s] +class:Oaajhc -class:wEsLMd
+
+=== TRANSIENT tokens (present in some frames, absent in others) ===
+class:BlxGDf
+class:HX2H7
+class:Oaajhc
+class:OgVli
+class:gjg47c
+class:sxlEM
+class:wEsLMd

@@ -1,0 +1,5 @@
+>>> Watching the tile region for 15s. UNMUTE AND TALK NOW (try it once with camera OFF, once with camera ON). Tokens that toggle print below. <<<
+[  0.02s] baseline: 12 tokens
+
+=== TRANSIENT tokens (present in some frames, absent in others) ===
+(none — nothing toggled)
