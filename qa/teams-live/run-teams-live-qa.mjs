@@ -56,8 +56,16 @@ const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
 const MACOS = join(REPO, 'macos');
-const DETECTOR_BIN = join(MACOS, '.build', 'debug', 'MeetSpeakerDetector');
+// MSD_DETECTOR_BIN overrides the sandbox SwiftPM debug binary so an EXTERNAL
+// (product) detector can be gated by this live rig. When set, the swift-build
+// prebuild is skipped and the binary must already exist — fail fast here,
+// BEFORE any meeting/rig infrastructure is launched.
+const DETECTOR_BIN = process.env.MSD_DETECTOR_BIN || join(MACOS, '.build', 'debug', 'MeetSpeakerDetector');
 const TEAMSDRIVE_BIN = join(MACOS, '.build', 'debug', 'TeamsDrive');
+if (process.env.MSD_DETECTOR_BIN && !existsSync(DETECTOR_BIN)) {
+  console.error(`[teams-live] FATAL: MSD_DETECTOR_BIN is set but no detector binary exists at ${DETECTOR_BIN}`);
+  process.exit(1);
+}
 const RESULTS_NDJSON = join(HERE, 'teams-live-results.ndjson');
 const GUEST_PORT = 9331;
 
@@ -98,6 +106,14 @@ function preflightAxTrust() {
   return true; // NOT_RUNNING is fine here — we launch Teams next
 }
 function prebuild() {
+  if (process.env.MSD_DETECTOR_BIN) {
+    log(`using external detector: ${DETECTOR_BIN} (prebuild skipped)`);
+    if (!existsSync(TEAMSDRIVE_BIN)) {
+      console.error(`[teams-live] external-detector mode still needs TeamsDrive at ${TEAMSDRIVE_BIN} — run \`swift build --package-path macos\` once`);
+      return false;
+    }
+    return true;
+  }
   log('swift build --package-path macos …');
   const r = spawnSync('swift', ['build', '--package-path', MACOS], { encoding: 'utf8', timeout: 20 * 60_000 });
   if (r.status !== 0) {

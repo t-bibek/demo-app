@@ -1,0 +1,47 @@
+{
+  "scope": "suites+review",
+  "tools": [],
+  "suites": [
+    {
+      "id": "node-harness",
+      "ok": true,
+      "code": 0,
+      "count": 23,
+      "reason": "",
+      "tail": "-------------------------------------------------------------------------------------------- / 23/23 passed  (6/6 REAL captured-DOM, 2/2 REAL-EXT current-widget, 15/15 synthetic)"
+    },
+    {
+      "id": "browser-qa",
+      "ok": true,
+      "code": 0,
+      "count": 34,
+      "reason": "",
+      "tail": "------------------------------------------------------------------------------------------------ / 34/34 scenarios passed in a real browser"
+    },
+    {
+      "id": "swift-selftest",
+      "ok": true,
+      "code": 0,
+      "count": null,
+      "reason": "",
+      "tail": "[0/3] Write swift-version--1AB21518FC5DEDBE.txt / Build of product 'SpeakerCoreSelfTest' complete! (0.17s)"
+    },
+    {
+      "id": "teams-ring-probe-analysis",
+      "ok": true,
+      "code": 0,
+      "count": null,
+      "reason": "",
+      "tail": "  ok   - throttle: never empty -> pipSurvived false / ALL PASSED — 20 ok, 0 fail"
+    }
+  ],
+  "review": {
+    "id": "qa-check-review",
+    "ok": true,
+    "code": 0
+  },
+  "blockers": [],
+  "warnings": [],
+  "passed": true,
+  "ms": 4401
+}

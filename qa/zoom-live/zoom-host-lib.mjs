@@ -19,13 +19,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
 const MACOS = join(REPO, 'macos');
 
+// MSD_DETECTOR_BIN overrides the sandbox SwiftPM debug binary so an EXTERNAL
+// (product) detector can be gated by the live rigs. When set, prebuild() skips
+// the swift build and the binary must already exist — fail fast at import,
+// BEFORE any caller launches meeting/rig infrastructure.
 export const PATHS = {
   REPO,
   MACOS,
-  DETECTOR_BIN: join(MACOS, '.build', 'debug', 'MeetSpeakerDetector'),
+  DETECTOR_BIN: process.env.MSD_DETECTOR_BIN || join(MACOS, '.build', 'debug', 'MeetSpeakerDetector'),
   ZOOMDRIVE_BIN: join(MACOS, '.build', 'debug', 'ZoomDrive'),
   AXSNAPSHOT_BIN: join(MACOS, '.build', 'debug', 'AXSnapshot'),
 };
+if (process.env.MSD_DETECTOR_BIN && !existsSync(PATHS.DETECTOR_BIN)) {
+  console.error(`[zoom-host] FATAL: MSD_DETECTOR_BIN is set but no detector binary exists at ${PATHS.DETECTOR_BIN}`);
+  process.exit(1);
+}
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const nowSec = () => Math.floor(Date.now() / 1000);
@@ -80,6 +88,14 @@ export const panelToggle = () => keystroke('u', ['command']); // ⌘U TOGGLES th
 // binary the rigs spawn is fresh, and compile time never lands inside a timed CPU
 // window. Returns false with a tail on failure.
 export function prebuild(log = () => {}) {
+  if (process.env.MSD_DETECTOR_BIN) {
+    log(`using external detector: ${PATHS.DETECTOR_BIN} (prebuild skipped)`);
+    if (!existsSync(PATHS.ZOOMDRIVE_BIN)) {
+      console.error(`[zoom-host] external-detector mode still needs ZoomDrive at ${PATHS.ZOOMDRIVE_BIN} — run \`swift build --package-path macos\` once`);
+      return false;
+    }
+    return true;
+  }
   log('swift build --package-path macos …');
   const r = spawnSync('swift', ['build', '--package-path', MACOS], { encoding: 'utf8', timeout: 20 * 60_000 });
   if (r.status !== 0) {

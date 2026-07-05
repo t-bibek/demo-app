@@ -53,7 +53,15 @@ const MACOS = join(REPO, 'macos');
 const RESULTS_NDJSON = join(HERE, 'live-qa-results.ndjson');
 const RIG_RESULTS = join(HERE, 'roster-rig-turns-results.json');
 const RIG_SCRIPT = join(HERE, 'roster-rig-3p.js');
-const DETECTOR_BIN = join(MACOS, '.build', 'debug', 'MeetSpeakerDetector');
+// MSD_DETECTOR_BIN overrides the sandbox SwiftPM debug binary so an EXTERNAL
+// (product) detector can be gated by this live rig. When set, the swift-build
+// prebuild is skipped and the binary must already exist — fail fast here,
+// BEFORE any meeting/rig infrastructure is launched.
+const DETECTOR_BIN = process.env.MSD_DETECTOR_BIN || join(MACOS, '.build', 'debug', 'MeetSpeakerDetector');
+if (process.env.MSD_DETECTOR_BIN && !existsSync(DETECTOR_BIN)) {
+  console.error(`[live-qa] FATAL: MSD_DETECTOR_BIN is set but no detector binary exists at ${DETECTOR_BIN}`);
+  process.exit(1);
+}
 // Fixed edge-log path so the detector running DURING the rig's turns and the
 // ax-events correlation afterward agree on where the meet_edge NDJSON lands.
 const TURN_EDGE_LOG = join(HERE, 'live-qa-edges.ndjson');
@@ -126,6 +134,10 @@ function preflightAxTrust() {
 // pollute the CPU numbers). Runs the built binary directly so `ps` sees the
 // detector PID, not a `swift run` wrapper. --------------------------------------
 function prebuildDetector() {
+  if (process.env.MSD_DETECTOR_BIN) {
+    log(`using external detector: ${DETECTOR_BIN} (prebuild skipped)`);
+    return true;
+  }
   log('swift build --package-path macos (pre-build; may take minutes on a cold cache)…');
   const r = spawnSync('swift', ['build', '--package-path', MACOS], { encoding: 'utf8', timeout: 20 * 60_000 });
   const out = ((r.stdout || '') + (r.stderr || '')).trim();
