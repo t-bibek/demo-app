@@ -670,7 +670,266 @@ async function runEventQA() {
 }
 
 // ===========================================================================
+// OBS-SWEEP LIVE SESSION (--obssweep). Drives the PRODUCT binary (MSD_DETECTOR_BIN)
+// with MSD_OBS_TRACE=1 so its in-process TeamsObserverSweep registers the full
+// kAX notification set on the native-Teams pid + call windows, and captures raw
+// stderr (the obs-sweep lines) tee'd to a file, plus the edge log and a scripted
+// phase/flip timeline. This is measurement-only: it never asserts detection
+// correctness, only whether ANY AX callback fires and whether registration took
+// (obs-sweep-stats registered>0). Reuses hostJoinCall/joinGuest/setGuestSpeak/
+// drive/hide/show exactly as the other live modes. Env: OBS_SWEEP_DIR (artifact
+// dir), OBS_SWEEP_SESSION (session tag for filenames).
+const OBS_DIR = process.env.OBS_SWEEP_DIR
+  || '/private/tmp/claude-501/-Users-bibekthapa-projects-work-demo-app/a7193c99-f3ed-4083-a664-863fa5775596/scratchpad/obs-sweep';
+const OBS_SESSION = process.env.OBS_SWEEP_SESSION || 's1';
+
+// Spawn the PRODUCT detector with the observer sweep on; tee raw stderr+stdout to
+// files and keep a per-line wall-clock receive log (so obs-sweep callback lines
+// can be correlated with the scripted flip timeline by receive-ts, mirroring how
+// runObserve timestamps AXObserve lines). Also parses [event] JSON into memory so
+// we can wait on meeting_initialized / participant_joined.
+function startSweepDetector(seconds, sessionTag, extraEnv = {}) {
+  const stderrPath = join(OBS_DIR, `sweep-stderr-${sessionTag}.log`);
+  const edgePath = join(OBS_DIR, `edge-${sessionTag}.log`);
+  const rxPath = join(OBS_DIR, `sweep-rx-${sessionTag}.ndjson`); // {ts, stream, line} per line
+  const env = {
+    ...process.env,
+    MSD_AUTOSTART: '1',
+    MSD_RUN_SECONDS: String(seconds),
+    MSD_OBS_TRACE: '1',
+    MSD_EDGE_LOG: edgePath,
+    ...extraEnv,
+  };
+  const proc = spawn(DETECTOR_BIN, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const events = [];
+  const obsLines = [];   // {ts, line} for every stderr line containing 'obs-sweep'
+  writeFileSync(stderrPath, '');
+  writeFileSync(rxPath, '');
+  const mkOn = (stream) => {
+    let buf = '';
+    return (d) => {
+      buf += d.toString();
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const ln = buf.slice(0, i); buf = buf.slice(i + 1);
+        const ts = Date.now();
+        appendFileSync(rxPath, JSON.stringify({ ts, stream, line: ln }) + '\n');
+        if (stream === 'err') appendFileSync(stderrPath, ln + '\n');
+        if (ln.includes('obs-sweep')) obsLines.push({ ts, line: ln });
+        const j = ln.indexOf('{');
+        if (j >= 0 && ln.includes('[event]')) {
+          try { const o = JSON.parse(ln.slice(j)); if (o && o.type) events.push(o); } catch (e) {}
+        }
+      }
+    };
+  };
+  proc.stdout.on('data', mkOn('out'));
+  proc.stderr.on('data', mkOn('err'));
+  const done = new Promise((res) => proc.on('exit', res));
+  return { proc, events, obsLines, done, stderrPath, edgePath, rxPath,
+           pid: proc.pid, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
+}
+
+// Best-effort native layout switch via TeamsDrive: View menu → gallery/speaker/
+// together. Labels vary by Teams build; press the first that lands. Returns the
+// label used or null (layout coverage is manual-best-effort per the protocol).
+async function driveLayout(kind) {
+  const menus = {
+    gallery: ['Gallery', 'Gallery view', 'Gallery at top'],
+    speaker: ['Speaker', 'Speaker view', 'Focus'],
+    together: ['Together mode', 'Together'],
+  }[kind] || [];
+  // Open the "More"/"View" affordance first if present, then press the layout.
+  await pressFirst(['View', 'More', 'More options'], 1200);
+  return await pressFirst(menus, 1500);
+}
+
+// PRODUCT-binary Teams predicate. The sandbox detector keys meeting_id as
+// "teams::…" (isTeams above), but the PRODUCT binary emits
+// meeting_id="Microsoft Teams|com.microsoft.teams2" with platform="teams" on
+// meeting_initialized (and the same pipe id on participant_joined). Match on
+// platform OR the pipe-id so the sweep wrapper recognizes the product's events.
+const isTeamsProd = (e) =>
+  e && (e.platform === 'teams'
+    || (typeof e.meeting_id === 'string'
+        && (e.meeting_id.startsWith('teams::')
+            || e.meeting_id.startsWith('Microsoft Teams|'))));
+
+// A scripted phase marker, wall-clock ts. Written to the flip timeline.
+function phaseMark(marks, phase, extra = {}) {
+  const m = { phase, ts: Date.now(), ...extra };
+  marks.push(m);
+  log(`PHASE ${phase} @${m.ts}`);
+  return m;
+}
+
+async function runOneSweepSession(sessionTag) {
+  const stderrPath = join(OBS_DIR, `sweep-stderr-${sessionTag}.log`);
+  const edgePath = join(OBS_DIR, `edge-${sessionTag}.log`);
+  const rxPath = join(OBS_DIR, `sweep-rx-${sessionTag}.ndjson`);
+  const marksPath = join(OBS_DIR, `flip-timeline-${sessionTag}.json`);
+  const marks = [];
+  let chromeGuest = null;
+  const det = startSweepDetector(1200, sessionTag);
+  const result = { sessionTag, det: { pid: det.pid }, blocked: null };
+
+  try {
+    phaseMark(marks, 'session_start', { sessionTag, detectorPid: det.pid });
+    if (!await hostJoinCall()) { result.blocked = 'host could not join a Teams native call'; return result; }
+    const init = await waitEvent(det, (e) => e.type === 'meeting_initialized' && isTeamsProd(e), 60_000, 'meeting_initialized');
+    if (!init) { result.blocked = 'no teams meeting_initialized within 60s (sweep never got a native pid)'; return result; }
+    phaseMark(marks, 'meeting_initialized', { meeting_id: init.meeting_id });
+
+    // Wait up to 30s for the FIRST obs-sweep-stats line with registered>0 — the
+    // registration proof. If registered=0 / no stats, diagnose before continuing.
+    const regDeadline = Date.now() + 30_000;
+    let firstStats = null;
+    while (Date.now() < regDeadline) {
+      const stats = det.obsLines.filter((l) => l.line.includes('obs-sweep-stats'));
+      const withReg = stats.find((l) => /registered=([1-9]\d*)/.test(l.line));
+      if (withReg) { firstStats = withReg; break; }
+      await sleep(1000);
+    }
+    if (!firstStats) {
+      const anyStats = det.obsLines.filter((l) => l.line.includes('obs-sweep-stats'));
+      result.registrationProof = anyStats.length
+        ? `stats present but registered=0: ${anyStats[anyStats.length - 1].line}`
+        : 'NO obs-sweep-stats lines at all — sweep never attached (env? attach condition? pid?)';
+      phaseMark(marks, 'registration_UNPROVEN', { detail: result.registrationProof });
+      // Continue anyway to gather diagnostics, but the verdict will flag this.
+    } else {
+      result.registrationProof = firstStats.line;
+      phaseMark(marks, 'registration_proven', { line: firstStats.line });
+    }
+
+    // Bring in a speaking guest (needed for ring flips). Harvest link, join guest.
+    const url = await harvestInCall();
+    if (url) {
+      log('meeting link: ' + url);
+      try {
+        chromeGuest = await joinGuest(url, { override: true });
+        await sleep(8_000); await pressFirst(['Admit'], 3_000);
+        const gj = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeamsProd(e) && e.name === GUEST_NAME, 120_000, 'guest joined');
+        if (gj) {
+          phaseMark(marks, 'guest_joined', { name: GUEST_NAME });
+          const page = chromeGuest.page;
+          for (let i = 0; i < 20 && !(await guestMicReady(page)); i++) await sleep(500);
+        } else {
+          phaseMark(marks, 'guest_join_FAILED', {});
+        }
+      } catch (e) { log('guest join error: ' + e.message); phaseMark(marks, 'guest_join_ERROR', { err: String(e && e.message) }); }
+    } else {
+      phaseMark(marks, 'no_meeting_url', { note: 'ring-flip window will be solo — best-effort self-tile activity only' });
+    }
+    const page = chromeGuest ? chromeGuest.page : null;
+
+    drive('raise'); await sleep(1000);
+
+    // ---- Window (i): guest speaking cycles ~5s on / ~5s off, >=6 flips (>=60s) ----
+    phaseMark(marks, 'W1_flips_start', {});
+    for (let i = 0; i < 6; i++) {
+      const on = true;
+      if (page) await setGuestSpeak(page, on);
+      phaseMark(marks, 'flip_on', { i });
+      await sampleFor(5_000, () => drive('raise'));
+      if (page) await setGuestSpeak(page, false);
+      phaseMark(marks, 'flip_off', { i });
+      await sampleFor(5_000, () => drive('raise'));
+    }
+    phaseMark(marks, 'W1_flips_end', {});
+
+    // ---- Window (ii): silence (>=60s), guest muted/silent, no flips ----
+    if (page) await setGuestSpeak(page, false);
+    phaseMark(marks, 'W2_silence_start', {});
+    await sampleFor(60_000, () => drive('raise'));
+    phaseMark(marks, 'W2_silence_end', {});
+
+    // ---- Window (iii): layout change events (best-effort) ----
+    phaseMark(marks, 'W3_layout_start', {});
+    for (const kind of ['speaker', 'gallery', 'together', 'gallery']) {
+      const used = await driveLayout(kind);
+      phaseMark(marks, 'layout_switch', { kind, used });
+      await sampleFor(8_000, () => drive('raise'));
+    }
+    phaseMark(marks, 'W3_layout_end', {});
+
+    // ---- Window (iv): foreground vs backgrounded/minimized (throttle state) ----
+    // Drive guest speech continuously so ring WOULD flip if callbacks fired; the
+    // question is whether callbacks keep coming while Teams is throttled.
+    phaseMark(marks, 'W4_foreground_speak_start', {});
+    if (page) await setGuestSpeak(page, true);
+    await sampleFor(15_000, () => drive('raise'));   // foreground, speaking
+    phaseMark(marks, 'W4_minimize', {});
+    drive('minimize');
+    await sampleFor(20_000, null);                    // minimized, guest still speaking
+    phaseMark(marks, 'W4_unminimize', {});
+    drive('unminimize'); drive('raise');
+    await sampleFor(6_000, () => drive('raise'));
+    phaseMark(marks, 'W4_hide', {});
+    hideTeams();
+    await sampleFor(20_000, null);                    // hidden, guest still speaking
+    phaseMark(marks, 'W4_show', {});
+    showTeams();
+    await sampleFor(6_000, () => drive('raise'));
+    if (page) await setGuestSpeak(page, false);
+    phaseMark(marks, 'W4_end', {});
+
+    phaseMark(marks, 'session_end', {});
+
+    // Snapshot the last stats line per pid for the registration-proof table.
+    const statsLines = det.obsLines.filter((l) => l.line.includes('obs-sweep-stats'));
+    result.lastStats = statsLines.length ? statsLines[statsLines.length - 1].line : null;
+    result.allStatsCount = statsLines.length;
+    result.callbackLines = det.obsLines.filter((l) => /obs-sweep: (?!register-fail)(?!observer-create-fail)(?!stats)/.test(l.line)).length;
+  } finally {
+    // Give the detector a moment to flush a final stats tick, then stop it.
+    await sleep(1500);
+    if (chromeGuest && chromeGuest.chrome) { try { chromeGuest.chrome.kill(); } catch (e) {} }
+    await hostLeaveCall();
+    det.kill();
+    writeFileSync(marksPath, JSON.stringify(marks, null, 2));
+    result.artifacts = { stderrPath, edgePath, rxPath, marksPath };
+  }
+  return result;
+}
+
+async function runObsSweep() {
+  mkdirSync(OBS_DIR, { recursive: true });
+  mkdirSync(HERE, { recursive: true });
+  writeFileSync(RESULTS_NDJSON, '');
+  if (!process.env.MSD_DETECTOR_BIN) {
+    console.error('[teams-live] --obssweep REQUIRES MSD_DETECTOR_BIN pointed at the PRODUCT binary');
+    record('teams-obssweep', 'FAIL', { reason: 'MSD_DETECTOR_BIN unset' });
+    console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1);
+  }
+  if (!prebuild()) { record('teams-obssweep', 'FAIL', { reason: 'TeamsDrive missing' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+  if (!preflightAxTrust()) { record('teams-obssweep', 'FAIL', { reason: 'Accessibility permission not granted' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
+
+  const sessions = (process.env.OBS_SWEEP_SESSIONS || 's1,s2').split(',');
+  const results = [];
+  for (const tag of sessions) {
+    log(`===== OBS-SWEEP SESSION ${tag} =====`);
+    try {
+      const r = await runOneSweepSession(tag);
+      results.push(r);
+      record(`teams-obssweep-${tag}`, r.blocked ? 'BLOCKED' : 'DONE', r);
+    } catch (e) {
+      log(`session ${tag} threw: ${e && e.stack}`);
+      results.push({ sessionTag: tag, error: String(e && e.message) });
+      record(`teams-obssweep-${tag}`, 'ERROR', { error: String(e && e.message) });
+    }
+    // Cooldown between sessions so Teams settles.
+    await sleep(5_000);
+  }
+  writeFileSync(join(OBS_DIR, 'sessions-summary.json'), JSON.stringify(results, null, 2));
+  log('OBS-SWEEP ALL SESSIONS DONE');
+  console.log('TEAMS LIVE SESSION COMPLETE');
+  process.exit(0);
+}
+
+// ===========================================================================
 async function main() {
+  if (process.argv.includes('--obssweep')) return runObsSweep();
   if (process.argv.includes('--observe')) return runObserve();
   if (process.argv.includes('--eventqa')) return runEventQA();
   if (process.argv.includes('--probe')) return runProbe();
