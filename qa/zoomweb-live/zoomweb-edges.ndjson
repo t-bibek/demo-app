@@ -1,0 +1,6 @@
+{"confidence":1,"kind":"active-moved","mono_ts":861091783,"to":"Guest Alpha","type":"zoomweb_edge","wall_ts":1783330433171}
+{"confidence":1,"from":"Guest Alpha","kind":"active-moved","mono_ts":861106822,"to":"Guest Bravo","type":"zoomweb_edge","wall_ts":1783330448210}
+{"confidence":1,"from":"Guest Bravo","kind":"active-moved","mono_ts":861114316,"to":"Guest Alpha","type":"zoomweb_edge","wall_ts":1783330455703}
+{"confidence":1,"from":"Guest Alpha","kind":"active-moved","mono_ts":861117320,"to":"Guest Bravo","type":"zoomweb_edge","wall_ts":1783330458708}
+{"confidence":1,"from":"Guest Bravo","kind":"active-moved","mono_ts":861120319,"to":"Guest Alpha","type":"zoomweb_edge","wall_ts":1783330461707}
+{"confidence":1,"from":"Guest Alpha","kind":"active-moved","mono_ts":861123315,"to":"Guest Bravo","type":"zoomweb_edge","wall_ts":1783330464703}

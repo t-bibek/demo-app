@@ -1,20 +1,12 @@
-{"meeting_id":"zoom::meeting","participant_count":2,"platform":"zoom","title":"Zoom Meeting","ts":1783154713651,"type":"meeting_initialized"}
-{"is_local":false,"is_muted":false,"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","ts":1783154713651,"type":"participant_joined"}
-{"is_local":true,"is_muted":false,"meeting_id":"zoom::meeting","name":"David Thapa","participant_id":"zoom::meeting::davidthapa","ts":1783154713651,"type":"participant_joined"}
-{"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","platform":"zoom","source":"zoom.mute_gate","start_ts":1783154716169,"ts":1783154716169,"type":"speech_on"}
-{"duration_ms":500,"end_ts":1783154716669,"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","platform":"zoom","source":"zoom.mute_gate","start_ts":1783154716169,"ts":1783154716669,"type":"speech_off"}
-{"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","platform":"zoom","source":"zoom.mute_gate","start_ts":1783154719168,"ts":1783154719168,"type":"speech_on"}
-{"is_local":false,"is_muted":true,"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","ts":1783154725168,"type":"participant_updated"}
-{"meeting_id":"zoom::meeting","participant_count":2,"platform":"zoom","title":"Zoom Meeting","ts":1783154725168,"type":"meeting_updated"}
-{"meeting_id":"zoom::meeting","name":"Someone","participant_id":"zoom::meeting::someone","platform":"zoom","source":"audio.someone","start_ts":1783154725669,"ts":1783154725669,"type":"speech_on"}
-{"duration_ms":4500,"end_ts":1783154723668,"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","platform":"zoom","source":"zoom.mute_gate","start_ts":1783154719168,"ts":1783154723668,"type":"speech_off"}
-{"duration_ms":1999,"end_ts":1783154727668,"meeting_id":"zoom::meeting","name":"Someone","participant_id":"zoom::meeting::someone","platform":"zoom","source":"audio.someone","start_ts":1783154725669,"ts":1783154727668,"type":"speech_off"}
-{"meeting_id":"zoom::meeting","name":"Someone","participant_id":"zoom::meeting::someone","platform":"zoom","source":"audio.someone","start_ts":1783154730167,"ts":1783154730167,"type":"speech_on"}
-{"duration_ms":500,"end_ts":1783154730667,"meeting_id":"zoom::meeting","name":"Someone","participant_id":"zoom::meeting::someone","platform":"zoom","source":"audio.someone","start_ts":1783154730167,"ts":1783154730667,"type":"speech_off"}
-{"meeting_id":"zoom::meeting","name":"Someone","participant_id":"zoom::meeting::someone","platform":"zoom","source":"audio.someone","start_ts":1783154733167,"ts":1783154733167,"type":"speech_on"}
-{"duration_ms":5001,"end_ts":1783154738168,"meeting_id":"zoom::meeting","name":"Someone","participant_id":"zoom::meeting::someone","platform":"zoom","source":"audio.someone","start_ts":1783154733167,"ts":1783154738168,"type":"speech_off"}
-{"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","platform":"zoom","source":"zoom.mute_gate","start_ts":1783154742168,"ts":1783154742168,"type":"speech_on"}
-{"is_local":false,"is_muted":false,"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","ts":1783154742168,"type":"participant_updated"}
-{"meeting_id":"zoom::meeting","participant_count":2,"platform":"zoom","title":"Zoom Meeting","ts":1783154742168,"type":"meeting_updated"}
-{"duration_ms":2000,"end_ts":1783154744168,"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","platform":"zoom","source":"zoom.mute_gate","start_ts":1783154742168,"ts":1783154744168,"type":"speech_off"}
-{"meeting_id":"zoom::meeting","name":"Guest Alpha","participant_id":"zoom::meeting::guestalpha","platform":"zoom","source":"zoom.mute_gate","start_ts":1783154746668,"ts":1783154746668,"type":"speech_on"}
+{"meeting_id":"Zoom|us.zoom.xos","participant_count":4,"platform":"zoom","title":"Zoom Meeting","ts":1783330023020,"type":"meeting_initialized"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Guest Alpha","participant_id":"Zoom|us.zoom.xos::guestalpha","ts":1783330023020,"type":"participant_joined"}
+{"is_local":true,"meeting_id":"Zoom|us.zoom.xos","name":"David Thapa","participant_id":"Zoom|us.zoom.xos::davidthapa","ts":1783330023020,"type":"participant_joined"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Guest Bravo","participant_id":"Zoom|us.zoom.xos::guestbravo","ts":1783330023020,"type":"participant_joined"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Joined","participant_id":"Zoom|us.zoom.xos::joined","ts":1783330023020,"type":"participant_joined"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Guest Bravo","participant_id":"Zoom|us.zoom.xos::guestbravo","ts":1783330033184,"type":"participant_joined"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Joined","participant_id":"Zoom|us.zoom.xos::joined","ts":1783330033184,"type":"participant_joined"}
+{"meeting_id":"Zoom|us.zoom.xos","participant_count":4,"platform":"zoom","title":"Zoom Meeting  40-minutes","ts":1783330042812,"type":"meeting_initialized"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Guest Alpha","participant_id":"Zoom|us.zoom.xos::guestalpha","ts":1783330042812,"type":"participant_joined"}
+{"is_local":true,"meeting_id":"Zoom|us.zoom.xos","name":"David Thapa","participant_id":"Zoom|us.zoom.xos::davidthapa","ts":1783330042812,"type":"participant_joined"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Guest Bravo","participant_id":"Zoom|us.zoom.xos::guestbravo","ts":1783330042812,"type":"participant_joined"}
+{"is_local":false,"meeting_id":"Zoom|us.zoom.xos","name":"Joined","participant_id":"Zoom|us.zoom.xos::joined","ts":1783330042812,"type":"participant_joined"}
