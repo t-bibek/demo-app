@@ -151,7 +151,16 @@ function record(scenario, verdict, detail) {
 // zoomweb_* NDJSON lines (which arrive on stdout, mirrored to MSD_EDGE_LOG for
 // edges). `mode` null ⇒ NO MSD_MODE env (the legacy byte-silence probe).
 function startDetector({ seconds, mode, edgeLog, tag }) {
-  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds) };
+  // MSD_EDGE_LOG=1 is REQUIRED for the PRODUCT binary to emit its typed `[event]` mirror
+  // (meeting_initialized / participant_* / speech_on with a zoom.web_active source) — it is
+  // gated on MonitorDiagnostics.emitEventLine. Without it the product emits ONLY the wire +
+  // meet_walk_stats, so every waitEvent()/isWebSpeech() reader here goes dark (root cause of
+  // the 2026-07-06 web views/legacy-silent false-blindness: zoomweb_edge lines flowed via the
+  // edge log but no speech_on/meeting_initialized reached the events reader). The sandbox
+  // binary emits [event] unconditionally, so `=1` is a no-op for it. A caller passing a
+  // file-path edgeLog overrides. Same fix the native zoom rig + Teams rig carry.
+  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds),
+                MSD_EDGE_LOG: '1' };
   if (mode) env.MSD_MODE = mode;
   if (edgeLog) { env.MSD_EDGE_LOG = edgeLog; try { writeFileSync(edgeLog, ''); } catch (e) {} }
   const proc = spawn(PATHS.DETECTOR_BIN, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -210,9 +219,13 @@ async function waitEvent(det, pred, timeoutMs, label) {
 }
 
 // --- CPU-sampled detector run (for the interleaved A/B). Samples ps %cpu on the
-// detector PID; parses the LAST zoomweb_walk_stats line for full_walks. ----------
+// detector PID; parses the LAST meet_walk_stats line for full_walks. --------------
+// The PRODUCT binary emits the SHARED `meet_walk_stats` line (not a zoomweb-specific
+// one); its full_walks IS the event-vs-legacy work metric the walk-ratio gate needs.
+// MSD_EDGE_LOG=1 so the line's [event] mirror flushes on auto-exit.
 async function runDetectorCpu({ mode, seconds }) {
-  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_MODE: mode, MSD_RUN_SECONDS: String(seconds) };
+  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_MODE: mode, MSD_RUN_SECONDS: String(seconds),
+                MSD_EDGE_LOG: '1' };
   const proc = spawn(PATHS.DETECTOR_BIN, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   proc.stdout.on('data', (d) => { out += d.toString(); });
@@ -237,7 +250,7 @@ async function runDetectorCpu({ mode, seconds }) {
   let walkStats = null;
   for (const ln of out.split('\n')) {
     const i = ln.indexOf('{'); if (i < 0) continue;
-    try { const o = JSON.parse(ln.slice(i)); if (o && o.type === 'zoomweb_walk_stats') walkStats = o; } catch (e) {}
+    try { const o = JSON.parse(ln.slice(i)); if (o && (o.type === 'meet_walk_stats' || o.type === 'zoomweb_walk_stats')) walkStats = o; } catch (e) {}
   }
   return { cpuSamples, walkStats, stdout: out, exitCode };
 }
@@ -568,9 +581,12 @@ async function scenarioLegacySilent() {
   const legacyMeetingSeen = legacy.events.some((e) => isZoom(e) && (e.type === 'meeting_initialized' || e.type === 'participant_joined'));
   legacy.kill(); await legacy.done.catch(() => {});
   const legacyObserverLines = legacy.raw.filter((r) => /^zoomweb_(edge|observer|selector_dump)$/.test(r.type || '') || r.kind === 'active-moved');
-  const legacyWalkLines = legacy.raw.filter((r) => r.type === 'zoomweb_walk_stats');
-  const walkSilent = legacyWalkLines.every((w) => w.event_mode === false && !w.full_walks_event && !w.subtree_reads && !w.edges);
-  const walkCountOk = legacyWalkLines.length <= 1;
+  // The product emits the SHARED `meet_walk_stats` line (no zoomweb-specific walk-stats,
+  // and it carries NO `event_mode` field). So the robust legacy-vs-event discriminator is
+  // the presence of zoomweb OBSERVER instrumentation (edge/observer/selector_dump), NOT a
+  // walk-stats field: legacy attaches no web observer → ZERO such lines; event mode emits
+  // them when a web guest drives an `--active` class. `legacyObserverLines` above already
+  // captures that set — its emptiness IS the byte-silence signal.
 
   // Part B — no env: default must be EVENT (observer runs).
   const dflt = startDetector({ seconds: 22, mode: null, edgeLog: null, tag: 'default-event' }); // NO MSD_MODE
@@ -578,18 +594,22 @@ async function scenarioLegacySilent() {
   const defaultMeetingSeen = dflt.events.some((e) => isZoom(e) && (e.type === 'meeting_initialized' || e.type === 'participant_joined'));
   dflt.kill(); await dflt.done.catch(() => {});
   if (rig.alpha) await speak([]);
+  // Event-mode positive signal = any zoomweb observer/edge instrumentation line (the
+  // event pipeline attached and read the web tree). Field-independent (no reliance on a
+  // non-existent event_mode walk-stats field).
   const defaultEventLines = dflt.raw.filter((r) =>
-    /^zoomweb_(edge|observer)$/.test(r.type || '') || r.kind === 'active-moved' ||
-    (r.type === 'zoomweb_walk_stats' && r.event_mode === true));
+    /^zoomweb_(edge|observer|selector_dump)$/.test(r.type || '') || r.kind === 'active-moved');
   const defaultIsEvent = defaultEventLines.length > 0;
 
-  const verdict = (legacyMeetingSeen && legacyObserverLines.length === 0 && walkSilent && walkCountOk
+  // BYTE-SILENCE (legacy) = zero zoomweb observer lines. DEFAULT=EVENT = the meeting is
+  // detected AND >=1 zoomweb observer/edge line fired. The meeting-detected halves need
+  // MSD_EDGE_LOG (now defaulted) to surface meeting_initialized to the events reader.
+  const verdict = (legacyMeetingSeen && legacyObserverLines.length === 0
     && defaultMeetingSeen && defaultIsEvent) ? 'PASS' : 'FAIL';
   record('zoomweb-legacy-silent', verdict, {
     legacyMeetingSeen, legacyObserverLineCount: legacyObserverLines.length,
-    legacyWalkStatsLineCount: legacyWalkLines.length, walkSilent,
     defaultMeetingSeen, defaultIsEvent, defaultEventLineCount: defaultEventLines.length,
-    note: 'default-flip probe: MSD_MODE=legacy byte-silent; NO env => event mode active (observer/edge or event_mode:true walk-stats present).',
+    note: 'default-flip probe: MSD_MODE=legacy => ZERO zoomweb observer lines (byte-silent); NO env => event mode active (>=1 zoomweb observer/edge line). meet_walk_stats is shared and carries no event_mode field, so observer-line presence is the discriminator.',
   });
 }
 
