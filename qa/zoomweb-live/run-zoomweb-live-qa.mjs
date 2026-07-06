@@ -355,6 +355,22 @@ async function scenarioViews() {
   const speakerOk = await runBlock('speaker');
   const galleryOk = await runBlock('gallery');
 
+  // GALLERY sub-verdict — UNVERIFIED-REMOVED (W3). The shipped gallery selector
+  // (`gallery-video-container__video-frame`) is documented UNVERIFIED-REMOVED in
+  // bubbles-dev zoom/ZoomWebEdgeEvents.swift:33 + ZoomWebActive.swift:10 (the W3 fresh
+  // capture was BLOCKED — a free/basic account renders NO real web gallery tree, only a
+  // shell), so it MUST NOT gate a PASS/FAIL: a free-tier account cannot render web
+  // gallery, so `galleryOk` is expected FALSE for a licensed-account reason, not a
+  // detection bug. Record the sub-verdict LOUDLY (never silent-pass, never a false
+  // product FAIL): PASS only if a licensed account genuinely rendered gallery tiles AND
+  // the speaker was named there; otherwise REVIEW with the W3 caveat. The scenario
+  // itself gates on SPEAKER VIEW (the verified prefix) only.
+  const galleryViewApplied = !!(blocks.gallery && blocks.gallery.viewApplied);
+  const galleryVerdict = (galleryViewApplied && galleryOk) ? 'PASS' : 'REVIEW';
+  const galleryNote = galleryOk
+    ? 'gallery named the speaker (licensed account rendered a real gallery tree — verifies W3)'
+    : 'gallery UNVERIFIED-REMOVED (W3): free/basic account renders no real web gallery tree; the selector is documented untrusted in bubbles-dev ZoomWebEdgeEvents.swift:33 — REVIEW, not FAIL (licensed-account dependency), and NOT silent-passed';
+
   // Screen-share filmstrip: a guest shares; the observer reads the small filmstrip
   // tiles. Best-effort — if the share never starts, this sub-block is REVIEW.
   let shareStarted = false, shareNamed = false, shareVerdict = 'REVIEW';
@@ -375,10 +391,15 @@ async function scenarioViews() {
 
   det.kill(); await det.done.catch(() => {});
 
-  // Speaker + gallery MUST pass; share is advisory (REVIEW allowed with evidence).
-  const coreOk = speakerOk && galleryOk;
-  const verdict = coreOk ? 'PASS' : 'FAIL';
-  record('zoomweb-views-live', verdict, { speakerOk, galleryOk, shareVerdict, blocks });
+  // SPEAKER VIEW is the hard gate (the verified prefix). Gallery is UNVERIFIED-REMOVED
+  // (W3) and filmstrip/share is advisory — both recorded as loud sub-verdicts, never
+  // dragging the scenario to a false FAIL on a free-tier-unrenderable surface.
+  const verdict = speakerOk ? 'PASS' : 'FAIL';
+  record('zoomweb-views-live', verdict, {
+    speakerOk, galleryOk, galleryVerdict, galleryViewApplied, galleryNote,
+    shareVerdict, blocks,
+    note: 'gate = SPEAKER VIEW only (verified prefix). gallery = W3 UNVERIFIED-REMOVED loud REVIEW (licensed-account dependency); share = advisory REVIEW.',
+  });
 }
 
 // ===================================================================== scenario 3

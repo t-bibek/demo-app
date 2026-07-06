@@ -50,9 +50,12 @@ export default {
       match: '"verdict":"PASS"',
     },
     {
-      // Detection correct in speaker view, gallery view, and screen-share
-      // filmstrip (view switched on the observer client). Share sub-block may
-      // degrade to REVIEW with evidence; speaker + gallery must PASS.
+      // Detection correct in SPEAKER VIEW (the verified prefix — the hard gate).
+      // GALLERY is UNVERIFIED-REMOVED (W3, bubbles-dev ZoomWebEdgeEvents.swift:33):
+      // a free/basic account renders no real web gallery tree, so the gallery
+      // sub-verdict is a LOUD REVIEW (licensed-account dependency), never a silent
+      // pass and never a false product FAIL. Screen-share filmstrip is advisory
+      // (REVIEW with evidence). Scenario PASSes iff speaker view names the speaker.
       id: 'zoomweb-views-live',
       cwd: '.',
       cmd: `node qa/live-scenario-verdict.mjs zoomweb-views-live ${RESULTS}`,
