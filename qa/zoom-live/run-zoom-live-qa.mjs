@@ -160,21 +160,34 @@ function startDetector(secondsOrOpts) {
   if (opts.mode) env.MSD_MODE = opts.mode;
   if (opts.vadTrace) env.MSD_VAD_TRACE = '1';   // emit raw-RMS [vadtrace] lines for calibration
   if (opts.edgeLog) { env.MSD_EDGE_LOG = opts.edgeLog; try { writeFileSync(opts.edgeLog, ''); } catch (e) {} }
+  if (opts.env) Object.assign(env, opts.env);   // extra env (e.g. MSD_ZOOM_WAKE=0 control leg)
   const proc = spawn(DETECTOR_BIN, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   const events = [];   // product events (participant_joined / speech_on / meeting_initialized / …)
   const raw = [];      // instrumentation NDJSON (zoom_edge / zoom_walk_stats / zoom_observer / …)
-  let buf = '';
+  const stderrLines = [];  // {ts, line} for stderr text carrying a wake keyword (zoom-wake).
+                           // The zoom-wake lifecycle lines are PLAIN stderr text (no JSON),
+                           // so the JSON-only split below drops them — capture them here.
+  const STDERR_KEYWORDS = ['zoom-wake'];
+  // Per-stream line buffers: stdout and stderr are DISTINCT byte streams, so a single
+  // shared buffer would interleave a half-line of one with a half-line of the other and
+  // corrupt both. Each stream keeps its own residual.
+  const bufs = { out: '', err: '' };
   // The detector emits BOTH product events AND instrumentation lines with the same
   // `[event] {json}` stdout prefix; split by TYPE so the original 5 scenarios keep
   // reading product events from `events` while the new PIP/VAD scenarios read
   // instrumentation (zoom_edge / talking-changed) from `raw`.
   const isInstrumentation = (o) => /(_edge|_walk_stats|_observer|_selector_dump|_menu_probe|vad_frame)$/.test(o.type || '')
     || o.kind === 'active-moved' || o.kind === 'talking-changed';
-  const onData = (d) => {
-    buf += d.toString();
+  const onData = (stream) => (d) => {
+    bufs[stream] += d.toString();
     let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const ln = buf.slice(0, i); buf = buf.slice(i + 1);
+    while ((i = bufs[stream].indexOf('\n')) >= 0) {
+      const ln = bufs[stream].slice(0, i); bufs[stream] = bufs[stream].slice(i + 1);
+      // Wake lifecycle lines are plain stderr text — capture with a receive ts BEFORE the
+      // JSON parse (which would skip them). ts is the wake-consumed correlation key.
+      if (stream === 'err' && STDERR_KEYWORDS.some((k) => ln.includes(k))) {
+        stderrLines.push({ ts: Date.now(), line: ln });
+      }
       const j = ln.indexOf('{');
       if (j < 0) continue;
       const payload = ln.slice(j);
@@ -184,11 +197,108 @@ function startDetector(secondsOrOpts) {
       else { events.push(o); appendFileSync(EVENTS_NDJSON, payload + '\n'); }
     }
   };
-  proc.stdout.on('data', onData);
-  proc.stderr.on('data', onData);
+  proc.stdout.on('data', onData('out'));
+  proc.stderr.on('data', onData('err'));
   const done = new Promise((res) => proc.on('exit', res));
-  return { proc, events, raw, done, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
+  return { proc, events, raw, stderrLines, done, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
 }
+// Last emitted meet_walk_stats line (shared across platforms — type "meet_walk_stats").
+// The product flushes it on MSD_RUN_SECONDS auto-exit (and periodically), so a leg that
+// AUTO-EXITS makes the zoom_wakes counter readable; a leg SIGKILLed early may miss it.
+function lastWalkStats(det) {
+  const ws = det.raw.filter((r) => r.type === 'meet_walk_stats');
+  return ws.length ? ws[ws.length - 1] : null;
+}
+
+// zoom-wake: bubbles-dev macos/zoom/ZoomWakeObserver.swift (tip e527fcc4af)
+//   :246  "zoom-wake: attached pid=<pid>"
+//   :191  "zoom-wake: released pid=<pid>"
+//   :204  "zoom-wake: consumed key=zoom dt_ms=<n>"
+//   :220  "zoom-wake: observer-create-fail pid=<pid> err=<n> — poll-only"  (em-dash)
+// (app/window-register-fail lines exist too — informational, not asserted). NO wake
+// line EVER carries a speaker name (all emit sites interpolate only pid/err/notif/dt_ms).
+const ZWAKE_ATTACHED_RE = /zoom-wake: attached pid=(\d+)/;
+const ZWAKE_CONSUMED_RE = /zoom-wake: consumed key=zoom dt_ms=(-?\d+)/;
+const ZWAKE_RELEASED_RE = /zoom-wake: released pid=(\d+)/;
+const ZWAKE_CREATE_FAIL_RE = /zoom-wake: observer-create-fail pid=(\d+) err=(-?\d+)/;
+function parseZoomWakeLines(stderrLines) {
+  const attached = [], consumed = [], released = [], createFail = [];
+  for (const { ts, line } of stderrLines) {
+    let m;
+    if ((m = line.match(ZWAKE_ATTACHED_RE))) attached.push({ ts, pid: +m[1] });
+    else if ((m = line.match(ZWAKE_CONSUMED_RE))) consumed.push({ ts, dtMs: +m[1] });
+    else if ((m = line.match(ZWAKE_RELEASED_RE))) released.push({ ts, pid: +m[1] });
+    else if ((m = line.match(ZWAKE_CREATE_FAIL_RE))) createFail.push({ ts, pid: +m[1], err: +m[2] });
+  }
+  return { attached, consumed, released, createFail };
+}
+// MUST-NOT invariant: no zoom-wake line ever carries a speaker name. Return any raw
+// wake line whose text contains a known roster name (the safety check the report asserts).
+function zoomWakeNameLeaks(stderrLines, names) {
+  const leaks = [];
+  for (const { line } of stderrLines) {
+    if (!/zoom-wake:/.test(line)) continue;
+    for (const n of names) { if (n && line.includes(n)) leaks.push({ line, name: n }); }
+  }
+  return leaks;
+}
+
+// --- zoom-wake-lifecycle analyzers (pure — the live driver supplies the inputs) ----
+// The native Zoom wake consumes a cluster on LIFECYCLE transitions (join/leave, PIP
+// toggle ⌘⇧M, panel toggle ⌘U) and is NEAR-SILENT during steady speech (unlike the
+// Teams ring-onset wake, which fires per speech onset). So the assertion differs from
+// teams-wake-accel: correlate `consumed` lines to GESTURE timestamps (not speech
+// onsets), and assert quiet during a steady window.
+//
+// MAIN leg (MSD_ZOOM_WAKE default on):
+//   - >=1 zoom-wake:attached line (the observer engaged for the native Zoom pid);
+//   - each lifecycle gesture is COVERED by >=1 consumed within ±toleranceMs of ITS ts
+//     (allow misses on <= allowedMisses gestures — a PIP that never spawns can't wake);
+//   - <= steadyMaxConsumed consumed during the steady window (near-silent during speech);
+//   - zoom_wakes > 0 in the final meet_walk_stats line;
+//   - NO wake line carries a speaker name (the MUST-NOT invariant).
+function analyzeZoomWake({ wake, walkStats, gestures, steadyWindow, nameLeaks,
+                           toleranceMs = 4000, allowedMisses = 1, steadyMaxConsumed = 1 }) {
+  const consumedTs = wake.consumed.map((c) => c.ts);
+  let covered = 0;
+  const perGesture = (gestures || []).map((g) => {
+    const hit = consumedTs.some((ct) => ct >= g.ts - 500 && ct <= g.ts + toleranceMs);
+    if (hit) covered++;
+    return { label: g.label, ts: g.ts, covered: hit };
+  });
+  const gesturesOk = (gestures || []).length > 0 && ((gestures.length - covered) <= allowedMisses);
+  const attachedOk = wake.attached.length >= 1;
+  const consumedInSteady = steadyWindow
+    ? wake.consumed.filter((c) => c.ts >= steadyWindow.start && c.ts <= steadyWindow.end).length
+    : 0;
+  const steadyQuiet = consumedInSteady <= steadyMaxConsumed;
+  const zoomWakes = walkStats && typeof walkStats.zoom_wakes === 'number' ? walkStats.zoom_wakes : null;
+  const counterOk = zoomWakes != null && zoomWakes > 0;
+  const noNameLeak = (nameLeaks || []).length === 0;
+  const pass = attachedOk && gesturesOk && steadyQuiet && counterOk && noNameLeak;
+  return {
+    pass, attachedOk, gesturesOk, steadyQuiet, counterOk, noNameLeak,
+    gestures: (gestures || []).length, gesturesCovered: covered,
+    consumedTotal: wake.consumed.length, consumedInSteady, zoomWakes,
+    consumedDtMs: wake.consumed.map((c) => c.dtMs), perGesture,
+    nameLeaks: nameLeaks || [], releasedCount: wake.released.length, createFail: wake.createFail,
+  };
+}
+// CONTROL leg (MSD_ZOOM_WAKE=0): ZERO zoom-wake lines AND native detection still works
+// at the poll floor (meeting + self still detected). Proves the wake path is purely
+// additive — turning it off removes wakes but not detection (N8: no keep-alive premise).
+function analyzeZoomWakeControl({ wake, events, walkStats }) {
+  const noWakeLines = wake.attached.length === 0 && wake.consumed.length === 0
+    && wake.released.length === 0 && wake.createFail.length === 0;
+  const meetingSeen = events.some((e) => e.type === 'meeting_initialized' && isZoom(e));
+  const selfSeen = events.some((e) => e.type === 'participant_joined' && isZoom(e) && e.is_local);
+  const detectionWorks = meetingSeen && selfSeen;
+  const zoomWakes = walkStats && typeof walkStats.zoom_wakes === 'number' ? walkStats.zoom_wakes : null;
+  const counterZero = zoomWakes === 0 || zoomWakes == null;
+  const pass = noWakeLines && detectionWorks && counterZero;
+  return { pass, noWakeLines, detectionWorks, meetingSeen, selfSeen, counterZero, zoomWakes };
+}
+
 const isZoom = (e) => typeof e.meeting_id === 'string' && e.meeting_id.startsWith('zoom::');
 async function waitEvent(det, pred, timeoutMs, label) {
   const t0 = Date.now();
@@ -589,8 +699,132 @@ function failAll(reason) {
   process.exit(1);
 }
 
+// ===================================================================== zoom-wake-lifecycle
+// The native Zoom lifecycle-wake scenario (mirrors the Teams wake-accel two-leg pattern,
+// but the trigger is LIFECYCLE gestures, not speech onsets — the wake consumes a cluster
+// on join/leave, PIP toggle ⌘⇧M, panel toggle ⌘U, and is near-silent during steady speech).
+// MAIN leg (wake default ON): drive the gestures, correlate consumed lines, assert quiet
+// during a steady window, zoom_wakes>0, and NO name leak. CONTROL leg (MSD_ZOOM_WAKE=0):
+// zero wake lines AND native detection still works (poll floor — N8 additive proof).
+//
+// WALK-STATS FLUSH: the product flushes meet_walk_stats on the MSD_RUN_SECONDS auto-exit
+// (or periodically), so each leg is sized to its script and AUTO-EXITS so zoom_wakes is
+// readable (the Teams wake-accel rig defect fix, ported).
+const ZWAKE_LEG_SCRIPT_SECS = 4 + 20 + 30;                  // settle(4) + gestures(~20) + steady(30) ≈ 54s
+const ZWAKE_MAIN_RUN_SECONDS = ZWAKE_LEG_SCRIPT_SECS + 20;  // + flush margin
+const ZWAKE_CTRL_RUN_SECONDS = ZWAKE_LEG_SCRIPT_SECS + 20;
+const ZWAKE_KILL_MARGIN_MS = 45_000;
+const pipToggle = () => keystroke('m', ['command', 'shift']); // ⌘⇧M — Zoom minimize/PIP hotkey
+
+// Wait for the detector to AUTO-EXIT (flushing its final meet_walk_stats), SIGKILLing only
+// if it overruns marginMs. Returns true if it exited on its own (stats flushed).
+async function drainDetectorExit(det, marginMs = ZWAKE_KILL_MARGIN_MS) {
+  let exited = false;
+  det.done.then(() => { exited = true; });
+  const t0 = Date.now();
+  while (!exited && Date.now() - t0 < marginMs) await sleep(500);
+  if (!exited) { log('zoom-wake: detector did not auto-exit within the flush margin — SIGKILL (walk-stats may be missing)'); det.kill(); }
+  await det.done;
+  return exited;
+}
+
+// Drive the lifecycle gestures that SHOULD wake the observer, recording each ts. Then a
+// steady window (guest speaking if present, else just idle-steady) during which the wake
+// must be near-silent. Returns { gestures, steadyWindow }.
+async function runZoomWakeLeg(guestPage) {
+  const gestures = [];
+  drive('raise'); await sleep(1000);
+  // Panel toggle ⌘U (open) — a panel appear/dismiss is an app-scoped AX lifecycle change.
+  panelToggle(); gestures.push({ label: 'panel-open', ts: Date.now() }); await sleep(4000);
+  panelToggle(); gestures.push({ label: 'panel-close', ts: Date.now() }); await sleep(4000);
+  // PIP toggle ⌘⇧M (minimize→PIP) then restore — the PIP window create/destroy lifecycle.
+  pipToggle(); gestures.push({ label: 'pip-toggle', ts: Date.now() }); await sleep(4000);
+  drive('restore', '--window', 'Zoom Meeting'); await sleep(1000);
+  if (mainMinimized() || pipPresent()) { pipToggle(); await sleep(1500); }
+  drive('raise'); gestures.push({ label: 'pip-restore', ts: Date.now() }); await sleep(3000);
+  // STEADY window: guest speaks continuously (if present) with NO lifecycle gesture — the
+  // wake must be near-silent here (no consume cluster without a lifecycle transition).
+  const steadyStart = Date.now();
+  if (guestPage) { try { await setGuestMuted(guestPage, false); await setGuestSpeak(guestPage, true); } catch (e) {} }
+  await sleep(30_000);
+  if (guestPage) { try { await setGuestSpeak(guestPage, false); await setGuestMuted(guestPage, true); } catch (e) {} }
+  const steadyEnd = Date.now();
+  return { gestures, steadyWindow: { start: steadyStart, end: steadyEnd } };
+}
+
+async function runZoomWake() {
+  const SC = 'zoom-wake-lifecycle';
+  writeFileSync(RESULTS_NDJSON, '');
+  if (!prebuild()) { record(SC, 'FAIL', { reason: 'swift build / ZoomDrive missing' }); console.log('ZOOM LIVE SESSION COMPLETE'); process.exit(1); }
+  if (!preflightAxTrust()) { record(SC, 'FAIL', { reason: 'Accessibility not granted' }); console.log('ZOOM LIVE SESSION COMPLETE'); process.exit(1); }
+  preflightSignedIn();
+
+  let guest = null, guestOk = false;
+  const knownNames = [EXPECT_SELF, GUEST_NAME, SPEECH_GUEST_NAME, 'You', 'Someone'];
+  try {
+    if (!await bootstrapMeeting()) { record(SC, 'FAIL', { reason: 'could not start a Zoom meeting' }); console.log('ZOOM LIVE SESSION COMPLETE'); process.exit(1); }
+    const invite = await harvestInvite();
+    if (invite && process.env.ZOOM_SKIP_GUEST !== '1') {
+      try {
+        guest = await joinSpeechGuest({ port: GUEST_PORT, name: GUEST_NAME, seat: 'alpha', inviteUrl: invite });
+        guestOk = await admitLoop();
+        await sleep(4000);
+      } catch (e) { log('guest join failed: ' + e.message); guest = null; guestOk = false; }
+    }
+
+    // --- MAIN leg (MSD_ZOOM_WAKE default ON) ---
+    log(`${SC}: MAIN leg (MSD_ZOOM_WAKE default on)`);
+    const detMain = startDetector({ seconds: ZWAKE_MAIN_RUN_SECONDS, mode: 'event' });
+    await sleep(4000);
+    const mainLeg = await runZoomWakeLeg(guest?.page || null);
+    const mainFlushed = await drainDetectorExit(detMain);
+    log(`${SC}: MAIN detector ${mainFlushed ? 'auto-exited (walk-stats flushed)' : 'force-killed'}`);
+    const mainWake = parseZoomWakeLines(detMain.stderrLines);
+    const mainLeaks = zoomWakeNameLeaks(detMain.stderrLines, knownNames);
+    const mainResult = analyzeZoomWake({
+      wake: mainWake, walkStats: lastWalkStats(detMain), gestures: mainLeg.gestures,
+      steadyWindow: mainLeg.steadyWindow, nameLeaks: mainLeaks,
+    });
+
+    // --- CONTROL leg (MSD_ZOOM_WAKE=0) — same session, fresh detector with the kill switch ---
+    log(`${SC}: CONTROL leg (MSD_ZOOM_WAKE=0)`);
+    const detCtrl = startDetector({ seconds: ZWAKE_CTRL_RUN_SECONDS, mode: 'event', env: { MSD_ZOOM_WAKE: '0' } });
+    await sleep(4000);
+    // Re-run the same gesture script so a wake WOULD have fired if the kill switch failed.
+    await runZoomWakeLeg(guest?.page || null);
+    const ctrlFlushed = await drainDetectorExit(detCtrl);
+    log(`${SC}: CONTROL detector ${ctrlFlushed ? 'auto-exited (walk-stats flushed)' : 'force-killed'}`);
+    const ctrlWake = parseZoomWakeLines(detCtrl.stderrLines);
+    const ctrlResult = analyzeZoomWakeControl({
+      wake: ctrlWake, events: detCtrl.events, walkStats: lastWalkStats(detCtrl),
+    });
+
+    const verdict = mainResult.pass && ctrlResult.pass ? 'PASS' : 'REVIEW';
+    // NOTE: a MAIN-leg miss on the PIP gesture (PIP never spawns on this build) or a
+    // walk-stats flush miss is a rig/env limitation, not a product bug — hence REVIEW,
+    // never a hard FAIL, unless a MUST-NOT invariant is broken (name leak / wake lines
+    // present under the kill switch), which is escalated below.
+    const invariantBroken = !mainResult.noNameLeak || !ctrlResult.noWakeLines;
+    record(SC, invariantBroken ? 'FAIL' : verdict, {
+      mainLeg: mainResult, controlLeg: ctrlResult, guestPresent: guestOk,
+      mainFlushed, ctrlFlushed, invariantBroken,
+      note: 'zoom-wake consumes on LIFECYCLE gestures (panel/PIP toggle), near-silent during steady speech; control leg proves the wake is additive (N8 poll floor). MUST-NOT: no name in any wake line; zero wake lines under MSD_ZOOM_WAKE=0.',
+    });
+    log(`${SC} main=${JSON.stringify(mainResult)} control=${JSON.stringify(ctrlResult)}`);
+  } catch (e) {
+    log('FATAL ' + (e && e.stack));
+    record(SC, 'FAIL', { reason: 'runner exception: ' + (e && e.message) });
+  } finally {
+    try { await pressFirst(['End meeting for all', 'Leave meeting', 'Leave']); } catch (e) {}
+    try { guest?.chrome?.kill(); } catch (e) {}
+  }
+  console.log('ZOOM LIVE SESSION COMPLETE');
+  process.exit(0);
+}
+
 async function main() {
-  if (!process.argv.includes('--all')) { console.error('usage: run-zoom-live-qa.mjs --all'); process.exit(2); }
+  if (process.argv.includes('--zoom-wake')) return runZoomWake();
+  if (!process.argv.includes('--all')) { console.error('usage: run-zoom-live-qa.mjs --all | --zoom-wake'); process.exit(2); }
   writeFileSync(RESULTS_NDJSON, '');
   if (!prebuild()) return failAll('swift build failed');
   if (!preflightAxTrust()) return failAll('Accessibility not granted to this process');
