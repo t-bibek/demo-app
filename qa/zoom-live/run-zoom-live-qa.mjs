@@ -156,7 +156,16 @@ function startDetector(secondsOrOpts) {
   const opts = typeof secondsOrOpts === 'number' ? { seconds: secondsOrOpts } : (secondsOrOpts || {});
   const seconds = opts.seconds || 180;
   writeFileSync(EVENTS_NDJSON, '');
-  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds) };
+  // MSD_EDGE_LOG is REQUIRED for the PRODUCT binary to emit its typed `[event]` mirror
+  // (meeting_initialized / participant_* / speech_on / zoom_edge). Its emitEventLine is
+  // gated on edgeDiagnostics (MonitorDiagnostics.emitEventLine; main.swift) — WITHOUT it
+  // the product emits ONLY the stdout wire + meet_walk_stats and every waitEvent() here
+  // goes dark (root cause of the 2026-07-06 native false-blindness: 0-byte events file
+  // with a genuinely-live meeting=YES roster=2). The sandbox binary emits [event]
+  // unconditionally, so `=1` is a no-op for it. Same fix the Teams rig already carries
+  // (qa/teams-live startDetector). A caller passing opts.edgeLog (a file path) overrides.
+  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds),
+                MSD_EDGE_LOG: '1' };
   if (opts.mode) env.MSD_MODE = opts.mode;
   if (opts.vadTrace) env.MSD_VAD_TRACE = '1';   // emit raw-RMS [vadtrace] lines for calibration
   if (opts.edgeLog) { env.MSD_EDGE_LOG = opts.edgeLog; try { writeFileSync(opts.edgeLog, ''); } catch (e) {} }
@@ -299,7 +308,14 @@ function analyzeZoomWakeControl({ wake, events, walkStats }) {
   return { pass, noWakeLines, detectionWorks, meetingSeen, selfSeen, counterZero, zoomWakes };
 }
 
-const isZoom = (e) => typeof e.meeting_id === 'string' && e.meeting_id.startsWith('zoom::');
+// A Zoom-platform event. The PRODUCT binary tags meeting_id "Zoom|us.zoom.xos" and
+// carries platform:"zoom"; the sandbox used a "zoom::" meeting_id prefix. Match on the
+// product-stable `platform` token first (verified live 2026-07-06), keeping the legacy
+// prefix for sandbox back-compat — the old prefix-only test rejected EVERY product event
+// (root cause of the 2026-07-06 native scenarios reading an empty roster despite a live
+// meeting). Mirrors the Teams rig's isTeamsProd vs isTeams split.
+const isZoom = (e) => e.platform === 'zoom'
+  || (typeof e.meeting_id === 'string' && (e.meeting_id.startsWith('zoom::') || e.meeting_id.startsWith('Zoom|')));
 async function waitEvent(det, pred, timeoutMs, label) {
   const t0 = Date.now();
   let seen = 0;

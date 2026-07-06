@@ -187,7 +187,13 @@ function startDetector({ seconds, mode, edgeLog, tag }) {
   return { proc, events, raw, done, getOut: () => out, kill: () => { try { proc.kill('SIGKILL'); } catch (e) {} } };
 }
 
-const isZoom = (e) => typeof e.meeting_id === 'string' && e.meeting_id.startsWith('zoom::');
+// A Zoom-platform event. The PRODUCT binary tags meeting_id "Zoom|us.zoom.xos" and
+// carries platform:"zoom"; the sandbox used a "zoom::" prefix. Match the product-stable
+// `platform` token first (verified live 2026-07-06 on the native surface), keeping the
+// legacy prefix for sandbox back-compat — the old prefix-only test rejected every product
+// event. Zoom web + native both carry platform "zoom" (ZoomSpeakerPipeline.platformLabel).
+const isZoom = (e) => e.platform === 'zoom'
+  || (typeof e.meeting_id === 'string' && (e.meeting_id.startsWith('zoom::') || e.meeting_id.startsWith('Zoom|')));
 // A web-sourced speaker attribution (scoped so the co-present native surface can't leak).
 const isWebSpeech = (e) => isZoom(e) && e.type === 'speech_on' && /zoom\.web_active/.test(e.source || '');
 
