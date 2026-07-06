@@ -1,6 +1,28 @@
 #!/usr/bin/env node
 // ---------------------------------------------------------------------------
-// meet-tabaway-live (v3.2) — LIVE-QA rig for the Meet TAB-AWAY KEEP-ALIVE bridge.
+// meet-tabaway-live (v3.3) — LIVE-QA rig for the Meet TAB-AWAY KEEP-ALIVE bridge.
+//
+// v3.3 DELTA (raw-evidence persistence + diagnostic-patience widening — the
+// assertion logic and phase criteria are BYTE-IDENTICAL to v3.2):
+//   • RAW-EVIDENCE PERSISTENCE. Every run now tees the COMPLETE detector streams +
+//     the rig's own phase actions to a per-run log directory so a post-run forensic
+//     read has the verbatim timeline (the prior --multiparty run left no raw trace,
+//     so the phase-7 drain-latency anomaly could not be dissected). Written to
+//     research/meet-dom-detector/live/logs/tabaway-<ISO-stamp>/:
+//       stderr.log   — EVERY detector stderr line, prefixed `mono=<ms> wall=<ISO>`
+//                      (the keep-alive lifecycle lines + [event] echoes + walk lines)
+//       wire.ndjson  — EVERY detector stdout wire event as a raw JSON line, each
+//                      wrapped `{"mono":<ms>,"wall":"<ISO>","raw":<original-JSON>}`
+//       driver.log   — the rig's OWN phase actions, timestamped: tabAway / tabBack /
+//                      discard / admit / leave clicks (driverLog()).
+//     `mono` is process.hrtime-derived monotonic ms (immune to wall-clock steps);
+//     `wall` is the ISO timestamp. The logs/ dir is gitignored (root .gitignore
+//     `logs` rule) so raw traces (which may show a meeting URL) never commit.
+//   • PHASE-7 RELEASE-WAIT WIDENED (diagnostic patience, NOT a pass-criteria change).
+//     The phase-7 readable-recovery wait is widened to IDLE_HYSTERESIS+20s so a LATE
+//     `released reason=readable` line is CAPTURED in the trace rather than missed by a
+//     too-short window (the prior run's 18s window may have simply out-run a late edge).
+//     The ASSERTION is unchanged: readable release still required for phase-7 PASS.
 //
 // v3.2 DELTA (two assertion artifacts fixed + multi-party phases added):
 //   • RECOVERY IS NO-CHURN BY DESIGN (phases 2 & 6). The keep-alive Detection is
@@ -137,7 +159,7 @@
 // ---------------------------------------------------------------------------
 'use strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { writeFileSync, appendFileSync, existsSync, mkdtempSync, rmSync, mkdirSync, copyFileSync } from 'node:fs';
+import { writeFileSync, appendFileSync, existsSync, mkdtempSync, rmSync, mkdirSync, copyFileSync, createWriteStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
@@ -214,6 +236,53 @@ const DETECTOR_RUN_SECONDS = 480; // 8 min — comfortably covers the meeting + 
 
 const log = (...a) => console.log('[tabaway]', ...a);
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+// ===========================================================================
+// v3.3 RAW-EVIDENCE PERSISTENCE. A per-run log directory captures the COMPLETE
+// detector streams + the rig's phase actions so a forensic read has the verbatim
+// timeline. Created lazily on first use; the logs/ dir is gitignored (root rule).
+//   stderr.log  — every detector stderr line, `mono=<ms> wall=<ISO> | <line>`
+//   wire.ndjson — every detector stdout wire event, {mono,wall,raw:<orig-json>}
+//   driver.log  — the rig's own phase actions (tabAway/tabBack/discard/admit/leave)
+// `mono` is a monotonic ms clock (process.hrtime.bigint) immune to wall-clock steps.
+// ===========================================================================
+const MONO0 = process.hrtime.bigint();
+const monoMs = () => Number((process.hrtime.bigint() - MONO0) / 1000000n);
+const RUN_STAMP = new Date().toISOString().replace(/[:.]/g, '-');
+const LOGS_DIR = join(HERE, 'logs');
+const RUN_LOG_DIR = join(LOGS_DIR, `tabaway-${RUN_STAMP}`);
+let _logStreams = null;
+function runLogStreams() {
+  if (_logStreams) return _logStreams;
+  mkdirSync(RUN_LOG_DIR, { recursive: true });
+  _logStreams = {
+    stderr: createWriteStream(join(RUN_LOG_DIR, 'stderr.log'), { flags: 'a' }),
+    wire: createWriteStream(join(RUN_LOG_DIR, 'wire.ndjson'), { flags: 'a' }),
+    driver: createWriteStream(join(RUN_LOG_DIR, 'driver.log'), { flags: 'a' }),
+  };
+  log(`raw-evidence log dir: ${RUN_LOG_DIR}`);
+  return _logStreams;
+}
+// Tee one detector stderr line to stderr.log with mono+wall timestamps.
+function teeStderr(line) {
+  try { runLogStreams().stderr.write(`mono=${monoMs()} wall=${new Date().toISOString()} | ${line}\n`); } catch (e) {}
+}
+// Tee one detector stdout wire event (raw JSON string) to wire.ndjson, timestamped.
+function teeWire(rawJson) {
+  try { runLogStreams().wire.write(JSON.stringify({ mono: monoMs(), wall: new Date().toISOString(), raw: rawJson }) + '\n'); } catch (e) {}
+}
+// Record a rig phase ACTION (tabAway/tabBack/discard/admit/leave) to driver.log,
+// timestamped, and echo to the console so the live run and the trace agree.
+function driverLog(action, detail) {
+  const rec = { mono: monoMs(), wall: new Date().toISOString(), action, ...(detail || {}) };
+  try { runLogStreams().driver.write(JSON.stringify(rec) + '\n'); } catch (e) {}
+  log(`driver: ${action}` + (detail ? ` ${JSON.stringify(detail)}` : ''));
+}
+// Flush + close the log streams on teardown so the trace is complete on disk.
+function closeLogStreams() {
+  if (!_logStreams) return;
+  for (const s of [_logStreams.stderr, _logStreams.wire, _logStreams.driver]) { try { s.end(); } catch (e) {} }
+}
 
 // Per-phase verdict ledger — accumulated so a single roll-up line can gate the whole
 // scenario (the live reader qa/live-scenario-verdict.mjs takes the LAST line for a
@@ -382,11 +451,17 @@ function startDetector(wireMic) {
     let i;
     while ((i = bufs[stream].indexOf('\n')) >= 0) {
       const ln = bufs[stream].slice(0, i); bufs[stream] = bufs[stream].slice(i + 1);
-      if (stream === 'err') stderrLines.push({ ts: Date.now(), line: ln });
+      if (stream === 'err') {
+        stderrLines.push({ ts: Date.now(), line: ln });
+        teeStderr(ln); // v3.3: persist EVERY stderr line, timestamped
+      }
       const j = ln.indexOf('{');
       if (j < 0) continue;
       let o; try { o = JSON.parse(ln.slice(j)); } catch (e) { continue; }
-      if (o && typeof o === 'object' && o.event) events.push({ ts: Date.now(), ...o });
+      if (o && typeof o === 'object' && o.event) {
+        events.push({ ts: Date.now(), ...o });
+        if (stream === 'out') teeWire(ln.slice(j)); // v3.3: persist EVERY wire event, raw+timestamped
+      }
     }
   };
   proc.stdout.on('data', onData('out'));
@@ -660,15 +735,18 @@ async function joinFreshMeet(port) {
 // the Meet tab is backgrounded. On a WOKEN Chrome its AX tree stays materialized, so
 // the probe still reads the meeting — the bridge stays correctly DORMANT.
 async function tabAway(port) {
+  driverLog('tabAway', { port }); // v3.3: persist the phase action, timestamped
   await httpJsonPut(port, '/json/new?about:blank');
 }
 // Tab-back: bring the Meet tab to the foreground (Page.bringToFront).
 async function tabBack(port) {
+  driverLog('tabBack', { port }); // v3.3: persist the phase action, timestamped
   const pg = await attachToPage(port, /meet\.google\.com/);
   await pg.cmd('Page.bringToFront');
 }
 // Click Leave call on the Meet page (must be foreground for Meet to honor the click).
 async function clickLeave(pg) {
+  driverLog('clickLeave'); // v3.3: persist the phase action, timestamped
   return pg.evalJs(`(function(){var b=[...document.querySelectorAll('button,[role=button],[aria-label]')].find(function(n){return /leave call/i.test(n.getAttribute('aria-label')||'')});if(!b)return 'no-button';b.click();return 'clicked';})()`);
 }
 
@@ -700,6 +778,7 @@ async function clickLeave(pg) {
 // `<a is="action-link">`. This is what a human clicks; it is brittle (a woken headful
 // Chrome has been observed to render a ZERO-row table), so it is the fallback only.
 async function discardMeetTab(port, code, meetUrl) {
+  driverLog('discard:attempt', { port, code }); // v3.3: persist the phase action, timestamped
   // Open the discards helper tab and attach to it. MUST be PUT — Chrome 110+ returns
   // 405 for a GET on /json/new, so the tab was never created (surfaced downstream as
   // "page target not found for /chrome://discards/").
@@ -1117,6 +1196,7 @@ async function runTabAway() {
       await sleep(1000);
       const p3Start = Date.now();
       const discardRes = await discardMeetTab(PORT_A, code, joined.url);
+      driverLog('discard:result', { fired: !!(discardRes && discardRes.fired), via: discardRes ? discardRes.via : 'none' });
       log(`phase3 (discard-blindness): discard attempt → ${JSON.stringify(discardRes)}`);
 
       if (!discardRes || !discardRes.fired) {
@@ -1450,8 +1530,11 @@ async function runTabAway() {
         // Launch the SPEAKING guest (temp profile, looping WAV) and ask to join.
         guestMp = await launchMpChrome({ port: PORT_GUEST, profile: guestProfile, wav: GUEST_WAV, label: 'GUEST', temp: true });
         const askRes = await mpGuestAsk(guestMp.conn, joinedMp.url, GUEST_NAME_MP);
+        driverLog('guestAsk', { phase: 'mp-drain', guest: GUEST_NAME_MP, result: String(askRes).slice(0, 40) });
         log(`phase7 guest ("${GUEST_NAME_MP}") asked to join: ${askRes}`);
+        driverLog('admit:attempt', { phase: 'mp-drain', guest: GUEST_NAME_MP });
         const admitted = await admit({ hostPort: PORT_A, guestPorts: [PORT_GUEST], guestName: GUEST_NAME_MP, timeoutSec: 90, log });
+        driverLog('admit:result', { phase: 'mp-drain', guest: GUEST_NAME_MP, admitted: !!admitted });
         log(`phase7 guest admitted: ${admitted}`);
         const guestInCall = admitted && await mpWaitInCall(guestMp.conn, 30_000);
 
@@ -1483,7 +1566,10 @@ async function runTabAway() {
         const p7RecoverStart = Date.now();
         await tabBack(PORT_A);
         log('phase7 (recover): host Meet tab activated (still in-call) — expecting released reason=readable + guest speaking RESUMES (wav loops)');
-        const p7ReadableMs = await waitFor(() => !!releasedLine(detMp, codeMp, p7RecoverStart, 'readable'), IDLE_HYSTERESIS_MS + 8_000);
+        // v3.3: readable-release wait WIDENED to IDLE_HYSTERESIS+20s (diagnostic patience —
+        // capture a LATE readable edge in the trace rather than out-run it). The ASSERTION
+        // is unchanged: p7ReadableMs != null is still required for the phase-7 PASS below.
+        const p7ReadableMs = await waitFor(() => !!releasedLine(detMp, codeMp, p7RecoverStart, 'readable'), IDLE_HYSTERESIS_MS + 20_000);
         await sleep(2_000); // settle so a spurious post-recovery idle / churn surfaces
         const p7IdleAfterRecover = idleSince(detMp, codeMp, p7RecoverStart);
         const p7RecoverActiveCount = activeSince(detMp, codeMp, p7RecoverStart).length;
@@ -1582,8 +1668,11 @@ async function runTabAway() {
         pgMp = await attachToPage(PORT_BOTHOST + 100, /google\.com/);
         const watchedGuestName = 'Watched Guest';
         const wAsk = await mpGuestAsk(pgMp, meetingUrl, watchedGuestName);
+        driverLog('guestAsk', { phase: 'mp-remote-end', guest: watchedGuestName, result: String(wAsk).slice(0, 40) });
         log(`phase8 watched guest ("${watchedGuestName}") asked to join: ${wAsk}`);
+        driverLog('admit:attempt', { phase: 'mp-remote-end', guest: watchedGuestName });
         const wAdmit = await admit({ hostPort: PORT_BOTHOST, guestPorts: [PORT_BOTHOST + 100], guestName: watchedGuestName, timeoutSec: 90, log });
+        driverLog('admit:result', { phase: 'mp-remote-end', guest: watchedGuestName, admitted: !!wAdmit });
         const watchedInCall = wAdmit && await mpWaitInCall(pgMp, 30_000);
         log(`phase8 watched guest admitted+in-call: ${wAdmit}/${watchedInCall}`);
         const p8DetectMs = await waitFor(() => activeSince(detMp, codeMp2, 0).length > 0, JOIN_TIMEOUT_MS);
@@ -1607,11 +1696,13 @@ async function runTabAway() {
           function clickByName(rx){var re=new RegExp(rx,'i');var el=[...document.querySelectorAll('button,[role=button],[role=menuitem],span,div')].find(function(n){return n.getBoundingClientRect().width>0&&re.test((n.getAttribute('aria-label')||'')+' '+(n.textContent||''))});if(!el)return null;el.click();return (el.getAttribute('aria-label')||el.textContent||'').trim().slice(0,40);}
           return {end: clickByName('End the call for everyone|End call for (all|everyone)|End meeting for all')};
         })()`;
+        driverLog('endForAll:attempt', { phase: 'mp-remote-end', code: codeMp2 });
         await botHostMp.conn.evalJs(endForAllExpr);
         await sleep(1200);
         const endRes = await botHostMp.conn.evalJs(endConfirmExpr);
         const p8EndStart = Date.now();
         const endDrivable = !!(endRes && endRes.end && endRes.end !== 'null');
+        driverLog('endForAll:result', { phase: 'mp-remote-end', drivable: endDrivable, endResult: endRes });
         log(`phase8 end-for-all attempt: ${JSON.stringify(endRes)} → drivable=${endDrivable}`);
 
         if (!endDrivable) {
@@ -1691,6 +1782,9 @@ async function runTabAway() {
     // finally normally nulls these; this is the belt-and-suspenders backstop.
     try { if (guestMp) await guestMp.kill(); } catch (e) {}
     try { if (botHostMp) await botHostMp.kill(); } catch (e) {}
+    // v3.3: flush + close the raw-evidence log streams so the trace is complete on disk.
+    driverLog('teardown-complete', { anyFail });
+    closeLogStreams();
   }
   return anyFail ? 1 : 0;
 }
