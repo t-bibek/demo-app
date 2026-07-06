@@ -53,6 +53,29 @@ export default {
       cmd: 'node qa/live-scenario-verdict.mjs regression-live',
       match: '"verdict":"PASS"',
     },
+    {
+      // Meet TAB-AWAY KEEP-ALIVE (B4) — drives a real hosted Meet in a real-mic rig
+      // Chrome, backgrounds the tab (Chrome throttles → the AX WebArea goes trivial),
+      // and asserts the product detector's tab-away bridge HOLDS the meeting key open
+      // instead of tripping idle hysteresis, then that LEAVE (the mic-idle path) closes
+      // it. The product bubbles-mic-detector is spawned as the real OS-mic source and
+      // its lines are transformed into the detector's stdin mic-hint protocol. Standalone
+      // driver (not part of run-live-qa's roster rig); APPENDS per-phase + a roll-up line
+      // to the same live-qa-results.ndjson. Requires MSD_DETECTOR_BIN/MSD_MIC_BIN pointed
+      // at the product binaries.
+      id: 'meet-tabaway-session',
+      cwd: '.',
+      cmd: 'node research/meet-dom-detector/live/meet-tabaway-live.mjs --tabaway',
+      match: 'MEET TABAWAY LIVE SESSION COMPLETE',
+      timeoutMs: 15 * 60_000,
+    },
+    {
+      // Reads the aggregate roll-up (PASS only if all six phases passed).
+      id: 'meet-tabaway-live',
+      cwd: '.',
+      cmd: 'node qa/live-scenario-verdict.mjs meet-tabaway-live',
+      match: '"verdict":"PASS"',
+    },
   ],
 
   // Same blocker-tool object shape as qa.config.mjs: heal audio injection before the
