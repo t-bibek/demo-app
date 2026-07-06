@@ -151,6 +151,17 @@ const REPO = resolve(HERE, '..', '..');
 const LIVE = join(REPO, 'research', 'meet-dom-detector', 'live');
 const { attachToPage, httpJson, httpJsonPut, sleep } = require(join(LIVE, 'cdp-lib.js'));
 
+// AUTONOMOUS NATIVE HOSTING (default path). The Teams-host lib drives the native Teams
+// app (com.microsoft.teams2) through TeamsDrive to bootstrap a throwaway teams.live.com
+// meeting, harvest its invite link, admit the rig guest from the native lobby, and end
+// the meeting on teardown — so this gate runs OPERATOR-FREE. Live-verified 2026-07-07
+// (bootstrap→harvest→anon-guest-join→admit→roster 2→end, clean, twice in a row). When the
+// lib reports unavailable (Teams not signed in / AX not trusted / a step proves
+// unscriptable), the driver falls back to the operator prompt / MSD_TEAMS_MEETING_URL env.
+// MSD_TEAMS_NO_HOST=1 forces the operator/env fallback (e.g. to host from a different box).
+import * as teamsHost from '../../qa/teams-live/teams-host-lib.mjs';
+const hostLog = teamsHost.makeLog('teams-tabaway');
+
 const RESULTS_NDJSON = join(HERE, 'teams-tabaway-results.ndjson');
 const SCENARIO = 'teams-tabaway-live';
 
@@ -328,11 +339,47 @@ function makeStdin() {
   };
 }
 
-// Resolve a teams.live.com meeting URL: env first, else prompt the operator on stdin
-// (bounded 5-minute wait — hosting from the native app + sharing the link takes a beat).
+// AUTONOMOUS-MODE availability: the default path natively hosts via teams-host-lib. It is
+// available iff the caller did not force the fallback (MSD_TEAMS_NO_HOST=1), TeamsDrive is
+// built, and AX trust is granted (Teams gets launched by bootstrapMeeting). Probed ONCE.
+let _hostAvail = null;
+function hostAvailable() {
+  if (_hostAvail != null) return _hostAvail;
+  if (process.env.MSD_TEAMS_NO_HOST === '1') { _hostAvail = false; log('autonomous native hosting DISABLED (MSD_TEAMS_NO_HOST=1) — operator/env fallback'); return _hostAvail; }
+  const okBin = teamsHost.prebuild(hostLog);              // external-detector mode only needs TeamsDrive present
+  const okAx = okBin && teamsHost.preflightAxTrust();
+  _hostAvail = !!(okBin && okAx);
+  log(`autonomous native hosting ${_hostAvail ? 'AVAILABLE' : 'UNAVAILABLE'} (TeamsDrive=${okBin} axTrust=${okAx}) — ${_hostAvail ? 'the gate hosts operator-free' : 'falling back to operator prompt / env URL'}`);
+  return _hostAvail;
+}
+// Track meetings this run HOSTED so teardown ends them (never leaks a live native meeting
+// that wedges the next gate). Keyed by label; value {url}. Only autonomous meetings land here.
+const hostedMeetings = [];
+
+// Resolve a teams.live.com meeting URL. DEFAULT (autonomous): bring native Teams to front,
+// bootstrap a throwaway meeting, harvest its invite link — no operator, no env. FALLBACK:
+// env var, else prompt the operator on stdin (bounded 5-minute wait). An explicit env URL
+// ALWAYS wins (lets the operator pin a specific meeting even in autonomous mode).
 async function resolveMeetingUrl(stdin, envVar, label) {
   const env = process.env[envVar];
   if (env && /^https?:\/\//i.test(env.trim())) { log(`${label} meeting URL from ${envVar}`); return env.trim(); }
+  if (hostAvailable()) {
+    log(`${label}: bootstrapping a throwaway native-hosted Teams meeting (autonomous, no operator)…`);
+    teamsHost.preflightSignedIn();
+    const boot = await teamsHost.bootstrapMeeting(hostLog);
+    if (boot) {
+      const url = await teamsHost.harvestInvite(hostLog);
+      if (url) {
+        hostedMeetings.push({ label, url });
+        driverLog('autonomous-hosted', { label, urlHost: (() => { try { return new URL(url).host; } catch { return '?'; } })() });
+        log(`${label}: hosted + harvested (host=${(() => { try { return new URL(url).host; } catch { return '?'; } })()}, id redacted)`);
+        return url;
+      }
+      log(`${label}: bootstrap OK but invite harvest failed — falling back to operator/env`);
+    } else {
+      log(`${label}: autonomous bootstrapMeeting failed — falling back to operator/env`);
+    }
+  }
   console.log(`\n[teams-tabaway] ===== OPERATOR ACTION NEEDED (${label}) =====`);
   console.log('[teams-tabaway] 1. In the NATIVE Teams app, host a NEW teams.live.com (consumer) meeting.');
   console.log('[teams-tabaway] 2. Copy its "Share link" (the anonymous-guest join URL).');
@@ -347,10 +394,23 @@ async function resolveMeetingUrl(stdin, envVar, label) {
   }
 }
 
-// After the rig Chrome ASKS to join, the guest sits in the native lobby until the human
-// host admits it. Prompt + bounded-wait for the guest to reach in-call. Returns true if
-// in-call within JOIN_TIMEOUT_MS.
+// After the rig Chrome ASKS to join, the guest sits in the native lobby until the host
+// admits it. DEFAULT (autonomous): admitLoop presses the native "Admit participant in
+// lobby" control until the guest is in. FALLBACK: prompt the human operator. Either way,
+// bounded-wait for the guest to reach in-call (the authoritative roster check — Teams
+// native AX exposes no numeric count). Returns true if in-call within JOIN_TIMEOUT_MS.
 async function promptAdmitAndWaitInCall(pg, stdin, label) {
+  if (hostAvailable() && hostedMeetings.length > 0) {
+    log(`${label}: auto-admitting the guest from the native lobby (autonomous)…`);
+    driverLog('autonomous-admit', { label });
+    // admitLoop presses Admit while the lobby signal persists; the guest-page in-call read
+    // is the authoritative confirmation (host + guest == roster 2). Run them concurrently:
+    // start the admit loop, and poll the guest page — return as soon as the page is in-call.
+    const admitP = teamsHost.admitLoop({ targetCount: 2, waitMs: JOIN_TIMEOUT_MS }, hostLog);
+    const inCall = await waitFor(async () => await pgInCall(pg), JOIN_TIMEOUT_MS, 1000);
+    try { await admitP; } catch (e) {}
+    return inCall != null;
+  }
   console.log(`\n[teams-tabaway] ===== OPERATOR ACTION NEEDED (${label}) =====`);
   console.log('[teams-tabaway] The rig Chrome guest has asked to join. In the NATIVE Teams app,');
   console.log('[teams-tabaway] ADMIT the participant from the lobby ("Admit"). No stdin needed — the');
@@ -358,6 +418,23 @@ async function promptAdmitAndWaitInCall(pg, stdin, label) {
   driverLog('prompt:admit', { label });
   const inCall = await waitFor(async () => await pgInCall(pg), JOIN_TIMEOUT_MS, 1000);
   return inCall != null;
+}
+
+// Teardown: end the native meeting this run hosted (autonomous mode) so no live meeting
+// lingers to wedge the next gate. The native host is only ever in ONE call at a time (a
+// "fresh" cap-only phase reuses the same live native call — bootstrapMeeting returns early
+// when already in-call), so a single endMeeting drains it; it is idempotent (a no-op once
+// the Leave button is gone), and we retry a couple times to be certain the call is gone.
+// No-op when the operator hosted (nothing for us to end).
+async function endHostedMeetings() {
+  if (!hostAvailable() || hostedMeetings.length === 0) return;
+  for (let i = 0; i < 2; i++) {
+    try {
+      const ended = await teamsHost.endMeeting(hostLog);
+      driverLog('autonomous-teardown', { attempt: i + 1, ended, stillInMeeting: teamsHost.reallyInMeeting() });
+      if (!teamsHost.reallyInMeeting()) break;
+    } catch (e) { driverLog('autonomous-teardown-error', { error: String(e && e.message ? e.message : e) }); }
+  }
 }
 
 // ===========================================================================
@@ -1051,8 +1128,11 @@ async function runTabAway() {
     try { if (detCap) await detCap.stop(); } catch (e) {}
     try { if (chromeA) await chromeA.kill(); } catch (e) {}
     try { if (chromeB) await chromeB.kill(); } catch (e) {}
+    // End any native meeting we hosted (autonomous mode) so no live meeting lingers to
+    // wedge the next gate. No-op when the operator hosted.
+    try { await endHostedMeetings(); } catch (e) {}
     try { stdin.close(); } catch (e) {}
-    driverLog('teardown-complete', { anyFail });
+    driverLog('teardown-complete', { anyFail, hostedMeetings: hostedMeetings.length });
     closeLogStreams();
   }
   return anyFail ? 1 : 0;
