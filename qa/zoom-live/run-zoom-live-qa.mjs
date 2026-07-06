@@ -770,7 +770,10 @@ async function runZoomWakeLeg(guestPage) {
 
 async function runZoomWake() {
   const SC = 'zoom-wake-lifecycle';
-  writeFileSync(RESULTS_NDJSON, '');
+  // APPEND to the shared results (do NOT clobber): a native `--all` run's verdicts are
+  // often already on disk when `--zoom-wake` runs standalone in the same session; resetting
+  // the file would discard them. Seed an empty file only if none exists yet.
+  if (!existsSync(RESULTS_NDJSON)) writeFileSync(RESULTS_NDJSON, '');
   if (!prebuild()) { record(SC, 'FAIL', { reason: 'swift build / ZoomDrive missing' }); console.log('ZOOM LIVE SESSION COMPLETE'); process.exit(1); }
   if (!preflightAxTrust()) { record(SC, 'FAIL', { reason: 'Accessibility not granted' }); console.log('ZOOM LIVE SESSION COMPLETE'); process.exit(1); }
   preflightSignedIn();
