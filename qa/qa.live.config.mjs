@@ -76,6 +76,34 @@ export default {
       cmd: 'node qa/live-scenario-verdict.mjs meet-tabaway-live',
       match: '"verdict":"PASS"',
     },
+    {
+      // Teams-WEB TAB-AWAY KEEP-ALIVE (G2b) — the live gate for un-gating
+      // MSD_TEAMS_TABSTRIP (the Teams-web tab-away bridge adapter, bubbles-dev-tabaway
+      // commit b789bd35, which SHIPS DARK until it has its own live rig scenario). The
+      // NATIVE Teams app hosts a teams.live.com meeting; the rig Chrome joins as an
+      // anonymous web guest, admitted from the native lobby (operator-driven — native
+      // hosting/admit is not scriptable, so the driver prompts once for the meeting URL
+      // or reads MSD_TEAMS_MEETING_URL / MSD_TEAMS_MEETING_URL_CAPONLY). Five phases
+      // (detect, bg-throttle-cycle, longer-hold, leave-ends, cap-only) assert the REAL
+      // keep-alive vocabulary (teams-keepalive: engaged … reason=tab_present mic=<…>;
+      // released … reason=readable|left). Standalone driver; APPENDS per-phase + a
+      // roll-up line to research/teams-web/teams-tabaway-results.ndjson. Requires
+      // MSD_DETECTOR_BIN/MSD_MIC_BIN pointed at the product binaries.
+      id: 'teams-tabaway-session',
+      cwd: '.',
+      cmd: 'node research/teams-web/teams-tabaway-live.mjs --tabaway',
+      match: 'TEAMS TABAWAY LIVE SESSION COMPLETE',
+      timeoutMs: 20 * 60_000,
+    },
+    {
+      // Reads the aggregate roll-up (PASS only if all five phases passed). The second
+      // arg points the reader at the Teams results file (the reader defaults to the Meet
+      // results NDJSON).
+      id: 'teams-tabaway-live',
+      cwd: '.',
+      cmd: 'node qa/live-scenario-verdict.mjs teams-tabaway-live research/teams-web/teams-tabaway-results.ndjson',
+      match: '"verdict":"PASS"',
+    },
   ],
 
   // Same blocker-tool object shape as qa.config.mjs: heal audio injection before the
