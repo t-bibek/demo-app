@@ -120,7 +120,7 @@ guard AX.isTrusted else {
 
 // MARK: - Pick target apps, force their FULL a11y tree, then let it settle
 
-struct TargetApp { let kind: String; let name: String; let ax: AXUIElement }
+struct TargetApp { let kind: String; let name: String; let ax: AXUIElement; let pid: pid_t }
 
 var targetApps: [TargetApp] = []
 for app in NSWorkspace.shared.runningApplications {
@@ -139,7 +139,7 @@ for app in NSWorkspace.shared.runningApplications {
         AX.setBool(ax, "AXManualAccessibility", true)
         AX.setBool(ax, "AXEnhancedUserInterface", true)
     }
-    targetApps.append(TargetApp(kind: kind, name: app.localizedName ?? id, ax: ax))
+    targetApps.append(TargetApp(kind: kind, name: app.localizedName ?? id, ax: ax, pid: app.processIdentifier))
 }
 
 if targetApps.isEmpty {
@@ -224,7 +224,12 @@ if wantsChromeWindow {
         for (i, win) in wins.enumerated() {
             let title = AX.string(win, "AXTitle") ?? "(untitled)"
             let minimized = boolIfPresent(win, "AXMinimized") ?? false
-            roots.append(Root(label: "chrome-window-\(t.name)-\(i + 1)",
+            // Disambiguate by PID: multiple Chrome PROCESSES (a personal Chrome + a
+            // separate --user-data-dir rig Chrome) share the "Google Chrome" name, so
+            // "chrome-window-Google Chrome-1" collided on disk (later window clobbered
+            // the earlier same-labeled file). Include the owning PID so every window
+            // gets a unique output filename.
+            roots.append(Root(label: "chrome-window-\(t.name)-pid\(t.pid)-\(i + 1)",
                               note: "\(title) minimized=\(minimized)", el: win))
         }
     }

@@ -1,0 +1,18 @@
+Building for debugging...
+[0/3] Write swift-version--1AB21518FC5DEDBE.txt
+Build of product 'AXSnapshot' complete! (0.11s)
+Forcing full a11y tree on: Google Chrome [chrome], Google Chrome [chrome]
+Saw 2 browser/Chrome process(es) — searching web areas across all of them.
+Filtering web areas by --url substring: "teams.live.com"
+Letting the tree build…
+⚠️  --url "teams.live.com" matched no web area across 2 Chrome process(es); ignoring the filter.
+⚠️  No meeting tab found — dumping 2 other web area(s), incl. any PIP window.
+
+Dumping 2 root(s) → /Users/bibekthapa/projects/work/demo-app/macos/ax-dumps/20260707-002250
+
+  • chrome-other1    1530 nodes         <personal-tab-url REDACTED>
+  • chrome-other2     389 nodes         <personal-tab-url REDACTED>
+
+Done. Open the .json for full per-node attributes (every AXDOMClassList,
+AXSelected, geometry, etc.); the .txt for a quick read. Diff two snapshots
+across talk/silence to find which per-tile feature moves with speech.

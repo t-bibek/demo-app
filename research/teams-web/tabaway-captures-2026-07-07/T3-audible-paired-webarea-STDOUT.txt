@@ -1,0 +1,16 @@
+Building for debugging...
+[0/3] Write swift-version--1AB21518FC5DEDBE.txt
+Build of product 'AXSnapshot' complete! (0.12s)
+Forcing full a11y tree on: Google Chrome [chrome], Google Chrome [chrome], Google Chrome [chrome]
+Saw 3 browser/Chrome process(es) — searching web areas across all of them.
+Letting the tree build…
+
+Dumping 3 root(s) → /Users/bibekthapa/projects/work/demo-app/macos/ax-dumps/20260707-002642
+
+  • chrome-teams-web      81 nodes         https://teams.live.com/light-meetings/launch?p=k8Uape2w11cjW
+  • chrome-other1    1530 nodes         <personal-tab-url REDACTED>
+  • chrome-other2     389 nodes         <personal-tab-url REDACTED>
+
+Done. Open the .json for full per-node attributes (every AXDOMClassList,
+AXSelected, geometry, etc.); the .txt for a quick read. Diff two snapshots
+across talk/silence to find which per-tile feature moves with speech.

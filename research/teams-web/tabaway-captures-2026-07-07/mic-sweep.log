@@ -1,0 +1,9 @@
+00:15:07 LOG watching audio devices: [BlackHole 2ch, MacBook Pro Microphone, Microsoft Teams Audio]
+00:15:07 LOG bubbles root pid: 81434
+00:15:07 MIC_ACTIVE app="Microsoft Teams" bundle="com.microsoft.teams2" pid=81187
+00:18:31 LOG device "MacBook Pro Microphone" in-use users=[Microsoft Teams (pid 81187), Google Chrome (pid 81714)]
+00:34:40 LOG device "MacBook Pro Microphone" in-use users=[Microsoft Teams (pid 81187)]
+00:37:16 LOG device "MacBook Pro Microphone" in-use users=[Microsoft Teams (pid 81187), Google Chrome (pid 81714)]
+00:39:36 LOG device "MacBook Pro Microphone" in-use users=[Microsoft Teams (pid 81187)]
+00:39:37 LOG device "MacBook Pro Microphone" idle
+00:39:37 MIC_IDLE
