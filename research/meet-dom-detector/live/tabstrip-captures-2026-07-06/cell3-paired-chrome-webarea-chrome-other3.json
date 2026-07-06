@@ -1,0 +1,1145 @@
+{
+  "meta" : {
+    "capturedAt" : "2026-07-06T14:40:06Z",
+    "label" : "chrome-other3",
+    "maxDepth" : 3,
+    "maxNodes" : 1000000,
+    "nodeCount" : 12,
+    "note" : "https:\/\/chatgpt.com\/c\/6a4bb472-7f28-83ee-91b6-e29aea3bfdf0",
+    "truncated" : true
+  },
+  "tree" : {
+    "attributes" : {
+      "AXBlockQuoteLevel" : 0,
+      "AXColumnHeaderUIElements" : null,
+      "AXCustomContent" : null,
+      "AXDescription" : "",
+      "AXDOMClassList" : [
+
+      ],
+      "AXDOMIdentifier" : "",
+      "AXElementBusy" : false,
+      "AXEnabled" : true,
+      "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+      "AXFocused" : false,
+      "AXFrame" : {
+        "h" : 632,
+        "w" : 1147,
+        "x" : 0,
+        "y" : 113
+      },
+      "AXHelp" : null,
+      "AXInsertionPointLineNumber" : 9223372036854775807,
+      "AXLanguage" : "en-US",
+      "AXLinkedUIElements" : [
+
+      ],
+      "AXLoaded" : true,
+      "AXLoadingProgress" : 1,
+      "AXNumberOfCharacters" : 0,
+      "AXParent" : "<AXUIElement>",
+      "AXPlaceholderValue" : null,
+      "AXPosition" : {
+        "x" : 0,
+        "y" : 113
+      },
+      "AXRequired" : false,
+      "AXRole" : "AXWebArea",
+      "AXRoleDescription" : "HTML content",
+      "AXRows" : [
+
+      ],
+      "AXSelected" : false,
+      "AXSelectedRows" : [
+
+      ],
+      "AXSelectedText" : "Hi Usama,​I've updated the report design with a new color scheme based on your feedback. Could you please take a look and let me know what you think?​",
+      "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+      "AXSelectedTextRange" : {
+        "length" : 150,
+        "location" : 1473
+      },
+      "AXSelectedTextRanges" : "<1 AXUIElement>",
+      "AXSize" : {
+        "h" : 632,
+        "w" : 1147
+      },
+      "AXStartTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+      "AXSubrole" : null,
+      "AXTitle" : "Report Design Feedback",
+      "AXTitleUIElement" : null,
+      "AXTopLevelUIElement" : "<AXUIElement>",
+      "AXURL" : "https:\/\/chatgpt.com\/c\/6a4bb472-7f28-83ee-91b6-e29aea3bfdf0",
+      "AXValue" : "",
+      "AXVisibleCharacterRange" : {
+        "length" : 0,
+        "location" : 0
+      },
+      "AXVisited" : false,
+      "AXWindow" : "<AXUIElement>",
+      "ChromeAXNodeId" : "1"
+    },
+    "childCount" : 1,
+    "children" : [
+      {
+        "attributes" : {
+          "AXBlockQuoteLevel" : 0,
+          "AXColumnHeaderUIElements" : null,
+          "AXCustomContent" : null,
+          "AXDescription" : "",
+          "AXDOMClassList" : [
+
+          ],
+          "AXDOMIdentifier" : "",
+          "AXElementBusy" : false,
+          "AXEnabled" : true,
+          "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+          "AXFocusableAncestor" : null,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 632,
+            "w" : 1147,
+            "x" : 0,
+            "y" : 113
+          },
+          "AXHelp" : null,
+          "AXInsertionPointLineNumber" : 9223372036854775807,
+          "AXLanguage" : "en-US",
+          "AXLinkedUIElements" : [
+
+          ],
+          "AXNumberOfCharacters" : 0,
+          "AXParent" : "<AXUIElement>",
+          "AXPlaceholderValue" : null,
+          "AXPosition" : {
+            "x" : 0,
+            "y" : 113
+          },
+          "AXRequired" : false,
+          "AXRole" : "AXGroup",
+          "AXRoleDescription" : "group",
+          "AXRows" : [
+
+          ],
+          "AXSelected" : false,
+          "AXSelectedRows" : [
+
+          ],
+          "AXSelectedText" : "Hi Usama,​I've updated the report design with a new color scheme based on your feedback. Could you please take a look and let me know what you think?​",
+          "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+          "AXSelectedTextRange" : {
+            "length" : 150,
+            "location" : 1473
+          },
+          "AXSelectedTextRanges" : "<1 AXUIElement>",
+          "AXSize" : {
+            "h" : 632,
+            "w" : 1147
+          },
+          "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+          "AXSubrole" : null,
+          "AXTitle" : "",
+          "AXTitleUIElement" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXURL" : null,
+          "AXValue" : "",
+          "AXVisibleCharacterRange" : {
+            "length" : 0,
+            "location" : 0
+          },
+          "AXVisited" : false,
+          "AXWindow" : "<AXUIElement>",
+          "ChromeAXNodeId" : "172"
+        },
+        "childCount" : 6,
+        "children" : [
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "pointer-events-none",
+                "fixed",
+                "inset-x-0",
+                "top-0",
+                "z-50",
+                "mt-4",
+                "flex",
+                "justify-center",
+                "select-none",
+                "not-has-focus-visible:sr-only"
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1,
+                "x" : 0,
+                "y" : 113
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en-US",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 0,
+                "y" : 113
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "247"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "Skip to content",
+                  "AXDOMClassList" : [
+                    "interactive-bg-secondary",
+                    "behavior-btn",
+                    "interactive-label-secondary",
+                    "pointer-events-auto",
+                    "rounded-2xl",
+                    "px-4",
+                    "py-2",
+                    "text-base",
+                    "print:hidden"
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 1,
+                    "x" : 0,
+                    "y" : 113
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : "<1 AXUIElement>",
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 0,
+                    "y" : 113
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXLink",
+                  "AXRoleDescription" : "link",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 1
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : "https:\/\/chatgpt.com\/c\/6a4bb472-7f28-83ee-91b6-e29aea3bfdf0#main",
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "248"
+                },
+                "childCount" : 1,
+                "children" : [
+
+                ],
+                "description" : "Skip to content",
+                "domClassList" : [
+                  "interactive-bg-secondary",
+                  "behavior-btn",
+                  "interactive-label-secondary",
+                  "pointer-events-auto",
+                  "rounded-2xl",
+                  "px-4",
+                  "py-2",
+                  "text-base",
+                  "print:hidden"
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 1,
+                  "x" : 0,
+                  "y" : 113
+                },
+                "role" : "AXLink",
+                "roleDescription" : "link",
+                "selected" : false,
+                "url" : "https:\/\/chatgpt.com\/c\/6a4bb472-7f28-83ee-91b6-e29aea3bfdf0#main"
+              }
+            ],
+            "domClassList" : [
+              "pointer-events-none",
+              "fixed",
+              "inset-x-0",
+              "top-0",
+              "z-50",
+              "mt-4",
+              "flex",
+              "justify-center",
+              "select-none",
+              "not-has-focus-visible:sr-only"
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1,
+              "x" : 0,
+              "y" : 113
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "relative",
+                "z-0",
+                "flex",
+                "min-h-0",
+                "w-full",
+                "flex-1"
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 632,
+                "w" : 1147,
+                "x" : 0,
+                "y" : 113
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en-US",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 0,
+                "y" : 113
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : "Hi Usama,​I've updated the report design with a new color scheme based on your feedback. Could you please take a look and let me know what you think?​",
+              "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+              "AXSelectedTextRange" : {
+                "length" : 150,
+                "location" : 1458
+              },
+              "AXSelectedTextRanges" : "<1 AXUIElement>",
+              "AXSize" : {
+                "h" : 632,
+                "w" : 1147
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "251"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "relative",
+                    "flex",
+                    "min-h-0",
+                    "w-full",
+                    "min-w-0",
+                    "flex-1"
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 632,
+                    "w" : 1147,
+                    "x" : 0,
+                    "y" : 113
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 0,
+                    "y" : 113
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : "Hi Usama,​I've updated the report design with a new color scheme based on your feedback. Could you please take a look and let me know what you think?​",
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 150,
+                    "location" : 1458
+                  },
+                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                  "AXSize" : {
+                    "h" : 632,
+                    "w" : 1147
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "252"
+                },
+                "childCount" : 2,
+                "children" : [
+
+                ],
+                "domClassList" : [
+                  "relative",
+                  "flex",
+                  "min-h-0",
+                  "w-full",
+                  "min-w-0",
+                  "flex-1"
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 632,
+                  "w" : 1147,
+                  "x" : 0,
+                  "y" : 113
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "domClassList" : [
+              "relative",
+              "z-0",
+              "flex",
+              "min-h-0",
+              "w-full",
+              "flex-1"
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 632,
+              "w" : 1147,
+              "x" : 0,
+              "y" : 113
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXARIAAtomic" : true,
+              "AXARIALive" : "assertive",
+              "AXARIARelevant" : "additions text",
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "sr-only"
+              ],
+              "AXDOMIdentifier" : "aria-notify-live-region-assertive",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1,
+                "x" : 0,
+                "y" : 744
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en-US",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 0,
+                "y" : 744
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "alert",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+              "AXSubrole" : "AXApplicationAlert",
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "554"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domClassList" : [
+              "sr-only"
+            ],
+            "domIdentifier" : "aria-notify-live-region-assertive",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1,
+              "x" : 0,
+              "y" : 744
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "alert",
+            "selected" : false,
+            "subrole" : "AXApplicationAlert"
+          },
+          {
+            "attributes" : {
+              "AXARIAAtomic" : true,
+              "AXARIALive" : "polite",
+              "AXARIARelevant" : "additions text",
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "sr-only"
+              ],
+              "AXDOMIdentifier" : "aria-notify-live-region-polite",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1,
+                "x" : 0,
+                "y" : 744
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en-US",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 0,
+                "y" : 744
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "status",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+              "AXSubrole" : "AXApplicationStatus",
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "556"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domClassList" : [
+              "sr-only"
+            ],
+            "domIdentifier" : "aria-notify-live-region-polite",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1,
+              "x" : 0,
+              "y" : 744
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "status",
+            "selected" : false,
+            "subrole" : "AXApplicationStatus"
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 44,
+                "w" : 20,
+                "x" : 0,
+                "y" : 682
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en-US",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 0,
+                "y" : 682
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 44,
+                "w" : 20
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "655"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "container"
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 44,
+                    "w" : 20,
+                    "x" : 0,
+                    "y" : 682
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 0,
+                    "y" : 682
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 44,
+                    "w" : 20
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "577"
+                },
+                "childCount" : 2,
+                "children" : [
+
+                ],
+                "domClassList" : [
+                  "container"
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 44,
+                  "w" : 20,
+                  "x" : 0,
+                  "y" : 682
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 44,
+              "w" : 20,
+              "x" : 0,
+              "y" : 682
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "pointer-events-none",
+                "absolute",
+                "start-0",
+                "top-0",
+                "h-0"
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 197,
+                "w" : 369,
+                "x" : 532,
+                "y" : 393
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en-US",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 532,
+                "y" : 393
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 197,
+                "w" : 369
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "3379"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "sticky",
+                    "@w-xl\/main:top-2",
+                    "top-[calc(var(--header-height,48px)+48px+8px)]",
+                    "pointer-events-auto"
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000440d00000200000000000000 ... 4441423300000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 40,
+                    "w" : 369,
+                    "x" : 532,
+                    "y" : 393
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 532,
+                    "y" : 393
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000df0d0000feffffff00000000 ... 4441423300000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000610d0000feffffff00000000 ... 4441423300000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 40,
+                    "w" : 369
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 4441423300000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "3378"
+                },
+                "childCount" : 1,
+                "children" : [
+
+                ],
+                "domClassList" : [
+                  "sticky",
+                  "@w-xl\/main:top-2",
+                  "top-[calc(var(--header-height,48px)+48px+8px)]",
+                  "pointer-events-auto"
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 40,
+                  "w" : 369,
+                  "x" : 532,
+                  "y" : 393
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "domClassList" : [
+              "pointer-events-none",
+              "absolute",
+              "start-0",
+              "top-0",
+              "h-0"
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 197,
+              "w" : 369,
+              "x" : 532,
+              "y" : 393
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          }
+        ],
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 632,
+          "w" : 1147,
+          "x" : 0,
+          "y" : 113
+        },
+        "role" : "AXGroup",
+        "roleDescription" : "group",
+        "selected" : false
+      }
+    ],
+    "enabled" : true,
+    "focused" : false,
+    "frame" : {
+      "h" : 632,
+      "w" : 1147,
+      "x" : 0,
+      "y" : 113
+    },
+    "role" : "AXWebArea",
+    "roleDescription" : "HTML content",
+    "selected" : false,
+    "title" : "Report Design Feedback",
+    "url" : "https:\/\/chatgpt.com\/c\/6a4bb472-7f28-83ee-91b6-e29aea3bfdf0"
+  }
+}

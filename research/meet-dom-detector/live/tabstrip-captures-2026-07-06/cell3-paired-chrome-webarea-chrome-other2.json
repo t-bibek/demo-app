@@ -1,0 +1,629 @@
+{
+  "meta" : {
+    "capturedAt" : "2026-07-06T14:40:06Z",
+    "label" : "chrome-other2",
+    "maxDepth" : 3,
+    "maxNodes" : 1000000,
+    "nodeCount" : 7,
+    "note" : "about:blank",
+    "truncated" : true
+  },
+  "tree" : {
+    "attributes" : {
+      "AXBlockQuoteLevel" : 0,
+      "AXColumnHeaderUIElements" : null,
+      "AXCustomContent" : null,
+      "AXDescription" : "",
+      "AXDOMClassList" : [
+
+      ],
+      "AXDOMIdentifier" : "",
+      "AXElementBusy" : false,
+      "AXEnabled" : true,
+      "AXEndTextMarker" : "<AXTextMarker 0xcb484c000 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+      "AXFocused" : false,
+      "AXFrame" : {
+        "h" : 1,
+        "w" : 625,
+        "x" : 1147,
+        "y" : 117
+      },
+      "AXHelp" : null,
+      "AXInsertionPointLineNumber" : 9223372036854775807,
+      "AXLanguage" : "en-US",
+      "AXLinkedUIElements" : [
+
+      ],
+      "AXLoaded" : true,
+      "AXLoadingProgress" : 1,
+      "AXNumberOfCharacters" : 0,
+      "AXParent" : "<AXUIElement>",
+      "AXPlaceholderValue" : null,
+      "AXPosition" : {
+        "x" : 1147,
+        "y" : 117
+      },
+      "AXRequired" : false,
+      "AXRole" : "AXWebArea",
+      "AXRoleDescription" : "HTML content",
+      "AXRows" : [
+
+      ],
+      "AXSelected" : false,
+      "AXSelectedRows" : [
+
+      ],
+      "AXSelectedText" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \"test@derbysoft.net\"\n",
+      "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c000 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb484c050 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+      "AXSelectedTextRange" : {
+        "length" : 124,
+        "location" : 0
+      },
+      "AXSelectedTextRanges" : "<1 AXUIElement>",
+      "AXSize" : {
+        "h" : 1,
+        "w" : 625
+      },
+      "AXStartTextMarker" : "<AXTextMarker 0xcb484c000 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+      "AXSubrole" : null,
+      "AXTitle" : "",
+      "AXTitleUIElement" : null,
+      "AXTopLevelUIElement" : "<AXUIElement>",
+      "AXURL" : "about:blank",
+      "AXValue" : "",
+      "AXVisibleCharacterRange" : {
+        "length" : 0,
+        "location" : 0
+      },
+      "AXVisited" : false,
+      "AXWindow" : "<AXUIElement>",
+      "ChromeAXNodeId" : "79916"
+    },
+    "childCount" : 2,
+    "children" : [
+      {
+        "attributes" : {
+          "AXAccessKey" : null,
+          "AXBlockQuoteLevel" : 0,
+          "AXColumnHeaderUIElements" : null,
+          "AXCustomContent" : null,
+          "AXDescription" : "Document content",
+          "AXDOMClassList" : [
+
+          ],
+          "AXDOMIdentifier" : "",
+          "AXEditableAncestor" : "<AXUIElement>",
+          "AXElementBusy" : false,
+          "AXEnabled" : true,
+          "AXEndTextMarker" : "<AXTextMarker 0xcb484c050 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+          "AXFocusableAncestor" : "<AXUIElement>",
+          "AXFocused" : true,
+          "AXFrame" : {
+            "h" : 1,
+            "w" : 625,
+            "x" : 1147,
+            "y" : 117
+          },
+          "AXHelp" : null,
+          "AXHighestEditableAncestor" : "<AXUIElement>",
+          "AXInsertionPointLineNumber" : 9223372036854775807,
+          "AXInvalid" : "false",
+          "AXLanguage" : "en-US",
+          "AXLinkedUIElements" : [
+
+          ],
+          "AXNumberOfCharacters" : 124,
+          "AXOwns" : null,
+          "AXParent" : "<AXUIElement>",
+          "AXPlaceholderValue" : null,
+          "AXPosition" : {
+            "x" : 1147,
+            "y" : 117
+          },
+          "AXRequired" : false,
+          "AXRole" : "AXTextArea",
+          "AXRoleDescription" : "text entry area",
+          "AXRows" : [
+
+          ],
+          "AXSelected" : false,
+          "AXSelectedRows" : [
+
+          ],
+          "AXSelectedText" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \"test@derbysoft.net\"\n",
+          "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c050 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb484c000 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+          "AXSelectedTextRange" : {
+            "length" : 124,
+            "location" : 0
+          },
+          "AXSelectedTextRanges" : "<1 AXUIElement>",
+          "AXSize" : {
+            "h" : 1,
+            "w" : 625
+          },
+          "AXStartTextMarker" : "<AXTextMarker 0xcb484c050 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+          "AXSubrole" : null,
+          "AXTitle" : "",
+          "AXTitleUIElement" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXURL" : null,
+          "AXValue" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \"test@derbysoft.net\"\n",
+          "AXValueAutofillAvailable" : false,
+          "AXVisibleCharacterRange" : {
+            "length" : 124,
+            "location" : 0
+          },
+          "AXVisited" : false,
+          "AXWindow" : "<AXUIElement>",
+          "ChromeAXNodeId" : "79914"
+        },
+        "childCount" : 1,
+        "children" : [
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "docs-internal-guid-4a9ddf5f-7fff-d57d-e7bc-e9ed1fa3c7a3",
+              "AXEditableAncestor" : "<AXUIElement>",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : "<AXUIElement>",
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 624,
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXHelp" : null,
+              "AXHighestEditableAncestor" : "<AXUIElement>",
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en-US",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \"test@derbysoft.net\"\n",
+              "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+              "AXSelectedTextRange" : {
+                "length" : 124,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : "<1 AXUIElement>",
+              "AXSize" : {
+                "h" : 1,
+                "w" : 624
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb484c050 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "91088"
+            },
+            "childCount" : 3,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXEditableAncestor" : "<AXUIElement>",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 624,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXHighestEditableAncestor" : "<AXUIElement>",
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXStaticText",
+                  "AXRoleDescription" : "text",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 624
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \"",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "91094"
+                },
+                "childCount" : 0,
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 624,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXStaticText",
+                "roleDescription" : "text",
+                "selected" : false,
+                "value" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \""
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "test@derbysoft.net",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXEditableAncestor" : "<AXUIElement>",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 135,
+                    "x" : 1342,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXHighestEditableAncestor" : "<AXUIElement>",
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1342,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXLink",
+                  "AXRoleDescription" : "link",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb4c587d0 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 135
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : "mailto:test@derbysoft.net",
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "91090"
+                },
+                "childCount" : 1,
+                "children" : [
+
+                ],
+                "description" : "test@derbysoft.net",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 135,
+                  "x" : 1342,
+                  "y" : 117
+                },
+                "role" : "AXLink",
+                "roleDescription" : "link",
+                "selected" : false,
+                "url" : "mailto:test@derbysoft.net"
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXEditableAncestor" : "<AXUIElement>",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 7,
+                    "x" : 1476,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXHighestEditableAncestor" : "<AXUIElement>",
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1476,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXStaticText",
+                  "AXRoleDescription" : "text",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 7
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "\"",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "91096"
+                },
+                "childCount" : 0,
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 7,
+                  "x" : 1476,
+                  "y" : 117
+                },
+                "role" : "AXStaticText",
+                "roleDescription" : "text",
+                "selected" : false,
+                "value" : "\""
+              }
+            ],
+            "domIdentifier" : "docs-internal-guid-4a9ddf5f-7fff-d57d-e7bc-e9ed1fa3c7a3",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 624,
+              "x" : 1147,
+              "y" : 117
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          }
+        ],
+        "description" : "Document content",
+        "enabled" : true,
+        "focused" : true,
+        "frame" : {
+          "h" : 1,
+          "w" : 625,
+          "x" : 1147,
+          "y" : 117
+        },
+        "role" : "AXTextArea",
+        "roleDescription" : "text entry area",
+        "selected" : false,
+        "value" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \"test@derbysoft.net\"\n"
+      },
+      {
+        "attributes" : {
+          "AXBlockQuoteLevel" : 0,
+          "AXColumnHeaderUIElements" : null,
+          "AXCustomContent" : null,
+          "AXDescription" : "",
+          "AXDOMClassList" : [
+
+          ],
+          "AXDOMIdentifier" : "docs-texteventtarget-descendant",
+          "AXElementBusy" : false,
+          "AXEnabled" : true,
+          "AXEndTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+          "AXFocusableAncestor" : null,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 1,
+            "w" : 625,
+            "x" : 1147,
+            "y" : 117
+          },
+          "AXHelp" : null,
+          "AXInsertionPointLineNumber" : 9223372036854775807,
+          "AXLanguage" : "en-US",
+          "AXLinkedUIElements" : [
+
+          ],
+          "AXNumberOfCharacters" : 0,
+          "AXParent" : "<AXUIElement>",
+          "AXPlaceholderValue" : null,
+          "AXPosition" : {
+            "x" : 1147,
+            "y" : 117
+          },
+          "AXRequired" : false,
+          "AXRole" : "AXGroup",
+          "AXRoleDescription" : "group",
+          "AXRows" : [
+
+          ],
+          "AXSelected" : false,
+          "AXSelectedRows" : [
+
+          ],
+          "AXSelectedText" : null,
+          "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c88500 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb484c0a0 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+          "AXSelectedTextRange" : {
+            "length" : 0,
+            "location" : 0
+          },
+          "AXSelectedTextRanges" : null,
+          "AXSize" : {
+            "h" : 1,
+            "w" : 625
+          },
+          "AXStartTextMarker" : "<AXTextMarker 0xcb484c0f0 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+          "AXSubrole" : "AXApplicationGroup",
+          "AXTitle" : "",
+          "AXTitleUIElement" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXURL" : null,
+          "AXValue" : "",
+          "AXVisibleCharacterRange" : {
+            "length" : 0,
+            "location" : 0
+          },
+          "AXVisited" : false,
+          "AXWindow" : "<AXUIElement>",
+          "ChromeAXNodeId" : "79915"
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "domIdentifier" : "docs-texteventtarget-descendant",
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 1,
+          "w" : 625,
+          "x" : 1147,
+          "y" : 117
+        },
+        "role" : "AXGroup",
+        "roleDescription" : "group",
+        "selected" : false,
+        "subrole" : "AXApplicationGroup"
+      }
+    ],
+    "enabled" : true,
+    "focused" : false,
+    "frame" : {
+      "h" : 1,
+      "w" : 625,
+      "x" : 1147,
+      "y" : 117
+    },
+    "role" : "AXWebArea",
+    "roleDescription" : "HTML content",
+    "selected" : false,
+    "url" : "about:blank"
+  }
+}

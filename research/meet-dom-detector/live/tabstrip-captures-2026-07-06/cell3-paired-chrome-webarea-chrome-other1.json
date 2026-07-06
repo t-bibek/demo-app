@@ -1,0 +1,3253 @@
+{
+  "meta" : {
+    "capturedAt" : "2026-07-06T14:40:06Z",
+    "label" : "chrome-other1",
+    "maxDepth" : 3,
+    "maxNodes" : 1000000,
+    "nodeCount" : 37,
+    "note" : "https:\/\/docs.google.com\/document\/d\/1DgLfkxdzdMkQ1CTxawBnDQXitLaDXlaoWibNC6ynx1M\/edit?tab=t.3cf9nya89nto",
+    "truncated" : true
+  },
+  "tree" : {
+    "attributes" : {
+      "AXBlockQuoteLevel" : 0,
+      "AXColumnHeaderUIElements" : null,
+      "AXCustomContent" : null,
+      "AXDescription" : "",
+      "AXDOMClassList" : [
+
+      ],
+      "AXDOMIdentifier" : "",
+      "AXElementBusy" : false,
+      "AXEnabled" : true,
+      "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+      "AXFocused" : false,
+      "AXFrame" : {
+        "h" : 963,
+        "w" : 1920,
+        "x" : 1147,
+        "y" : 117
+      },
+      "AXHelp" : null,
+      "AXInsertionPointLineNumber" : 9223372036854775807,
+      "AXLanguage" : "en",
+      "AXLinkedUIElements" : [
+
+      ],
+      "AXLoaded" : true,
+      "AXLoadingProgress" : 1,
+      "AXNumberOfCharacters" : 0,
+      "AXParent" : "<AXUIElement>",
+      "AXPlaceholderValue" : null,
+      "AXPosition" : {
+        "x" : 1147,
+        "y" : 117
+      },
+      "AXRequired" : false,
+      "AXRole" : "AXWebArea",
+      "AXRoleDescription" : "HTML content",
+      "AXRows" : [
+
+      ],
+      "AXSelected" : false,
+      "AXSelectedRows" : [
+
+      ],
+      "AXSelectedText" : null,
+      "AXSelectedTextMarkerRange" : null,
+      "AXSelectedTextRange" : {
+        "length" : 0,
+        "location" : 0
+      },
+      "AXSelectedTextRanges" : null,
+      "AXSize" : {
+        "h" : 963,
+        "w" : 1920
+      },
+      "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+      "AXSubrole" : null,
+      "AXTitle" : "Bubbles CLI commands - Google Docs",
+      "AXTitleUIElement" : null,
+      "AXTopLevelUIElement" : "<AXUIElement>",
+      "AXURL" : "https:\/\/docs.google.com\/document\/d\/1DgLfkxdzdMkQ1CTxawBnDQXitLaDXlaoWibNC6ynx1M\/edit?tab=t.3cf9nya89nto",
+      "AXValue" : "",
+      "AXVisibleCharacterRange" : {
+        "length" : 0,
+        "location" : 0
+      },
+      "AXVisited" : false,
+      "AXWindow" : "<AXUIElement>",
+      "ChromeAXNodeId" : "78906"
+    },
+    "childCount" : 1,
+    "children" : [
+      {
+        "attributes" : {
+          "AXBlockQuoteLevel" : 0,
+          "AXColumnHeaderUIElements" : null,
+          "AXCustomContent" : null,
+          "AXDescription" : "",
+          "AXDOMClassList" : [
+            "docs-gm",
+            "docsCommonWiz",
+            "docs-material",
+            "docs-grille-gm3",
+            "noAdvancedCJKPositioning"
+          ],
+          "AXDOMIdentifier" : "",
+          "AXElementBusy" : false,
+          "AXEnabled" : true,
+          "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+          "AXFocusableAncestor" : null,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 963,
+            "w" : 1920,
+            "x" : 1147,
+            "y" : 117
+          },
+          "AXHelp" : null,
+          "AXInsertionPointLineNumber" : 9223372036854775807,
+          "AXLanguage" : "en",
+          "AXLinkedUIElements" : [
+
+          ],
+          "AXNumberOfCharacters" : 0,
+          "AXParent" : "<AXUIElement>",
+          "AXPlaceholderValue" : null,
+          "AXPosition" : {
+            "x" : 1147,
+            "y" : 117
+          },
+          "AXRequired" : false,
+          "AXRole" : "AXGroup",
+          "AXRoleDescription" : "application",
+          "AXRows" : [
+
+          ],
+          "AXSelected" : false,
+          "AXSelectedRows" : [
+
+          ],
+          "AXSelectedText" : null,
+          "AXSelectedTextMarkerRange" : null,
+          "AXSelectedTextRange" : {
+            "length" : 0,
+            "location" : 0
+          },
+          "AXSelectedTextRanges" : null,
+          "AXSize" : {
+            "h" : 963,
+            "w" : 1920
+          },
+          "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+          "AXSubrole" : "AXWebApplication",
+          "AXTitle" : "",
+          "AXTitleUIElement" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXURL" : null,
+          "AXValue" : "",
+          "AXVisibleCharacterRange" : {
+            "length" : 0,
+            "location" : 0
+          },
+          "AXVisited" : false,
+          "AXWindow" : "<AXUIElement>",
+          "ChromeAXNodeId" : "78947"
+        },
+        "childCount" : 15,
+        "children" : [
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "Menu bar",
+              "AXDOMClassList" : [
+                "docs-material",
+                "companion-enabled"
+              ],
+              "AXDOMIdentifier" : "docs-chrome",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : "<AXUIElement>",
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 114,
+                "w" : 1920,
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "banner",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 114,
+                "w" : 1920
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : "AXLandmarkBanner",
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "78955"
+            },
+            "childCount" : 12,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXARIAAtomic" : true,
+                  "AXARIALive" : "assertive",
+                  "AXARIARelevant" : "additions text",
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "docs-butterbar-container"
+                  ],
+                  "AXDOMIdentifier" : "docs-butterbar-container",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 0,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 149
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 149
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 0,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "78956"
+                },
+                "childCount" : 0,
+                "domClassList" : [
+                  "docs-butterbar-container"
+                ],
+                "domIdentifier" : "docs-butterbar-container",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 0,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 149
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-positioned-surface-container",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "78957"
+                },
+                "childCount" : 0,
+                "domIdentifier" : "docs-positioned-surface-container",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-chrome-cover-container",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "78958"
+                },
+                "childCount" : 0,
+                "domIdentifier" : "docs-chrome-cover-container",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-banner-container",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "78961"
+                },
+                "childCount" : 1,
+                "children" : [
+
+                ],
+                "domIdentifier" : "docs-banner-container",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-header-container",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 32,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 32,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "78967"
+                },
+                "childCount" : 1,
+                "children" : [
+
+                ],
+                "domIdentifier" : "docs-header-container",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 32,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-bars",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 79,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 143
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 143
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 79,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79073"
+                },
+                "childCount" : 3,
+                "children" : [
+
+                ],
+                "domIdentifier" : "docs-bars",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 79,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 143
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-help-anchor-wrapper",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 0,
+                    "w" : 1,
+                    "x" : 3066,
+                    "y" : 230
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 3066,
+                    "y" : 230
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 0,
+                    "w" : 1
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79463"
+                },
+                "childCount" : 2,
+                "children" : [
+
+                ],
+                "domIdentifier" : "docs-help-anchor-wrapper",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 0,
+                  "w" : 1,
+                  "x" : 3066,
+                  "y" : 230
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "docs-feature-level-banner-docs"
+                  ],
+                  "AXDOMIdentifier" : "docs-feature-level-banner",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 0,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 0,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79466"
+                },
+                "childCount" : 0,
+                "domClassList" : [
+                  "docs-feature-level-banner-docs"
+                ],
+                "domIdentifier" : "docs-feature-level-banner",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 0,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 230
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-inset-notification-banner",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 0,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 0,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58820 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79467"
+                },
+                "childCount" : 0,
+                "domIdentifier" : "docs-inset-notification-banner",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 0,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 230
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "docs-companion-app-switcher-container",
+                    "docs-material",
+                    "docs-companion-app-switcher-container-collapsed"
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 56,
+                    "w" : 56,
+                    "x" : 3011,
+                    "y" : 1024
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 3011,
+                    "y" : 1024
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 56,
+                    "w" : 56
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c587d0 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79468"
+                },
+                "childCount" : 1,
+                "children" : [
+
+                ],
+                "domClassList" : [
+                  "docs-companion-app-switcher-container",
+                  "docs-material",
+                  "docs-companion-app-switcher-container-collapsed"
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 56,
+                  "w" : 56,
+                  "x" : 3011,
+                  "y" : 1024
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-additional-bars",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 0,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 0,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79502"
+                },
+                "childCount" : 0,
+                "domIdentifier" : "docs-additional-bars",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 0,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 230
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-palettes",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 0,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 0,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79503"
+                },
+                "childCount" : 0,
+                "domIdentifier" : "docs-palettes",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 0,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 230
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "description" : "Menu bar",
+            "domClassList" : [
+              "docs-material",
+              "companion-enabled"
+            ],
+            "domIdentifier" : "docs-chrome",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 114,
+              "w" : 1920,
+              "x" : 1147,
+              "y" : 117
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "banner",
+            "selected" : false,
+            "subrole" : "AXLandmarkBanner"
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "docs-sidebar-container",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 963,
+                "w" : 0,
+                "x" : 1163,
+                "y" : 236
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1163,
+                "y" : 236
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 963,
+                "w" : 0
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "79504"
+            },
+            "childCount" : 2,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "docsWizSidebarSidebarContainer"
+                  ],
+                  "AXDOMIdentifier" : "docs-wiz-sidebar-placeholder",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 963,
+                    "w" : 0,
+                    "x" : 1163,
+                    "y" : 236
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1163,
+                    "y" : 236
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 963,
+                    "w" : 0
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "83848"
+                },
+                "childCount" : 0,
+                "domClassList" : [
+                  "docsWizSidebarSidebarContainer"
+                ],
+                "domIdentifier" : "docs-wiz-sidebar-placeholder",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 963,
+                  "w" : 0,
+                  "x" : 1163,
+                  "y" : 236
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              },
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "docsWizSidebarSidebarContainer"
+                  ],
+                  "AXDOMIdentifier" : "docs-wiz-allows-secondary-sidebar-placeholder",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 963,
+                    "w" : 0,
+                    "x" : 1163,
+                    "y" : 236
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1163,
+                    "y" : 236
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 963,
+                    "w" : 0
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "83853"
+                },
+                "childCount" : 0,
+                "domClassList" : [
+                  "docsWizSidebarSidebarContainer"
+                ],
+                "domIdentifier" : "docs-wiz-allows-secondary-sidebar-placeholder",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 963,
+                  "w" : 0,
+                  "x" : 1163,
+                  "y" : 236
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "domIdentifier" : "docs-sidebar-container",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 963,
+              "w" : 0,
+              "x" : 1163,
+              "y" : 236
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "docs-texteventtargetbrailleoffsetcalculator",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 0,
+                "w" : 1920,
+                "x" : 1147,
+                "y" : 230
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 230
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 0,
+                "w" : 1920
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "79505"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domIdentifier" : "docs-texteventtargetbrailleoffsetcalculator",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 0,
+              "w" : 1920,
+              "x" : 1147,
+              "y" : 230
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "docs-editor-container",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 850,
+                "w" : 1920,
+                "x" : 1147,
+                "y" : 230
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 230
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 850,
+                "w" : 1920
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "79507"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "docs-editor",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 850,
+                    "w" : 1920,
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 230
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 850,
+                    "w" : 1920
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79508"
+                },
+                "childCount" : 1,
+                "children" : [
+
+                ],
+                "domIdentifier" : "docs-editor",
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 850,
+                  "w" : 1920,
+                  "x" : 1147,
+                  "y" : 230
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "domIdentifier" : "docs-editor-container",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 850,
+              "w" : 1920,
+              "x" : 1147,
+              "y" : 230
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "docs-texteventtarget-iframe",
+                "docs-offscreen-z-index",
+                "docs-texteventtarget-iframe-negative-top"
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 625,
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 625
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "79737"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 625,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en-US",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXLoaded" : true,
+                  "AXLoadingProgress" : 1,
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXWebArea",
+                  "AXRoleDescription" : "HTML content",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : "AWS_PROFILE=prod AWS_REGION=us-west-2 yarn run bubbles delete-bubbles-user --stage production --emails \"test@derbysoft.net\"\n",
+                  "AXSelectedTextMarkerRange" : "<AXTextMarkerRange 0xcb4c883c0 [0x1fb408800]>{startMarker:<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x02000000d6630100feffffff00000000 ... 3443333000000000} endMarker:<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x01000000d0630100040000009dffffff ... 3443333000000000}}",
+                  "AXSelectedTextRange" : {
+                    "length" : 124,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 625
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58780 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : "about:blank",
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "79916"
+                },
+                "childCount" : 2,
+                "children" : [
+
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 625,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXWebArea",
+                "roleDescription" : "HTML content",
+                "selected" : false,
+                "url" : "about:blank"
+              }
+            ],
+            "domClassList" : [
+              "docs-texteventtarget-iframe",
+              "docs-offscreen-z-index",
+              "docs-texteventtarget-iframe-negative-top"
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 625,
+              "x" : 1147,
+              "y" : 117
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "docs-recommendation-banner",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1920,
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1920
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "80282"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domIdentifier" : "docs-recommendation-banner",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1920,
+              "x" : 1147,
+              "y" : 1079
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "docs-recommendations-initialization",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1920,
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1920
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "80283"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domIdentifier" : "docs-recommendations-initialization",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1920,
+              "x" : 1147,
+              "y" : 1079
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 41,
+                "w" : 18,
+                "x" : 1147,
+                "y" : 983
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 983
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 41,
+                "w" : 18
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "80491"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "container"
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 41,
+                    "w" : 18,
+                    "x" : 1147,
+                    "y" : 983
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 983
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 41,
+                    "w" : 18
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "80413"
+                },
+                "childCount" : 2,
+                "children" : [
+
+                ],
+                "domClassList" : [
+                  "container"
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 41,
+                  "w" : 18,
+                  "x" : 1147,
+                  "y" : 983
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 41,
+              "w" : 18,
+              "x" : 1147,
+              "y" : 983
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "appsElementsStackingSnackbarContainer"
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1,
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "80574"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domClassList" : [
+              "appsElementsStackingSnackbarContainer"
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1,
+              "x" : 1147,
+              "y" : 1079
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "Turn on screen reader support",
+              "AXDOMClassList" : [
+                "docs-offscreen-z-index"
+              ],
+              "AXDOMIdentifier" : "docs-a11y-aria-enable",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : "<AXUIElement>",
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 14,
+                "w" : 174,
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : "<1 AXUIElement>",
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXLink",
+              "AXRoleDescription" : "link",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 14,
+                "w" : 174
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : "https:\/\/docs.google.com\/document\/d\/1DgLfkxdzdMkQ1CTxawBnDQXitLaDXlaoWibNC6ynx1M\/edit?tab=t.3cf9nya89nto#",
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "83879"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : "<AXUIElement>",
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 14,
+                    "w" : 174,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXStaticText",
+                  "AXRoleDescription" : "text",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 14,
+                    "w" : 174
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "Turn on screen reader support",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "84084"
+                },
+                "childCount" : 0,
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 14,
+                  "w" : 174,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXStaticText",
+                "roleDescription" : "text",
+                "selected" : false,
+                "value" : "Turn on screen reader support"
+              }
+            ],
+            "description" : "Turn on screen reader support",
+            "domClassList" : [
+              "docs-offscreen-z-index"
+            ],
+            "domIdentifier" : "docs-a11y-aria-enable",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 14,
+              "w" : 174,
+              "x" : 1147,
+              "y" : 117
+            },
+            "role" : "AXLink",
+            "roleDescription" : "link",
+            "selected" : false,
+            "url" : "https:\/\/docs.google.com\/document\/d\/1DgLfkxdzdMkQ1CTxawBnDQXitLaDXlaoWibNC6ynx1M\/edit?tab=t.3cf9nya89nto#"
+          },
+          {
+            "attributes" : {
+              "AXARIAAtomic" : true,
+              "AXARIALive" : "assertive",
+              "AXARIARelevant" : "additions text",
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "placeholder-msg-until-sr-enabled",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 15,
+                "w" : 587,
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 15,
+                "w" : 587
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "84762"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXARIAAtomic" : false,
+                  "AXARIARelevant" : "additions text",
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 15,
+                    "w" : 587,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXStaticText",
+                  "AXRoleDescription" : "text",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 15,
+                    "w" : 587
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "To enable screen reader support, press ⌘+Option+Z To learn about keyboard shortcuts, press ⌘slash",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "84763"
+                },
+                "childCount" : 0,
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 15,
+                  "w" : 587,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXStaticText",
+                "roleDescription" : "text",
+                "selected" : false,
+                "value" : "To enable screen reader support, press ⌘+Option+Z To learn about keyboard shortcuts, press ⌘slash"
+              }
+            ],
+            "domIdentifier" : "placeholder-msg-until-sr-enabled",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 15,
+              "w" : 587,
+              "x" : 1147,
+              "y" : 117
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : "<AXUIElement>",
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1,
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 1079
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "85955"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1,
+              "x" : 1147,
+              "y" : 1079
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXARIAAtomic" : true,
+              "AXARIALive" : "polite",
+              "AXARIARelevant" : "additions text",
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "goog-lr-41",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 87,
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 87
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "86121"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXARIAAtomic" : false,
+                  "AXARIARelevant" : "additions text",
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 1,
+                    "w" : 87,
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 9223372036854775807,
+                  "AXLanguage" : "en",
+                  "AXLinkedUIElements" : [
+
+                  ],
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 1147,
+                    "y" : 117
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXStaticText",
+                  "AXRoleDescription" : "text",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : null,
+                  "AXSelectedTextMarkerRange" : null,
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : null,
+                  "AXSize" : {
+                    "h" : 1,
+                    "w" : 87
+                  },
+                  "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "Banner hidden ",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "86137"
+                },
+                "childCount" : 0,
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 1,
+                  "w" : 87,
+                  "x" : 1147,
+                  "y" : 117
+                },
+                "role" : "AXStaticText",
+                "roleDescription" : "text",
+                "selected" : false,
+                "value" : "Banner hidden "
+              }
+            ],
+            "domIdentifier" : "goog-lr-41",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 87,
+              "x" : 1147,
+              "y" : 117
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXARIAAtomic" : true,
+              "AXARIALive" : "assertive",
+              "AXARIARelevant" : "additions text",
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "sharing-aria-region"
+              ],
+              "AXDOMIdentifier" : "sharing-aria-speakable",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 1,
+                "w" : 1,
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1147,
+                "y" : 117
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 1,
+                "w" : 1
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "86495"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domClassList" : [
+              "sharing-aria-region"
+            ],
+            "domIdentifier" : "sharing-aria-speakable",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 1,
+              "w" : 1,
+              "x" : 1147,
+              "y" : 117
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          },
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+
+              ],
+              "AXDOMIdentifier" : "meet-captured-region",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXEndTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000007a5901000000000000000000 ... 3741343400000000}",
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 959,
+                "w" : 1916,
+                "x" : 1149,
+                "y" : 119
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 9223372036854775807,
+              "AXLanguage" : "en",
+              "AXLinkedUIElements" : [
+
+              ],
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 1149,
+                "y" : 119
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : null,
+              "AXSelectedTextMarkerRange" : null,
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : null,
+              "AXSize" : {
+                "h" : 959,
+                "w" : 1916
+              },
+              "AXStartTextMarker" : "<AXTextMarker 0xcb4c58500 [0x1fb408800]>{length = 56, bytes = 0x020000003a3401000000000000000000 ... 3741343400000000}",
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "88406"
+            },
+            "childCount" : 0,
+            "children" : [
+
+            ],
+            "domIdentifier" : "meet-captured-region",
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 959,
+              "w" : 1916,
+              "x" : 1149,
+              "y" : 119
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          }
+        ],
+        "domClassList" : [
+          "docs-gm",
+          "docsCommonWiz",
+          "docs-material",
+          "docs-grille-gm3",
+          "noAdvancedCJKPositioning"
+        ],
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 963,
+          "w" : 1920,
+          "x" : 1147,
+          "y" : 117
+        },
+        "role" : "AXGroup",
+        "roleDescription" : "application",
+        "selected" : false,
+        "subrole" : "AXWebApplication"
+      }
+    ],
+    "enabled" : true,
+    "focused" : false,
+    "frame" : {
+      "h" : 963,
+      "w" : 1920,
+      "x" : 1147,
+      "y" : 117
+    },
+    "role" : "AXWebArea",
+    "roleDescription" : "HTML content",
+    "selected" : false,
+    "title" : "Bubbles CLI commands - Google Docs",
+    "url" : "https:\/\/docs.google.com\/document\/d\/1DgLfkxdzdMkQ1CTxawBnDQXitLaDXlaoWibNC6ynx1M\/edit?tab=t.3cf9nya89nto"
+  }
+}

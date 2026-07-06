@@ -1,0 +1,3373 @@
+{
+  "meta" : {
+    "capturedAt" : "2026-07-06T14:43:02Z",
+    "label" : "chrome-window-Google Chrome-1",
+    "maxDepth" : 9223372036854775807,
+    "maxNodes" : 1000000,
+    "nodeCount" : 43,
+    "note" : "Meet - vor-sjpu-jga - Google Chrome - Bibek922 minimized=false",
+    "truncated" : false
+  },
+  "tree" : {
+    "attributes" : {
+      "AXActivationPoint" : {
+        "x" : -1,
+        "y" : 746
+      },
+      "AXCancelButton" : null,
+      "AXChildrenInNavigationOrder" : "<4 AXUIElement>",
+      "AXCloseButton" : "<AXUIElement>",
+      "AXDefaultButton" : null,
+      "AXDocument" : "https:\/\/meet.google.com\/vor-sjpu-jga",
+      "AXFocused" : false,
+      "AXFrame" : {
+        "h" : 719,
+        "w" : 1147,
+        "x" : 0,
+        "y" : 26
+      },
+      "AXFullScreen" : false,
+      "AXFullScreenButton" : "<AXUIElement>",
+      "AXGrowArea" : null,
+      "AXMain" : true,
+      "AXMinimizeButton" : "<AXUIElement>",
+      "AXMinimized" : false,
+      "AXModal" : false,
+      "AXParent" : "<AXUIElement>",
+      "AXPosition" : {
+        "x" : 0,
+        "y" : 26
+      },
+      "AXProxy" : null,
+      "AXRole" : "AXWindow",
+      "AXRoleDescription" : "standard window",
+      "AXSections" : "<2 AXUIElement>",
+      "AXSize" : {
+        "h" : 719,
+        "w" : 1147
+      },
+      "AXSubrole" : "AXStandardWindow",
+      "AXTitle" : "Meet - vor-sjpu-jga - Google Chrome - Bibek922",
+      "AXTitleUIElement" : null,
+      "AXToolbarButton" : null,
+      "AXZoomButton" : "<AXUIElement>"
+    },
+    "childCount" : 4,
+    "children" : [
+      {
+        "attributes" : {
+          "AXBlockQuoteLevel" : 0,
+          "AXColumnHeaderUIElements" : null,
+          "AXCustomContent" : null,
+          "AXDescription" : "",
+          "AXDOMClassList" : [
+            "BrowserRootView"
+          ],
+          "AXDOMIdentifier" : "",
+          "AXElementBusy" : false,
+          "AXEnabled" : true,
+          "AXFocusableAncestor" : null,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 719,
+            "w" : 1147,
+            "x" : 0,
+            "y" : 26
+          },
+          "AXHelp" : null,
+          "AXInsertionPointLineNumber" : 0,
+          "AXNumberOfCharacters" : 0,
+          "AXParent" : "<AXUIElement>",
+          "AXPlaceholderValue" : null,
+          "AXPosition" : {
+            "x" : 0,
+            "y" : 26
+          },
+          "AXRequired" : false,
+          "AXRole" : "AXGroup",
+          "AXRoleDescription" : "group",
+          "AXRows" : [
+
+          ],
+          "AXSelected" : false,
+          "AXSelectedRows" : [
+
+          ],
+          "AXSelectedText" : "",
+          "AXSelectedTextRange" : {
+            "length" : 0,
+            "location" : 0
+          },
+          "AXSelectedTextRanges" : "<1 AXUIElement>",
+          "AXSize" : {
+            "h" : 719,
+            "w" : 1147
+          },
+          "AXSubrole" : null,
+          "AXTitle" : "Meet - vor-sjpu-jga - Google Chrome - Bibek922",
+          "AXTitleUIElement" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXURL" : "https:\/\/meet.google.com\/vor-sjpu-jga",
+          "AXValue" : "",
+          "AXVisibleCharacterRange" : {
+            "length" : 0,
+            "location" : 0
+          },
+          "AXVisited" : false,
+          "AXWindow" : "<AXUIElement>",
+          "ChromeAXNodeId" : "122"
+        },
+        "childCount" : 1,
+        "children" : [
+          {
+            "attributes" : {
+              "AXBlockQuoteLevel" : 0,
+              "AXColumnHeaderUIElements" : null,
+              "AXCustomContent" : null,
+              "AXDescription" : "",
+              "AXDOMClassList" : [
+                "NonClientView"
+              ],
+              "AXDOMIdentifier" : "",
+              "AXElementBusy" : false,
+              "AXEnabled" : true,
+              "AXFocusableAncestor" : null,
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 719,
+                "w" : 1147,
+                "x" : 0,
+                "y" : 26
+              },
+              "AXHelp" : null,
+              "AXInsertionPointLineNumber" : 0,
+              "AXNumberOfCharacters" : 0,
+              "AXParent" : "<AXUIElement>",
+              "AXPlaceholderValue" : null,
+              "AXPosition" : {
+                "x" : 0,
+                "y" : 26
+              },
+              "AXRequired" : false,
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXRows" : [
+
+              ],
+              "AXSelected" : false,
+              "AXSelectedRows" : [
+
+              ],
+              "AXSelectedText" : "",
+              "AXSelectedTextRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXSelectedTextRanges" : "<1 AXUIElement>",
+              "AXSize" : {
+                "h" : 719,
+                "w" : 1147
+              },
+              "AXSubrole" : null,
+              "AXTitle" : "",
+              "AXTitleUIElement" : null,
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXURL" : null,
+              "AXValue" : "",
+              "AXVisibleCharacterRange" : {
+                "length" : 0,
+                "location" : 0
+              },
+              "AXVisited" : false,
+              "AXWindow" : "<AXUIElement>",
+              "ChromeAXNodeId" : "123"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXBlockQuoteLevel" : 0,
+                  "AXColumnHeaderUIElements" : null,
+                  "AXCustomContent" : null,
+                  "AXDescription" : "",
+                  "AXDOMClassList" : [
+                    "BrowserFrameView"
+                  ],
+                  "AXDOMIdentifier" : "",
+                  "AXElementBusy" : false,
+                  "AXEnabled" : true,
+                  "AXFocusableAncestor" : null,
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 719,
+                    "w" : 1147,
+                    "x" : 0,
+                    "y" : 26
+                  },
+                  "AXHelp" : null,
+                  "AXInsertionPointLineNumber" : 0,
+                  "AXNumberOfCharacters" : 0,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPlaceholderValue" : null,
+                  "AXPosition" : {
+                    "x" : 0,
+                    "y" : 26
+                  },
+                  "AXRequired" : false,
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXRows" : [
+
+                  ],
+                  "AXSelected" : false,
+                  "AXSelectedRows" : [
+
+                  ],
+                  "AXSelectedText" : "",
+                  "AXSelectedTextRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                  "AXSize" : {
+                    "h" : 719,
+                    "w" : 1147
+                  },
+                  "AXSubrole" : null,
+                  "AXTitle" : "",
+                  "AXTitleUIElement" : null,
+                  "AXTopLevelUIElement" : "<AXUIElement>",
+                  "AXURL" : null,
+                  "AXValue" : "",
+                  "AXVisibleCharacterRange" : {
+                    "length" : 0,
+                    "location" : 0
+                  },
+                  "AXVisited" : false,
+                  "AXWindow" : "<AXUIElement>",
+                  "ChromeAXNodeId" : "124"
+                },
+                "childCount" : 1,
+                "children" : [
+                  {
+                    "attributes" : {
+                      "AXBlockQuoteLevel" : 0,
+                      "AXColumnHeaderUIElements" : null,
+                      "AXCustomContent" : null,
+                      "AXDescription" : "",
+                      "AXDOMClassList" : [
+                        "BrowserView"
+                      ],
+                      "AXDOMIdentifier" : "",
+                      "AXElementBusy" : false,
+                      "AXEnabled" : true,
+                      "AXFocusableAncestor" : null,
+                      "AXFocused" : false,
+                      "AXFrame" : {
+                        "h" : 719,
+                        "w" : 1147,
+                        "x" : 0,
+                        "y" : 26
+                      },
+                      "AXHelp" : null,
+                      "AXInsertionPointLineNumber" : 0,
+                      "AXNumberOfCharacters" : 0,
+                      "AXParent" : "<AXUIElement>",
+                      "AXPlaceholderValue" : null,
+                      "AXPosition" : {
+                        "x" : 0,
+                        "y" : 26
+                      },
+                      "AXRequired" : false,
+                      "AXRole" : "AXGroup",
+                      "AXRoleDescription" : "group",
+                      "AXRows" : [
+
+                      ],
+                      "AXSelected" : false,
+                      "AXSelectedRows" : [
+
+                      ],
+                      "AXSelectedText" : "",
+                      "AXSelectedTextRange" : {
+                        "length" : 0,
+                        "location" : 0
+                      },
+                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                      "AXSize" : {
+                        "h" : 719,
+                        "w" : 1147
+                      },
+                      "AXSubrole" : null,
+                      "AXTitle" : "",
+                      "AXTitleUIElement" : null,
+                      "AXTopLevelUIElement" : "<AXUIElement>",
+                      "AXURL" : null,
+                      "AXValue" : "",
+                      "AXVisibleCharacterRange" : {
+                        "length" : 0,
+                        "location" : 0
+                      },
+                      "AXVisited" : false,
+                      "AXWindow" : "<AXUIElement>",
+                      "ChromeAXNodeId" : "1"
+                    },
+                    "childCount" : 4,
+                    "children" : [
+                      {
+                        "attributes" : {
+                          "AXBlockQuoteLevel" : 0,
+                          "AXColumnHeaderUIElements" : null,
+                          "AXCustomContent" : null,
+                          "AXDescription" : "",
+                          "AXDOMClassList" : [
+                            "TopContainerView"
+                          ],
+                          "AXDOMIdentifier" : "",
+                          "AXElementBusy" : false,
+                          "AXEnabled" : true,
+                          "AXFocusableAncestor" : null,
+                          "AXFocused" : false,
+                          "AXFrame" : {
+                            "h" : 46,
+                            "w" : 1147,
+                            "x" : 0,
+                            "y" : 66
+                          },
+                          "AXHelp" : null,
+                          "AXInsertionPointLineNumber" : 0,
+                          "AXNumberOfCharacters" : 0,
+                          "AXParent" : "<AXUIElement>",
+                          "AXPlaceholderValue" : null,
+                          "AXPosition" : {
+                            "x" : 0,
+                            "y" : 66
+                          },
+                          "AXRequired" : false,
+                          "AXRole" : "AXGroup",
+                          "AXRoleDescription" : "group",
+                          "AXRows" : [
+
+                          ],
+                          "AXSelected" : false,
+                          "AXSelectedRows" : [
+
+                          ],
+                          "AXSelectedText" : "",
+                          "AXSelectedTextRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                          "AXSize" : {
+                            "h" : 46,
+                            "w" : 1147
+                          },
+                          "AXSubrole" : null,
+                          "AXTitle" : "",
+                          "AXTitleUIElement" : null,
+                          "AXTopLevelUIElement" : "<AXUIElement>",
+                          "AXURL" : null,
+                          "AXValue" : "",
+                          "AXVisibleCharacterRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXVisited" : false,
+                          "AXWindow" : "<AXUIElement>",
+                          "ChromeAXNodeId" : "3"
+                        },
+                        "childCount" : 1,
+                        "children" : [
+                          {
+                            "attributes" : {
+                              "AXBlockQuoteLevel" : 0,
+                              "AXColumnHeaderUIElements" : null,
+                              "AXCustomContent" : null,
+                              "AXDescription" : "",
+                              "AXDOMClassList" : [
+                                "ToolbarView"
+                              ],
+                              "AXDOMIdentifier" : "",
+                              "AXElementBusy" : false,
+                              "AXEnabled" : true,
+                              "AXFocusableAncestor" : null,
+                              "AXFocused" : false,
+                              "AXFrame" : {
+                                "h" : 46,
+                                "w" : 1147,
+                                "x" : 0,
+                                "y" : 66
+                              },
+                              "AXHelp" : null,
+                              "AXInsertionPointLineNumber" : 0,
+                              "AXNumberOfCharacters" : 0,
+                              "AXParent" : "<AXUIElement>",
+                              "AXPlaceholderValue" : null,
+                              "AXPosition" : {
+                                "x" : 0,
+                                "y" : 66
+                              },
+                              "AXRequired" : false,
+                              "AXRole" : "AXToolbar",
+                              "AXRoleDescription" : "toolbar",
+                              "AXRows" : [
+
+                              ],
+                              "AXSelected" : false,
+                              "AXSelectedRows" : [
+
+                              ],
+                              "AXSelectedText" : "",
+                              "AXSelectedTextRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXSelectedTextRanges" : "<1 AXUIElement>",
+                              "AXSize" : {
+                                "h" : 46,
+                                "w" : 1147
+                              },
+                              "AXSubrole" : null,
+                              "AXTitle" : "",
+                              "AXTitleUIElement" : null,
+                              "AXTopLevelUIElement" : "<AXUIElement>",
+                              "AXURL" : null,
+                              "AXValue" : "",
+                              "AXVisibleCharacterRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXVisited" : false,
+                              "AXWindow" : "<AXUIElement>",
+                              "ChromeAXNodeId" : "70"
+                            },
+                            "childCount" : 7,
+                            "children" : [
+                              {
+                                "attributes" : {
+                                  "AXAccessKey" : null,
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : "{length = 662, bytes = 0x62706c69 73743030 d4010203 04050607 ... 00000000 000001f6 }",
+                                  "AXDescription" : "Back",
+                                  "AXDOMClassList" : [
+                                    "BackForwardButton"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : "<AXUIElement>",
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 34,
+                                    "w" : 40,
+                                    "x" : 0,
+                                    "y" : 72
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXInvalid" : "false",
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 0,
+                                    "y" : 72
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXButton",
+                                  "AXRoleDescription" : "button",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 34,
+                                    "w" : 40
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "144"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "description" : "Back",
+                                "domClassList" : [
+                                  "BackForwardButton"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 34,
+                                  "w" : 40,
+                                  "x" : 0,
+                                  "y" : 72
+                                },
+                                "role" : "AXButton",
+                                "roleDescription" : "button",
+                                "selected" : false
+                              },
+                              {
+                                "attributes" : {
+                                  "AXAccessKey" : null,
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : "{length = 665, bytes = 0x62706c69 73743030 d4010203 04050607 ... 00000000 000001f9 }",
+                                  "AXDescription" : "Forward",
+                                  "AXDOMClassList" : [
+                                    "BackForwardButton"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : "<AXUIElement>",
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 34,
+                                    "w" : 34,
+                                    "x" : 42,
+                                    "y" : 72
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXInvalid" : "false",
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 42,
+                                    "y" : 72
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXButton",
+                                  "AXRoleDescription" : "button",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 34,
+                                    "w" : 34
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "149"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "description" : "Forward",
+                                "domClassList" : [
+                                  "BackForwardButton"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 34,
+                                  "w" : 34,
+                                  "x" : 42,
+                                  "y" : 72
+                                },
+                                "role" : "AXButton",
+                                "roleDescription" : "button",
+                                "selected" : false
+                              },
+                              {
+                                "attributes" : {
+                                  "AXAccessKey" : null,
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : "{length = 659, bytes = 0x62706c69 73743030 d4010203 04050607 ... 00000000 000001f3 }",
+                                  "AXDescription" : "Reload",
+                                  "AXDOMClassList" : [
+                                    "ReloadButton"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : "<AXUIElement>",
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 34,
+                                    "w" : 34,
+                                    "x" : 78,
+                                    "y" : 72
+                                  },
+                                  "AXHasPopup" : true,
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXInvalid" : "false",
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPopupValue" : "menu",
+                                  "AXPosition" : {
+                                    "x" : 78,
+                                    "y" : 72
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXButton",
+                                  "AXRoleDescription" : "button",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 34,
+                                    "w" : 34
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "154"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "description" : "Reload",
+                                "domClassList" : [
+                                  "ReloadButton"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 34,
+                                  "w" : 34,
+                                  "x" : 78,
+                                  "y" : 72
+                                },
+                                "role" : "AXButton",
+                                "roleDescription" : "button",
+                                "selected" : false
+                              },
+                              {
+                                "attributes" : {
+                                  "AXAccessKey" : null,
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : null,
+                                  "AXDescription" : "Open tab in split view",
+                                  "AXDOMClassList" : [
+                                    "SplitTabsToolbarButton"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : "<AXUIElement>",
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 34,
+                                    "w" : 34,
+                                    "x" : 114,
+                                    "y" : 72
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXInvalid" : "false",
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 114,
+                                    "y" : 72
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXButton",
+                                  "AXRoleDescription" : "button",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 34,
+                                    "w" : 34
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "164"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "description" : "Open tab in split view",
+                                "domClassList" : [
+                                  "SplitTabsToolbarButton"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 34,
+                                  "w" : 34,
+                                  "x" : 114,
+                                  "y" : 72
+                                },
+                                "role" : "AXButton",
+                                "roleDescription" : "button",
+                                "selected" : false
+                              },
+                              {
+                                "attributes" : {
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : null,
+                                  "AXDescription" : "",
+                                  "AXDOMClassList" : [
+                                    "LocationBarView"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : null,
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 34,
+                                    "w" : 905,
+                                    "x" : 157,
+                                    "y" : 72
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 157,
+                                    "y" : 72
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXGroup",
+                                  "AXRoleDescription" : "group",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 34,
+                                    "w" : 905
+                                  },
+                                  "AXSubrole" : "AXApplicationGroup",
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "127"
+                                },
+                                "childCount" : 4,
+                                "children" : [
+                                  {
+                                    "attributes" : {
+                                      "AXAccessKey" : null,
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : "{length = 621, bytes = 0x62706c69 73743030 d4010203 04050607 ... 00000000 000001cd }",
+                                      "AXDescription" : "View site information",
+                                      "AXDOMClassList" : [
+                                        "LocationIconView"
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXFocusableAncestor" : "<AXUIElement>",
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 24,
+                                        "w" : 24,
+                                        "x" : 162,
+                                        "y" : 77
+                                      },
+                                      "AXHelp" : null,
+                                      "AXInsertionPointLineNumber" : 0,
+                                      "AXInvalid" : "false",
+                                      "AXNumberOfCharacters" : 0,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : null,
+                                      "AXPosition" : {
+                                        "x" : 162,
+                                        "y" : 77
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXPopUpButton",
+                                      "AXRoleDescription" : "pop up button",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : false,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : "",
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                      "AXSize" : {
+                                        "h" : 24,
+                                        "w" : 24
+                                      },
+                                      "AXSubrole" : null,
+                                      "AXTitle" : "",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : null,
+                                      "AXValue" : "",
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "230"
+                                    },
+                                    "childCount" : 0,
+                                    "children" : [
+
+                                    ],
+                                    "description" : "View site information",
+                                    "domClassList" : [
+                                      "LocationIconView"
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 24,
+                                      "w" : 24,
+                                      "x" : 162,
+                                      "y" : 77
+                                    },
+                                    "role" : "AXPopUpButton",
+                                    "roleDescription" : "pop up button",
+                                    "selected" : false
+                                  },
+                                  {
+                                    "attributes" : {
+                                      "AXAccessKey" : null,
+                                      "AXAutocompleteValue" : "both",
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : null,
+                                      "AXDescription" : "Address and search bar",
+                                      "AXDOMClassList" : [
+                                        "OmniboxViewViews"
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXEditableAncestor" : "<AXUIElement>",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXFocusableAncestor" : "<AXUIElement>",
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 24,
+                                        "w" : 824,
+                                        "x" : 194,
+                                        "y" : 77
+                                      },
+                                      "AXHelp" : null,
+                                      "AXHighestEditableAncestor" : "<AXUIElement>",
+                                      "AXInsertionPointLineNumber" : 0,
+                                      "AXInvalid" : "false",
+                                      "AXKeyShortcutsValue" : "⌘L",
+                                      "AXNumberOfCharacters" : 28,
+                                      "AXOwns" : null,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : "Ask Google or type a URL",
+                                      "AXPosition" : {
+                                        "x" : 194,
+                                        "y" : 77
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXTextField",
+                                      "AXRoleDescription" : "text field",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : false,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : "",
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                      "AXSize" : {
+                                        "h" : 24,
+                                        "w" : 824
+                                      },
+                                      "AXSubrole" : null,
+                                      "AXTitle" : "",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : null,
+                                      "AXValue" : "meet.google.com\/vor-sjpu-jga",
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 28,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "237"
+                                    },
+                                    "childCount" : 0,
+                                    "children" : [
+
+                                    ],
+                                    "description" : "Address and search bar",
+                                    "domClassList" : [
+                                      "OmniboxViewViews"
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 24,
+                                      "w" : 824,
+                                      "x" : 194,
+                                      "y" : 77
+                                    },
+                                    "placeholder" : "Ask Google or type a URL",
+                                    "role" : "AXTextField",
+                                    "roleDescription" : "text field",
+                                    "selected" : false,
+                                    "value" : "meet.google.com\/vor-sjpu-jga"
+                                  },
+                                  {
+                                    "attributes" : {
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : null,
+                                      "AXDescription" : "",
+                                      "AXDOMClassList" : [
+                                        "PageActionContainerView"
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXFocusableAncestor" : null,
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 24,
+                                        "w" : 0,
+                                        "x" : 1026,
+                                        "y" : 77
+                                      },
+                                      "AXHelp" : null,
+                                      "AXInsertionPointLineNumber" : 0,
+                                      "AXNumberOfCharacters" : 0,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : null,
+                                      "AXPosition" : {
+                                        "x" : 1026,
+                                        "y" : 77
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXGroup",
+                                      "AXRoleDescription" : "group",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : false,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : "",
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                      "AXSize" : {
+                                        "h" : 24,
+                                        "w" : 0
+                                      },
+                                      "AXSubrole" : null,
+                                      "AXTitle" : "",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : null,
+                                      "AXValue" : "",
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "391"
+                                    },
+                                    "childCount" : 0,
+                                    "children" : [
+
+                                    ],
+                                    "domClassList" : [
+                                      "PageActionContainerView"
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 24,
+                                      "w" : 0,
+                                      "x" : 1026,
+                                      "y" : 77
+                                    },
+                                    "role" : "AXGroup",
+                                    "roleDescription" : "group",
+                                    "selected" : false
+                                  },
+                                  {
+                                    "attributes" : {
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : null,
+                                      "AXDescription" : "",
+                                      "AXDOMClassList" : [
+                                        "PageActionIconContainerView"
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXFocusableAncestor" : null,
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 24,
+                                        "w" : 24,
+                                        "x" : 1026,
+                                        "y" : 77
+                                      },
+                                      "AXHelp" : null,
+                                      "AXInsertionPointLineNumber" : 0,
+                                      "AXNumberOfCharacters" : 0,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : null,
+                                      "AXPosition" : {
+                                        "x" : 1026,
+                                        "y" : 77
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXGroup",
+                                      "AXRoleDescription" : "group",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : false,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : "",
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                      "AXSize" : {
+                                        "h" : 24,
+                                        "w" : 24
+                                      },
+                                      "AXSubrole" : null,
+                                      "AXTitle" : "",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : null,
+                                      "AXValue" : "",
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "525"
+                                    },
+                                    "childCount" : 1,
+                                    "children" : [
+                                      {
+                                        "attributes" : {
+                                          "AXAccessKey" : null,
+                                          "AXBlockQuoteLevel" : 0,
+                                          "AXColumnHeaderUIElements" : null,
+                                          "AXCustomContent" : null,
+                                          "AXDescription" : "Bookmark this tab",
+                                          "AXDOMClassList" : [
+                                            "StarView"
+                                          ],
+                                          "AXDOMIdentifier" : "",
+                                          "AXElementBusy" : false,
+                                          "AXEnabled" : true,
+                                          "AXFocusableAncestor" : "<AXUIElement>",
+                                          "AXFocused" : false,
+                                          "AXFrame" : {
+                                            "h" : 24,
+                                            "w" : 24,
+                                            "x" : 1026,
+                                            "y" : 77
+                                          },
+                                          "AXHelp" : null,
+                                          "AXInsertionPointLineNumber" : 0,
+                                          "AXInvalid" : "false",
+                                          "AXNumberOfCharacters" : 0,
+                                          "AXParent" : "<AXUIElement>",
+                                          "AXPlaceholderValue" : null,
+                                          "AXPosition" : {
+                                            "x" : 1026,
+                                            "y" : 77
+                                          },
+                                          "AXRequired" : false,
+                                          "AXRole" : "AXButton",
+                                          "AXRoleDescription" : "button",
+                                          "AXRows" : [
+
+                                          ],
+                                          "AXSelected" : false,
+                                          "AXSelectedRows" : [
+
+                                          ],
+                                          "AXSelectedText" : "",
+                                          "AXSelectedTextRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                          "AXSize" : {
+                                            "h" : 24,
+                                            "w" : 24
+                                          },
+                                          "AXSubrole" : null,
+                                          "AXTitle" : "",
+                                          "AXTitleUIElement" : null,
+                                          "AXTopLevelUIElement" : "<AXUIElement>",
+                                          "AXURL" : null,
+                                          "AXValue" : "",
+                                          "AXVisibleCharacterRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXVisited" : false,
+                                          "AXWindow" : "<AXUIElement>",
+                                          "ChromeAXNodeId" : "582"
+                                        },
+                                        "childCount" : 0,
+                                        "children" : [
+
+                                        ],
+                                        "description" : "Bookmark this tab",
+                                        "domClassList" : [
+                                          "StarView"
+                                        ],
+                                        "enabled" : true,
+                                        "focused" : false,
+                                        "frame" : {
+                                          "h" : 24,
+                                          "w" : 24,
+                                          "x" : 1026,
+                                          "y" : 77
+                                        },
+                                        "role" : "AXButton",
+                                        "roleDescription" : "button",
+                                        "selected" : false
+                                      }
+                                    ],
+                                    "domClassList" : [
+                                      "PageActionIconContainerView"
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 24,
+                                      "w" : 24,
+                                      "x" : 1026,
+                                      "y" : 77
+                                    },
+                                    "role" : "AXGroup",
+                                    "roleDescription" : "group",
+                                    "selected" : false
+                                  }
+                                ],
+                                "domClassList" : [
+                                  "LocationBarView"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 34,
+                                  "w" : 905,
+                                  "x" : 157,
+                                  "y" : 72
+                                },
+                                "role" : "AXGroup",
+                                "roleDescription" : "group",
+                                "selected" : false,
+                                "subrole" : "AXApplicationGroup"
+                              },
+                              {
+                                "attributes" : {
+                                  "AXAccessKey" : null,
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : null,
+                                  "AXDescription" : "Bibek922",
+                                  "AXDOMClassList" : [
+                                    "AvatarToolbarButton"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : "<AXUIElement>",
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 34,
+                                    "w" : 34,
+                                    "x" : 1071,
+                                    "y" : 72
+                                  },
+                                  "AXHasPopup" : true,
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXInvalid" : "false",
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPopupValue" : "menu",
+                                  "AXPosition" : {
+                                    "x" : 1071,
+                                    "y" : 72
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXButton",
+                                  "AXRoleDescription" : "button",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 34,
+                                    "w" : 34
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "201"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "description" : "Bibek922",
+                                "domClassList" : [
+                                  "AvatarToolbarButton"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 34,
+                                  "w" : 34,
+                                  "x" : 1071,
+                                  "y" : 72
+                                },
+                                "role" : "AXButton",
+                                "roleDescription" : "button",
+                                "selected" : false
+                              },
+                              {
+                                "attributes" : {
+                                  "AXAccessKey" : null,
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : "{length = 652, bytes = 0x62706c69 73743030 d4010203 04050607 ... 00000000 000001ec }",
+                                  "AXDescription" : "Chrome",
+                                  "AXDOMClassList" : [
+                                    "BrowserAppMenuButton"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : "<AXUIElement>",
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 34,
+                                    "w" : 40,
+                                    "x" : 1107,
+                                    "y" : 72
+                                  },
+                                  "AXHasPopup" : true,
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXInvalid" : "false",
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPopupValue" : "menu",
+                                  "AXPosition" : {
+                                    "x" : 1107,
+                                    "y" : 72
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXPopUpButton",
+                                  "AXRoleDescription" : "pop up button",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 34,
+                                    "w" : 40
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "211"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "description" : "Chrome",
+                                "domClassList" : [
+                                  "BrowserAppMenuButton"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 34,
+                                  "w" : 40,
+                                  "x" : 1107,
+                                  "y" : 72
+                                },
+                                "role" : "AXPopUpButton",
+                                "roleDescription" : "pop up button",
+                                "selected" : false
+                              }
+                            ],
+                            "domClassList" : [
+                              "ToolbarView"
+                            ],
+                            "enabled" : true,
+                            "focused" : false,
+                            "frame" : {
+                              "h" : 46,
+                              "w" : 1147,
+                              "x" : 0,
+                              "y" : 66
+                            },
+                            "role" : "AXToolbar",
+                            "roleDescription" : "toolbar",
+                            "selected" : false
+                          }
+                        ],
+                        "domClassList" : [
+                          "TopContainerView"
+                        ],
+                        "enabled" : true,
+                        "focused" : false,
+                        "frame" : {
+                          "h" : 46,
+                          "w" : 1147,
+                          "x" : 0,
+                          "y" : 66
+                        },
+                        "role" : "AXGroup",
+                        "roleDescription" : "group",
+                        "selected" : false
+                      },
+                      {
+                        "attributes" : {
+                          "AXBlockQuoteLevel" : 0,
+                          "AXColumnHeaderUIElements" : null,
+                          "AXCustomContent" : null,
+                          "AXDescription" : "",
+                          "AXDOMClassList" : [
+                            "View"
+                          ],
+                          "AXDOMIdentifier" : "",
+                          "AXElementBusy" : false,
+                          "AXEnabled" : true,
+                          "AXFocusableAncestor" : null,
+                          "AXFocused" : false,
+                          "AXFrame" : {
+                            "h" : 633,
+                            "w" : 1147,
+                            "x" : 0,
+                            "y" : 112
+                          },
+                          "AXHelp" : null,
+                          "AXInsertionPointLineNumber" : 0,
+                          "AXNumberOfCharacters" : 0,
+                          "AXParent" : "<AXUIElement>",
+                          "AXPlaceholderValue" : null,
+                          "AXPosition" : {
+                            "x" : 0,
+                            "y" : 112
+                          },
+                          "AXRequired" : false,
+                          "AXRole" : "AXGroup",
+                          "AXRoleDescription" : "group",
+                          "AXRows" : [
+
+                          ],
+                          "AXSelected" : false,
+                          "AXSelectedRows" : [
+
+                          ],
+                          "AXSelectedText" : "",
+                          "AXSelectedTextRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                          "AXSize" : {
+                            "h" : 633,
+                            "w" : 1147
+                          },
+                          "AXSubrole" : null,
+                          "AXTitle" : "",
+                          "AXTitleUIElement" : null,
+                          "AXTopLevelUIElement" : "<AXUIElement>",
+                          "AXURL" : null,
+                          "AXValue" : "",
+                          "AXVisibleCharacterRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXVisited" : false,
+                          "AXWindow" : "<AXUIElement>",
+                          "ChromeAXNodeId" : "67"
+                        },
+                        "childCount" : 1,
+                        "children" : [
+                          {
+                            "attributes" : {
+                              "AXBlockQuoteLevel" : 0,
+                              "AXColumnHeaderUIElements" : null,
+                              "AXCustomContent" : null,
+                              "AXDescription" : "",
+                              "AXDOMClassList" : [
+                                "MultiContentsView"
+                              ],
+                              "AXDOMIdentifier" : "",
+                              "AXElementBusy" : false,
+                              "AXEnabled" : true,
+                              "AXFocusableAncestor" : null,
+                              "AXFocused" : false,
+                              "AXFrame" : {
+                                "h" : 633,
+                                "w" : 1147,
+                                "x" : 0,
+                                "y" : 112
+                              },
+                              "AXHelp" : null,
+                              "AXInsertionPointLineNumber" : 0,
+                              "AXNumberOfCharacters" : 0,
+                              "AXParent" : "<AXUIElement>",
+                              "AXPlaceholderValue" : null,
+                              "AXPosition" : {
+                                "x" : 0,
+                                "y" : 112
+                              },
+                              "AXRequired" : false,
+                              "AXRole" : "AXGroup",
+                              "AXRoleDescription" : "group",
+                              "AXRows" : [
+
+                              ],
+                              "AXSelected" : false,
+                              "AXSelectedRows" : [
+
+                              ],
+                              "AXSelectedText" : "",
+                              "AXSelectedTextRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXSelectedTextRanges" : "<1 AXUIElement>",
+                              "AXSize" : {
+                                "h" : 633,
+                                "w" : 1147
+                              },
+                              "AXSubrole" : null,
+                              "AXTitle" : "",
+                              "AXTitleUIElement" : null,
+                              "AXTopLevelUIElement" : "<AXUIElement>",
+                              "AXURL" : null,
+                              "AXValue" : "",
+                              "AXVisibleCharacterRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXVisited" : false,
+                              "AXWindow" : "<AXUIElement>",
+                              "ChromeAXNodeId" : "4"
+                            },
+                            "childCount" : 2,
+                            "children" : [
+                              {
+                                "attributes" : {
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : null,
+                                  "AXDescription" : "",
+                                  "AXDOMClassList" : [
+                                    "ContentsContainerView"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : null,
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 632,
+                                    "w" : 1147,
+                                    "x" : 0,
+                                    "y" : 113
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 0,
+                                    "y" : 113
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXGroup",
+                                  "AXRoleDescription" : "group",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 632,
+                                    "w" : 1147
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "8"
+                                },
+                                "childCount" : 1,
+                                "children" : [
+                                  {
+                                    "attributes" : {
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : null,
+                                      "AXDescription" : "",
+                                      "AXDOMClassList" : [
+
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXEndTextMarker" : "<AXTextMarker 0x8e6c582d0 [0x1fb408800]>{length = 56, bytes = 0x02000000483465c4000000000f000000 ... 3331324200000000}",
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 632,
+                                        "w" : 1147,
+                                        "x" : 0,
+                                        "y" : 113
+                                      },
+                                      "AXHelp" : null,
+                                      "AXInsertionPointLineNumber" : 9223372036854775807,
+                                      "AXLanguage" : "en",
+                                      "AXLinkedUIElements" : [
+
+                                      ],
+                                      "AXLoaded" : true,
+                                      "AXLoadingProgress" : 1,
+                                      "AXNumberOfCharacters" : 0,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : null,
+                                      "AXPosition" : {
+                                        "x" : 0,
+                                        "y" : 113
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXWebArea",
+                                      "AXRoleDescription" : "HTML content",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : false,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : null,
+                                      "AXSelectedTextMarkerRange" : null,
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : null,
+                                      "AXSize" : {
+                                        "h" : 632,
+                                        "w" : 1147
+                                      },
+                                      "AXStartTextMarker" : "<AXTextMarker 0x8e6c582d0 [0x1fb408800]>{length = 56, bytes = 0x02000000010000000000000000000000 ... 3331324200000000}",
+                                      "AXSubrole" : null,
+                                      "AXTitle" : "Meet - vor-sjpu-jga",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : "https:\/\/meet.google.com\/vor-sjpu-jga",
+                                      "AXValue" : "",
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "1"
+                                    },
+                                    "childCount" : 1,
+                                    "children" : [
+
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 632,
+                                      "w" : 1147,
+                                      "x" : 0,
+                                      "y" : 113
+                                    },
+                                    "role" : "AXWebArea",
+                                    "roleDescription" : "HTML content",
+                                    "selected" : false,
+                                    "title" : "Meet - vor-sjpu-jga",
+                                    "url" : "https:\/\/meet.google.com\/vor-sjpu-jga"
+                                  }
+                                ],
+                                "domClassList" : [
+                                  "ContentsContainerView"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 632,
+                                  "w" : 1147,
+                                  "x" : 0,
+                                  "y" : 113
+                                },
+                                "role" : "AXGroup",
+                                "roleDescription" : "group",
+                                "selected" : false
+                              },
+                              {
+                                "attributes" : {
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : null,
+                                  "AXDescription" : "",
+                                  "AXDOMClassList" : [
+                                    "ContentsSeparator"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : null,
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 1,
+                                    "w" : 1147,
+                                    "x" : 0,
+                                    "y" : 112
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 0,
+                                    "y" : 112
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXGroup",
+                                  "AXRoleDescription" : "group",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 1,
+                                    "w" : 1147
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "63"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "domClassList" : [
+                                  "ContentsSeparator"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 1,
+                                  "w" : 1147,
+                                  "x" : 0,
+                                  "y" : 112
+                                },
+                                "role" : "AXGroup",
+                                "roleDescription" : "group",
+                                "selected" : false
+                              }
+                            ],
+                            "domClassList" : [
+                              "MultiContentsView"
+                            ],
+                            "enabled" : true,
+                            "focused" : false,
+                            "frame" : {
+                              "h" : 633,
+                              "w" : 1147,
+                              "x" : 0,
+                              "y" : 112
+                            },
+                            "role" : "AXGroup",
+                            "roleDescription" : "group",
+                            "selected" : false
+                          }
+                        ],
+                        "domClassList" : [
+                          "View"
+                        ],
+                        "enabled" : true,
+                        "focused" : false,
+                        "frame" : {
+                          "h" : 633,
+                          "w" : 1147,
+                          "x" : 0,
+                          "y" : 112
+                        },
+                        "role" : "AXGroup",
+                        "roleDescription" : "group",
+                        "selected" : false
+                      },
+                      {
+                        "attributes" : {
+                          "AXBlockQuoteLevel" : 0,
+                          "AXColumnHeaderUIElements" : null,
+                          "AXCustomContent" : null,
+                          "AXDescription" : "",
+                          "AXDOMClassList" : [
+                            "HorizontalTabStripRegionView"
+                          ],
+                          "AXDOMIdentifier" : "",
+                          "AXElementBusy" : false,
+                          "AXEnabled" : true,
+                          "AXFocusableAncestor" : null,
+                          "AXFocused" : false,
+                          "AXFrame" : {
+                            "h" : 41,
+                            "w" : 1073,
+                            "x" : 74,
+                            "y" : 26
+                          },
+                          "AXHelp" : null,
+                          "AXInsertionPointLineNumber" : 0,
+                          "AXNumberOfCharacters" : 0,
+                          "AXParent" : "<AXUIElement>",
+                          "AXPlaceholderValue" : null,
+                          "AXPosition" : {
+                            "x" : 74,
+                            "y" : 26
+                          },
+                          "AXRequired" : false,
+                          "AXRole" : "AXTabGroup",
+                          "AXRoleDescription" : "tab group",
+                          "AXRows" : [
+
+                          ],
+                          "AXSelected" : false,
+                          "AXSelectedRows" : [
+
+                          ],
+                          "AXSelectedText" : "",
+                          "AXSelectedTextRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                          "AXSize" : {
+                            "h" : 41,
+                            "w" : 1073
+                          },
+                          "AXSubrole" : null,
+                          "AXTitle" : "",
+                          "AXTitleUIElement" : null,
+                          "AXTopLevelUIElement" : "<AXUIElement>",
+                          "AXURL" : null,
+                          "AXValue" : "",
+                          "AXVisibleCharacterRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXVisited" : false,
+                          "AXWindow" : "<AXUIElement>",
+                          "ChromeAXNodeId" : "85"
+                        },
+                        "childCount" : 4,
+                        "children" : [
+                          {
+                            "attributes" : {
+                              "AXBlockQuoteLevel" : 0,
+                              "AXColumnHeaderUIElements" : null,
+                              "AXCustomContent" : null,
+                              "AXDescription" : "",
+                              "AXDOMClassList" : [
+                                "TabStripComboButton"
+                              ],
+                              "AXDOMIdentifier" : "",
+                              "AXElementBusy" : false,
+                              "AXEnabled" : true,
+                              "AXFocusableAncestor" : null,
+                              "AXFocused" : false,
+                              "AXFrame" : {
+                                "h" : 13,
+                                "w" : 0,
+                                "x" : 80,
+                                "y" : 26
+                              },
+                              "AXHelp" : null,
+                              "AXInsertionPointLineNumber" : 0,
+                              "AXNumberOfCharacters" : 0,
+                              "AXParent" : "<AXUIElement>",
+                              "AXPlaceholderValue" : null,
+                              "AXPosition" : {
+                                "x" : 80,
+                                "y" : 26
+                              },
+                              "AXRequired" : false,
+                              "AXRole" : "AXGroup",
+                              "AXRoleDescription" : "group",
+                              "AXRows" : [
+
+                              ],
+                              "AXSelected" : false,
+                              "AXSelectedRows" : [
+
+                              ],
+                              "AXSelectedText" : "",
+                              "AXSelectedTextRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXSelectedTextRanges" : "<1 AXUIElement>",
+                              "AXSize" : {
+                                "h" : 13,
+                                "w" : 0
+                              },
+                              "AXSubrole" : null,
+                              "AXTitle" : "",
+                              "AXTitleUIElement" : null,
+                              "AXTopLevelUIElement" : "<AXUIElement>",
+                              "AXURL" : null,
+                              "AXValue" : "",
+                              "AXVisibleCharacterRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXVisited" : false,
+                              "AXWindow" : "<AXUIElement>",
+                              "ChromeAXNodeId" : "91"
+                            },
+                            "childCount" : 0,
+                            "children" : [
+
+                            ],
+                            "domClassList" : [
+                              "TabStripComboButton"
+                            ],
+                            "enabled" : true,
+                            "focused" : false,
+                            "frame" : {
+                              "h" : 13,
+                              "w" : 0,
+                              "x" : 80,
+                              "y" : 26
+                            },
+                            "role" : "AXGroup",
+                            "roleDescription" : "group",
+                            "selected" : false
+                          },
+                          {
+                            "attributes" : {
+                              "AXBlockQuoteLevel" : 0,
+                              "AXColumnHeaderUIElements" : null,
+                              "AXCustomContent" : null,
+                              "AXDescription" : "",
+                              "AXDOMClassList" : [
+                                "TabStrip"
+                              ],
+                              "AXDOMIdentifier" : "",
+                              "AXElementBusy" : false,
+                              "AXEnabled" : true,
+                              "AXFocusableAncestor" : null,
+                              "AXFocused" : false,
+                              "AXFrame" : {
+                                "h" : 41,
+                                "w" : 732,
+                                "x" : 74,
+                                "y" : 26
+                              },
+                              "AXHelp" : null,
+                              "AXInsertionPointLineNumber" : 0,
+                              "AXNumberOfCharacters" : 0,
+                              "AXParent" : "<AXUIElement>",
+                              "AXPlaceholderValue" : null,
+                              "AXPosition" : {
+                                "x" : 74,
+                                "y" : 26
+                              },
+                              "AXRequired" : false,
+                              "AXRole" : "AXGroup",
+                              "AXRoleDescription" : "group",
+                              "AXRows" : [
+
+                              ],
+                              "AXSelected" : false,
+                              "AXSelectedRows" : [
+
+                              ],
+                              "AXSelectedText" : "",
+                              "AXSelectedTextRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXSelectedTextRanges" : "<1 AXUIElement>",
+                              "AXSize" : {
+                                "h" : 41,
+                                "w" : 732
+                              },
+                              "AXSubrole" : null,
+                              "AXTitle" : "",
+                              "AXTitleUIElement" : null,
+                              "AXTopLevelUIElement" : "<AXUIElement>",
+                              "AXURL" : null,
+                              "AXValue" : "",
+                              "AXVisibleCharacterRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXVisited" : false,
+                              "AXWindow" : "<AXUIElement>",
+                              "ChromeAXNodeId" : "110"
+                            },
+                            "childCount" : 2,
+                            "children" : [
+                              {
+                                "attributes" : {
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : null,
+                                  "AXDescription" : "",
+                                  "AXDOMClassList" : [
+                                    "TabContainerImpl"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : null,
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 41,
+                                    "w" : 732,
+                                    "x" : 74,
+                                    "y" : 26
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 74,
+                                    "y" : 26
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXGroup",
+                                  "AXRoleDescription" : "group",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 41,
+                                    "w" : 732
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "118"
+                                },
+                                "childCount" : 3,
+                                "children" : [
+                                  {
+                                    "attributes" : {
+                                      "AXAccessKey" : null,
+                                      "AXARIAPosInSet" : 1,
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : null,
+                                      "AXDescription" : "Example Domain",
+                                      "AXDOMClassList" : [
+                                        "Tab"
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXFocusableAncestor" : "<AXUIElement>",
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 41,
+                                        "w" : 256,
+                                        "x" : 74,
+                                        "y" : 26
+                                      },
+                                      "AXHelp" : null,
+                                      "AXInsertionPointLineNumber" : 0,
+                                      "AXInvalid" : "false",
+                                      "AXNumberOfCharacters" : 0,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : null,
+                                      "AXPosition" : {
+                                        "x" : 74,
+                                        "y" : 26
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXRadioButton",
+                                      "AXRoleDescription" : "tab",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : false,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : null,
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                      "AXSize" : {
+                                        "h" : 41,
+                                        "w" : 256
+                                      },
+                                      "AXSubrole" : "AXTabButton",
+                                      "AXTitle" : "",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : null,
+                                      "AXValue" : false,
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "597"
+                                    },
+                                    "childCount" : 1,
+                                    "children" : [
+                                      {
+                                        "attributes" : {
+                                          "AXAccessKey" : null,
+                                          "AXBlockQuoteLevel" : 0,
+                                          "AXColumnHeaderUIElements" : null,
+                                          "AXCustomContent" : null,
+                                          "AXDescription" : "Close",
+                                          "AXDOMClassList" : [
+                                            "TabCloseButton"
+                                          ],
+                                          "AXDOMIdentifier" : "",
+                                          "AXElementBusy" : false,
+                                          "AXEnabled" : true,
+                                          "AXFocusableAncestor" : "<AXUIElement>",
+                                          "AXFocused" : false,
+                                          "AXFrame" : {
+                                            "h" : 28,
+                                            "w" : 28,
+                                            "x" : 288,
+                                            "y" : 32
+                                          },
+                                          "AXHelp" : null,
+                                          "AXInsertionPointLineNumber" : 0,
+                                          "AXInvalid" : "false",
+                                          "AXNumberOfCharacters" : 0,
+                                          "AXParent" : "<AXUIElement>",
+                                          "AXPlaceholderValue" : null,
+                                          "AXPosition" : {
+                                            "x" : 288,
+                                            "y" : 32
+                                          },
+                                          "AXRequired" : false,
+                                          "AXRole" : "AXButton",
+                                          "AXRoleDescription" : "button",
+                                          "AXRows" : [
+
+                                          ],
+                                          "AXSelected" : false,
+                                          "AXSelectedRows" : [
+
+                                          ],
+                                          "AXSelectedText" : "",
+                                          "AXSelectedTextRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                          "AXSize" : {
+                                            "h" : 28,
+                                            "w" : 28
+                                          },
+                                          "AXSubrole" : null,
+                                          "AXTitle" : "",
+                                          "AXTitleUIElement" : null,
+                                          "AXTopLevelUIElement" : "<AXUIElement>",
+                                          "AXURL" : null,
+                                          "AXValue" : "",
+                                          "AXVisibleCharacterRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXVisited" : false,
+                                          "AXWindow" : "<AXUIElement>",
+                                          "ChromeAXNodeId" : "602"
+                                        },
+                                        "childCount" : 0,
+                                        "children" : [
+
+                                        ],
+                                        "description" : "Close",
+                                        "domClassList" : [
+                                          "TabCloseButton"
+                                        ],
+                                        "enabled" : true,
+                                        "focused" : false,
+                                        "frame" : {
+                                          "h" : 28,
+                                          "w" : 28,
+                                          "x" : 288,
+                                          "y" : 32
+                                        },
+                                        "role" : "AXButton",
+                                        "roleDescription" : "button",
+                                        "selected" : false
+                                      }
+                                    ],
+                                    "description" : "Example Domain",
+                                    "domClassList" : [
+                                      "Tab"
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 41,
+                                      "w" : 256,
+                                      "x" : 74,
+                                      "y" : 26
+                                    },
+                                    "role" : "AXRadioButton",
+                                    "roleDescription" : "tab",
+                                    "selected" : false,
+                                    "subrole" : "AXTabButton"
+                                  },
+                                  {
+                                    "attributes" : {
+                                      "AXAccessKey" : null,
+                                      "AXARIAPosInSet" : 2,
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : null,
+                                      "AXDescription" : "Wikipedia",
+                                      "AXDOMClassList" : [
+                                        "Tab"
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXFocusableAncestor" : "<AXUIElement>",
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 41,
+                                        "w" : 256,
+                                        "x" : 312,
+                                        "y" : 26
+                                      },
+                                      "AXHelp" : null,
+                                      "AXInsertionPointLineNumber" : 0,
+                                      "AXInvalid" : "false",
+                                      "AXNumberOfCharacters" : 0,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : null,
+                                      "AXPosition" : {
+                                        "x" : 312,
+                                        "y" : 26
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXRadioButton",
+                                      "AXRoleDescription" : "tab",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : false,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : null,
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                      "AXSize" : {
+                                        "h" : 41,
+                                        "w" : 256
+                                      },
+                                      "AXSubrole" : "AXTabButton",
+                                      "AXTitle" : "",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : null,
+                                      "AXValue" : false,
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "678"
+                                    },
+                                    "childCount" : 1,
+                                    "children" : [
+                                      {
+                                        "attributes" : {
+                                          "AXAccessKey" : null,
+                                          "AXBlockQuoteLevel" : 0,
+                                          "AXColumnHeaderUIElements" : null,
+                                          "AXCustomContent" : null,
+                                          "AXDescription" : "Close",
+                                          "AXDOMClassList" : [
+                                            "TabCloseButton"
+                                          ],
+                                          "AXDOMIdentifier" : "",
+                                          "AXElementBusy" : false,
+                                          "AXEnabled" : true,
+                                          "AXFocusableAncestor" : "<AXUIElement>",
+                                          "AXFocused" : false,
+                                          "AXFrame" : {
+                                            "h" : 28,
+                                            "w" : 28,
+                                            "x" : 526,
+                                            "y" : 32
+                                          },
+                                          "AXHelp" : null,
+                                          "AXInsertionPointLineNumber" : 0,
+                                          "AXInvalid" : "false",
+                                          "AXNumberOfCharacters" : 0,
+                                          "AXParent" : "<AXUIElement>",
+                                          "AXPlaceholderValue" : null,
+                                          "AXPosition" : {
+                                            "x" : 526,
+                                            "y" : 32
+                                          },
+                                          "AXRequired" : false,
+                                          "AXRole" : "AXButton",
+                                          "AXRoleDescription" : "button",
+                                          "AXRows" : [
+
+                                          ],
+                                          "AXSelected" : false,
+                                          "AXSelectedRows" : [
+
+                                          ],
+                                          "AXSelectedText" : "",
+                                          "AXSelectedTextRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                          "AXSize" : {
+                                            "h" : 28,
+                                            "w" : 28
+                                          },
+                                          "AXSubrole" : null,
+                                          "AXTitle" : "",
+                                          "AXTitleUIElement" : null,
+                                          "AXTopLevelUIElement" : "<AXUIElement>",
+                                          "AXURL" : null,
+                                          "AXValue" : "",
+                                          "AXVisibleCharacterRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXVisited" : false,
+                                          "AXWindow" : "<AXUIElement>",
+                                          "ChromeAXNodeId" : "683"
+                                        },
+                                        "childCount" : 0,
+                                        "children" : [
+
+                                        ],
+                                        "description" : "Close",
+                                        "domClassList" : [
+                                          "TabCloseButton"
+                                        ],
+                                        "enabled" : true,
+                                        "focused" : false,
+                                        "frame" : {
+                                          "h" : 28,
+                                          "w" : 28,
+                                          "x" : 526,
+                                          "y" : 32
+                                        },
+                                        "role" : "AXButton",
+                                        "roleDescription" : "button",
+                                        "selected" : false
+                                      }
+                                    ],
+                                    "description" : "Wikipedia",
+                                    "domClassList" : [
+                                      "Tab"
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 41,
+                                      "w" : 256,
+                                      "x" : 312,
+                                      "y" : 26
+                                    },
+                                    "role" : "AXRadioButton",
+                                    "roleDescription" : "tab",
+                                    "selected" : false,
+                                    "subrole" : "AXTabButton"
+                                  },
+                                  {
+                                    "attributes" : {
+                                      "AXAccessKey" : null,
+                                      "AXARIAPosInSet" : 3,
+                                      "AXBlockQuoteLevel" : 0,
+                                      "AXColumnHeaderUIElements" : null,
+                                      "AXCustomContent" : null,
+                                      "AXDescription" : "Meet - vor-sjpu-jga - Memory usage - 342 MB",
+                                      "AXDOMClassList" : [
+                                        "Tab"
+                                      ],
+                                      "AXDOMIdentifier" : "",
+                                      "AXElementBusy" : false,
+                                      "AXEnabled" : true,
+                                      "AXFocusableAncestor" : "<AXUIElement>",
+                                      "AXFocused" : false,
+                                      "AXFrame" : {
+                                        "h" : 41,
+                                        "w" : 256,
+                                        "x" : 550,
+                                        "y" : 26
+                                      },
+                                      "AXHelp" : null,
+                                      "AXInsertionPointLineNumber" : 0,
+                                      "AXInvalid" : "false",
+                                      "AXNumberOfCharacters" : 0,
+                                      "AXParent" : "<AXUIElement>",
+                                      "AXPlaceholderValue" : null,
+                                      "AXPosition" : {
+                                        "x" : 550,
+                                        "y" : 26
+                                      },
+                                      "AXRequired" : false,
+                                      "AXRole" : "AXRadioButton",
+                                      "AXRoleDescription" : "tab",
+                                      "AXRows" : [
+
+                                      ],
+                                      "AXSelected" : true,
+                                      "AXSelectedRows" : [
+
+                                      ],
+                                      "AXSelectedText" : null,
+                                      "AXSelectedTextRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                      "AXSize" : {
+                                        "h" : 41,
+                                        "w" : 256
+                                      },
+                                      "AXSubrole" : "AXTabButton",
+                                      "AXTitle" : "",
+                                      "AXTitleUIElement" : null,
+                                      "AXTopLevelUIElement" : "<AXUIElement>",
+                                      "AXURL" : null,
+                                      "AXValue" : true,
+                                      "AXVisibleCharacterRange" : {
+                                        "length" : 0,
+                                        "location" : 0
+                                      },
+                                      "AXVisited" : false,
+                                      "AXWindow" : "<AXUIElement>",
+                                      "ChromeAXNodeId" : "1458"
+                                    },
+                                    "childCount" : 1,
+                                    "children" : [
+                                      {
+                                        "attributes" : {
+                                          "AXAccessKey" : null,
+                                          "AXBlockQuoteLevel" : 0,
+                                          "AXColumnHeaderUIElements" : null,
+                                          "AXCustomContent" : null,
+                                          "AXDescription" : "Close",
+                                          "AXDOMClassList" : [
+                                            "TabCloseButton"
+                                          ],
+                                          "AXDOMIdentifier" : "",
+                                          "AXElementBusy" : false,
+                                          "AXEnabled" : true,
+                                          "AXFocusableAncestor" : "<AXUIElement>",
+                                          "AXFocused" : false,
+                                          "AXFrame" : {
+                                            "h" : 28,
+                                            "w" : 28,
+                                            "x" : 764,
+                                            "y" : 32
+                                          },
+                                          "AXHelp" : null,
+                                          "AXInsertionPointLineNumber" : 0,
+                                          "AXInvalid" : "false",
+                                          "AXNumberOfCharacters" : 0,
+                                          "AXParent" : "<AXUIElement>",
+                                          "AXPlaceholderValue" : null,
+                                          "AXPosition" : {
+                                            "x" : 764,
+                                            "y" : 32
+                                          },
+                                          "AXRequired" : false,
+                                          "AXRole" : "AXButton",
+                                          "AXRoleDescription" : "button",
+                                          "AXRows" : [
+
+                                          ],
+                                          "AXSelected" : false,
+                                          "AXSelectedRows" : [
+
+                                          ],
+                                          "AXSelectedText" : "",
+                                          "AXSelectedTextRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                          "AXSize" : {
+                                            "h" : 28,
+                                            "w" : 28
+                                          },
+                                          "AXSubrole" : null,
+                                          "AXTitle" : "",
+                                          "AXTitleUIElement" : null,
+                                          "AXTopLevelUIElement" : "<AXUIElement>",
+                                          "AXURL" : null,
+                                          "AXValue" : "",
+                                          "AXVisibleCharacterRange" : {
+                                            "length" : 0,
+                                            "location" : 0
+                                          },
+                                          "AXVisited" : false,
+                                          "AXWindow" : "<AXUIElement>",
+                                          "ChromeAXNodeId" : "1463"
+                                        },
+                                        "childCount" : 0,
+                                        "children" : [
+
+                                        ],
+                                        "description" : "Close",
+                                        "domClassList" : [
+                                          "TabCloseButton"
+                                        ],
+                                        "enabled" : true,
+                                        "focused" : false,
+                                        "frame" : {
+                                          "h" : 28,
+                                          "w" : 28,
+                                          "x" : 764,
+                                          "y" : 32
+                                        },
+                                        "role" : "AXButton",
+                                        "roleDescription" : "button",
+                                        "selected" : false
+                                      }
+                                    ],
+                                    "description" : "Meet - vor-sjpu-jga - Memory usage - 342 MB",
+                                    "domClassList" : [
+                                      "Tab"
+                                    ],
+                                    "enabled" : true,
+                                    "focused" : false,
+                                    "frame" : {
+                                      "h" : 41,
+                                      "w" : 256,
+                                      "x" : 550,
+                                      "y" : 26
+                                    },
+                                    "role" : "AXRadioButton",
+                                    "roleDescription" : "tab",
+                                    "selected" : true,
+                                    "subrole" : "AXTabButton"
+                                  }
+                                ],
+                                "domClassList" : [
+                                  "TabContainerImpl"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 41,
+                                  "w" : 732,
+                                  "x" : 74,
+                                  "y" : 26
+                                },
+                                "role" : "AXGroup",
+                                "roleDescription" : "group",
+                                "selected" : false
+                              },
+                              {
+                                "attributes" : {
+                                  "AXBlockQuoteLevel" : 0,
+                                  "AXColumnHeaderUIElements" : null,
+                                  "AXCustomContent" : null,
+                                  "AXDescription" : "",
+                                  "AXDOMClassList" : [
+                                    "TabStrip::TabDragContextImpl"
+                                  ],
+                                  "AXDOMIdentifier" : "",
+                                  "AXElementBusy" : false,
+                                  "AXEnabled" : true,
+                                  "AXFocusableAncestor" : null,
+                                  "AXFocused" : false,
+                                  "AXFrame" : {
+                                    "h" : 41,
+                                    "w" : 732,
+                                    "x" : 74,
+                                    "y" : 26
+                                  },
+                                  "AXHelp" : null,
+                                  "AXInsertionPointLineNumber" : 0,
+                                  "AXNumberOfCharacters" : 0,
+                                  "AXParent" : "<AXUIElement>",
+                                  "AXPlaceholderValue" : null,
+                                  "AXPosition" : {
+                                    "x" : 74,
+                                    "y" : 26
+                                  },
+                                  "AXRequired" : false,
+                                  "AXRole" : "AXGroup",
+                                  "AXRoleDescription" : "group",
+                                  "AXRows" : [
+
+                                  ],
+                                  "AXSelected" : false,
+                                  "AXSelectedRows" : [
+
+                                  ],
+                                  "AXSelectedText" : "",
+                                  "AXSelectedTextRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXSelectedTextRanges" : "<1 AXUIElement>",
+                                  "AXSize" : {
+                                    "h" : 41,
+                                    "w" : 732
+                                  },
+                                  "AXSubrole" : null,
+                                  "AXTitle" : "",
+                                  "AXTitleUIElement" : null,
+                                  "AXTopLevelUIElement" : "<AXUIElement>",
+                                  "AXURL" : null,
+                                  "AXValue" : "",
+                                  "AXVisibleCharacterRange" : {
+                                    "length" : 0,
+                                    "location" : 0
+                                  },
+                                  "AXVisited" : false,
+                                  "AXWindow" : "<AXUIElement>",
+                                  "ChromeAXNodeId" : "111"
+                                },
+                                "childCount" : 0,
+                                "children" : [
+
+                                ],
+                                "domClassList" : [
+                                  "TabStrip::TabDragContextImpl"
+                                ],
+                                "enabled" : true,
+                                "focused" : false,
+                                "frame" : {
+                                  "h" : 41,
+                                  "w" : 732,
+                                  "x" : 74,
+                                  "y" : 26
+                                },
+                                "role" : "AXGroup",
+                                "roleDescription" : "group",
+                                "selected" : false
+                              }
+                            ],
+                            "domClassList" : [
+                              "TabStrip"
+                            ],
+                            "enabled" : true,
+                            "focused" : false,
+                            "frame" : {
+                              "h" : 41,
+                              "w" : 732,
+                              "x" : 74,
+                              "y" : 26
+                            },
+                            "role" : "AXGroup",
+                            "roleDescription" : "group",
+                            "selected" : false
+                          },
+                          {
+                            "attributes" : {
+                              "AXAccessKey" : null,
+                              "AXBlockQuoteLevel" : 0,
+                              "AXColumnHeaderUIElements" : null,
+                              "AXCustomContent" : "{length = 622, bytes = 0x62706c69 73743030 d4010203 04050607 ... 00000000 000001ce }",
+                              "AXDescription" : "New Tab",
+                              "AXDOMClassList" : [
+                                "TabStripControlButton"
+                              ],
+                              "AXDOMIdentifier" : "",
+                              "AXElementBusy" : false,
+                              "AXEnabled" : true,
+                              "AXFocusableAncestor" : "<AXUIElement>",
+                              "AXFocused" : false,
+                              "AXFrame" : {
+                                "h" : 41,
+                                "w" : 28,
+                                "x" : 800,
+                                "y" : 26
+                              },
+                              "AXHelp" : null,
+                              "AXInsertionPointLineNumber" : 0,
+                              "AXInvalid" : "false",
+                              "AXNumberOfCharacters" : 0,
+                              "AXParent" : "<AXUIElement>",
+                              "AXPlaceholderValue" : null,
+                              "AXPosition" : {
+                                "x" : 800,
+                                "y" : 26
+                              },
+                              "AXRequired" : false,
+                              "AXRole" : "AXButton",
+                              "AXRoleDescription" : "button",
+                              "AXRows" : [
+
+                              ],
+                              "AXSelected" : false,
+                              "AXSelectedRows" : [
+
+                              ],
+                              "AXSelectedText" : "",
+                              "AXSelectedTextRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXSelectedTextRanges" : "<1 AXUIElement>",
+                              "AXSize" : {
+                                "h" : 41,
+                                "w" : 28
+                              },
+                              "AXSubrole" : null,
+                              "AXTitle" : "",
+                              "AXTitleUIElement" : null,
+                              "AXTopLevelUIElement" : "<AXUIElement>",
+                              "AXURL" : null,
+                              "AXValue" : "",
+                              "AXVisibleCharacterRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXVisited" : false,
+                              "AXWindow" : "<AXUIElement>",
+                              "ChromeAXNodeId" : "112"
+                            },
+                            "childCount" : 0,
+                            "children" : [
+
+                            ],
+                            "description" : "New Tab",
+                            "domClassList" : [
+                              "TabStripControlButton"
+                            ],
+                            "enabled" : true,
+                            "focused" : false,
+                            "frame" : {
+                              "h" : 41,
+                              "w" : 28,
+                              "x" : 800,
+                              "y" : 26
+                            },
+                            "role" : "AXButton",
+                            "roleDescription" : "button",
+                            "selected" : false
+                          },
+                          {
+                            "attributes" : {
+                              "AXBlockQuoteLevel" : 0,
+                              "AXColumnHeaderUIElements" : null,
+                              "AXCustomContent" : null,
+                              "AXDescription" : "",
+                              "AXDOMClassList" : [
+                                "FrameGrabHandle"
+                              ],
+                              "AXDOMIdentifier" : "",
+                              "AXElementBusy" : false,
+                              "AXEnabled" : true,
+                              "AXFocusableAncestor" : null,
+                              "AXFocused" : false,
+                              "AXFrame" : {
+                                "h" : 41,
+                                "w" : 307,
+                                "x" : 840,
+                                "y" : 26
+                              },
+                              "AXHelp" : null,
+                              "AXInsertionPointLineNumber" : 0,
+                              "AXNumberOfCharacters" : 0,
+                              "AXParent" : "<AXUIElement>",
+                              "AXPlaceholderValue" : null,
+                              "AXPosition" : {
+                                "x" : 840,
+                                "y" : 26
+                              },
+                              "AXRequired" : false,
+                              "AXRole" : "AXGroup",
+                              "AXRoleDescription" : "group",
+                              "AXRows" : [
+
+                              ],
+                              "AXSelected" : false,
+                              "AXSelectedRows" : [
+
+                              ],
+                              "AXSelectedText" : "",
+                              "AXSelectedTextRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXSelectedTextRanges" : "<1 AXUIElement>",
+                              "AXSize" : {
+                                "h" : 41,
+                                "w" : 307
+                              },
+                              "AXSubrole" : null,
+                              "AXTitle" : "",
+                              "AXTitleUIElement" : null,
+                              "AXTopLevelUIElement" : "<AXUIElement>",
+                              "AXURL" : null,
+                              "AXValue" : "",
+                              "AXVisibleCharacterRange" : {
+                                "length" : 0,
+                                "location" : 0
+                              },
+                              "AXVisited" : false,
+                              "AXWindow" : "<AXUIElement>",
+                              "ChromeAXNodeId" : "117"
+                            },
+                            "childCount" : 0,
+                            "children" : [
+
+                            ],
+                            "domClassList" : [
+                              "FrameGrabHandle"
+                            ],
+                            "enabled" : true,
+                            "focused" : false,
+                            "frame" : {
+                              "h" : 41,
+                              "w" : 307,
+                              "x" : 840,
+                              "y" : 26
+                            },
+                            "role" : "AXGroup",
+                            "roleDescription" : "group",
+                            "selected" : false
+                          }
+                        ],
+                        "domClassList" : [
+                          "HorizontalTabStripRegionView"
+                        ],
+                        "enabled" : true,
+                        "focused" : false,
+                        "frame" : {
+                          "h" : 41,
+                          "w" : 1073,
+                          "x" : 74,
+                          "y" : 26
+                        },
+                        "role" : "AXTabGroup",
+                        "roleDescription" : "tab group",
+                        "selected" : false
+                      },
+                      {
+                        "attributes" : {
+                          "AXBlockQuoteLevel" : 0,
+                          "AXColumnHeaderUIElements" : null,
+                          "AXCustomContent" : null,
+                          "AXDescription" : "",
+                          "AXDOMClassList" : [
+                            "View"
+                          ],
+                          "AXDOMIdentifier" : "",
+                          "AXElementBusy" : false,
+                          "AXEnabled" : true,
+                          "AXFocusableAncestor" : null,
+                          "AXFocused" : false,
+                          "AXFrame" : {
+                            "h" : 0,
+                            "w" : 0,
+                            "x" : 0,
+                            "y" : 26
+                          },
+                          "AXHelp" : null,
+                          "AXInsertionPointLineNumber" : 0,
+                          "AXNumberOfCharacters" : 0,
+                          "AXParent" : "<AXUIElement>",
+                          "AXPlaceholderValue" : null,
+                          "AXPosition" : {
+                            "x" : 0,
+                            "y" : 26
+                          },
+                          "AXRequired" : false,
+                          "AXRole" : "AXGroup",
+                          "AXRoleDescription" : "group",
+                          "AXRows" : [
+
+                          ],
+                          "AXSelected" : false,
+                          "AXSelectedRows" : [
+
+                          ],
+                          "AXSelectedText" : "",
+                          "AXSelectedTextRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXSelectedTextRanges" : "<1 AXUIElement>",
+                          "AXSize" : {
+                            "h" : 0,
+                            "w" : 0
+                          },
+                          "AXSubrole" : null,
+                          "AXTitle" : "",
+                          "AXTitleUIElement" : null,
+                          "AXTopLevelUIElement" : "<AXUIElement>",
+                          "AXURL" : null,
+                          "AXValue" : "",
+                          "AXVisibleCharacterRange" : {
+                            "length" : 0,
+                            "location" : 0
+                          },
+                          "AXVisited" : false,
+                          "AXWindow" : "<AXUIElement>",
+                          "ChromeAXNodeId" : "120"
+                        },
+                        "childCount" : 0,
+                        "children" : [
+
+                        ],
+                        "domClassList" : [
+                          "View"
+                        ],
+                        "enabled" : true,
+                        "focused" : false,
+                        "frame" : {
+                          "h" : 0,
+                          "w" : 0,
+                          "x" : 0,
+                          "y" : 26
+                        },
+                        "role" : "AXGroup",
+                        "roleDescription" : "group",
+                        "selected" : false
+                      }
+                    ],
+                    "domClassList" : [
+                      "BrowserView"
+                    ],
+                    "enabled" : true,
+                    "focused" : false,
+                    "frame" : {
+                      "h" : 719,
+                      "w" : 1147,
+                      "x" : 0,
+                      "y" : 26
+                    },
+                    "role" : "AXGroup",
+                    "roleDescription" : "group",
+                    "selected" : false
+                  }
+                ],
+                "domClassList" : [
+                  "BrowserFrameView"
+                ],
+                "enabled" : true,
+                "focused" : false,
+                "frame" : {
+                  "h" : 719,
+                  "w" : 1147,
+                  "x" : 0,
+                  "y" : 26
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group",
+                "selected" : false
+              }
+            ],
+            "domClassList" : [
+              "NonClientView"
+            ],
+            "enabled" : true,
+            "focused" : false,
+            "frame" : {
+              "h" : 719,
+              "w" : 1147,
+              "x" : 0,
+              "y" : 26
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group",
+            "selected" : false
+          }
+        ],
+        "domClassList" : [
+          "BrowserRootView"
+        ],
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 719,
+          "w" : 1147,
+          "x" : 0,
+          "y" : 26
+        },
+        "role" : "AXGroup",
+        "roleDescription" : "group",
+        "selected" : false,
+        "title" : "Meet - vor-sjpu-jga - Google Chrome - Bibek922",
+        "url" : "https:\/\/meet.google.com\/vor-sjpu-jga"
+      },
+      {
+        "attributes" : {
+          "AXEdited" : false,
+          "AXEnabled" : true,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 16,
+            "w" : 16,
+            "x" : 12,
+            "y" : 38.5
+          },
+          "AXHelp" : null,
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 12,
+            "y" : 38.5
+          },
+          "AXRole" : "AXButton",
+          "AXRoleDescription" : "close button",
+          "AXSize" : {
+            "h" : 16,
+            "w" : 16
+          },
+          "AXSubrole" : "AXCloseButton",
+          "AXTitle" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 16,
+          "w" : 16,
+          "x" : 12,
+          "y" : 38.5
+        },
+        "role" : "AXButton",
+        "roleDescription" : "close button",
+        "subrole" : "AXCloseButton"
+      },
+      {
+        "attributes" : {
+          "AXEnabled" : true,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 16,
+            "w" : 16,
+            "x" : 58,
+            "y" : 38.5
+          },
+          "AXHelp" : "this button also has an action to zoom the window",
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 58,
+            "y" : 38.5
+          },
+          "AXRole" : "AXButton",
+          "AXRoleDescription" : "full screen button",
+          "AXSize" : {
+            "h" : 16,
+            "w" : 16
+          },
+          "AXSubrole" : "AXFullScreenButton",
+          "AXTitle" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 1,
+        "children" : [
+          {
+            "attributes" : {
+              "AXChildrenInNavigationOrder" : "<1 AXUIElement>",
+              "AXFocused" : false,
+              "AXFrame" : {
+                "h" : 14,
+                "w" : 14,
+                "x" : 59,
+                "y" : 39.5
+              },
+              "AXHelp" : null,
+              "AXParent" : "<AXUIElement>",
+              "AXPosition" : {
+                "x" : 59,
+                "y" : 39.5
+              },
+              "AXRole" : "AXGroup",
+              "AXRoleDescription" : "group",
+              "AXSize" : {
+                "h" : 14,
+                "w" : 14
+              },
+              "AXTopLevelUIElement" : "<AXUIElement>",
+              "AXWindow" : "<AXUIElement>"
+            },
+            "childCount" : 1,
+            "children" : [
+              {
+                "attributes" : {
+                  "AXChildrenInNavigationOrder" : [
+
+                  ],
+                  "AXFocused" : false,
+                  "AXFrame" : {
+                    "h" : 14,
+                    "w" : 14,
+                    "x" : 59,
+                    "y" : 40
+                  },
+                  "AXHelp" : null,
+                  "AXParent" : "<AXUIElement>",
+                  "AXPosition" : {
+                    "x" : 59,
+                    "y" : 40
+                  },
+                  "AXRole" : "AXGroup",
+                  "AXRoleDescription" : "group",
+                  "AXSize" : {
+                    "h" : 14,
+                    "w" : 14
+                  },
+                  "AXTopLevelUIElement" : null,
+                  "AXWindow" : null
+                },
+                "childCount" : 0,
+                "children" : [
+
+                ],
+                "focused" : false,
+                "frame" : {
+                  "h" : 14,
+                  "w" : 14,
+                  "x" : 59,
+                  "y" : 40
+                },
+                "role" : "AXGroup",
+                "roleDescription" : "group"
+              }
+            ],
+            "focused" : false,
+            "frame" : {
+              "h" : 14,
+              "w" : 14,
+              "x" : 59,
+              "y" : 39.5
+            },
+            "role" : "AXGroup",
+            "roleDescription" : "group"
+          }
+        ],
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 16,
+          "w" : 16,
+          "x" : 58,
+          "y" : 38.5
+        },
+        "help" : "this button also has an action to zoom the window",
+        "role" : "AXButton",
+        "roleDescription" : "full screen button",
+        "subrole" : "AXFullScreenButton"
+      },
+      {
+        "attributes" : {
+          "AXEnabled" : true,
+          "AXFocused" : false,
+          "AXFrame" : {
+            "h" : 16,
+            "w" : 16,
+            "x" : 35,
+            "y" : 38.5
+          },
+          "AXHelp" : null,
+          "AXParent" : "<AXUIElement>",
+          "AXPosition" : {
+            "x" : 35,
+            "y" : 38.5
+          },
+          "AXRole" : "AXButton",
+          "AXRoleDescription" : "minimize button",
+          "AXSize" : {
+            "h" : 16,
+            "w" : 16
+          },
+          "AXSubrole" : "AXMinimizeButton",
+          "AXTitle" : null,
+          "AXTopLevelUIElement" : "<AXUIElement>",
+          "AXWindow" : "<AXUIElement>"
+        },
+        "childCount" : 0,
+        "children" : [
+
+        ],
+        "enabled" : true,
+        "focused" : false,
+        "frame" : {
+          "h" : 16,
+          "w" : 16,
+          "x" : 35,
+          "y" : 38.5
+        },
+        "role" : "AXButton",
+        "roleDescription" : "minimize button",
+        "subrole" : "AXMinimizeButton"
+      }
+    ],
+    "focused" : false,
+    "frame" : {
+      "h" : 719,
+      "w" : 1147,
+      "x" : 0,
+      "y" : 26
+    },
+    "role" : "AXWindow",
+    "roleDescription" : "standard window",
+    "subrole" : "AXStandardWindow",
+    "title" : "Meet - vor-sjpu-jga - Google Chrome - Bibek922"
+  }
+}
