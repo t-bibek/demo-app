@@ -15,13 +15,23 @@ import CoreGraphics
 //                   title/desc/value + frame + the full attribute-name list).
 //
 // Targets:
-//   chrome  — the meeting browser tab's AXWebArea (Meet / Zoom-web / Teams-web)
-//   zoom    — native Zoom (us.zoom.xos), every window
-//   teams   — native Teams (com.microsoft.teams2 / .teams), every window
-//   all     — every target currently running (default)
+//   chrome        — the meeting browser tab's AXWebArea (Meet / Zoom-web / Teams-web)
+//   chrome-window — the WHOLE browser WINDOW (browser chrome incl. the tab strip),
+//                   one dump per window of every chrome-kind app (for the Meet
+//                   tab-away keep-alive measurement; pair with --skip-webarea)
+//   zoom          — native Zoom (us.zoom.xos), every window
+//   teams         — native Teams (com.microsoft.teams2 / .teams), every window
+//   all           — every target currently running (default)
+//
+// Flags of note:
+//   --skip-webarea  record each AXWebArea node but emit children:[] and don't descend
+//                   (keeps a window dump to the native chrome, not ~100k web nodes)
+//   --no-wake       skip the AXManualAccessibility/AXEnhancedUserInterface force so
+//                   the passive-reader (degraded) tree is captured as the control cell
 //
 //   swift run AXSnapshot                         # every running target
 //   swift run AXSnapshot chrome                  # just the meeting browser tab
+//   swift run AXSnapshot chrome-window --skip-webarea   # tab strip / browser chrome
 //   swift run AXSnapshot zoom --depth 100 --max-nodes 40000
 //   swift run AXSnapshot teams --print           # also echo the .txt to stdout
 //
@@ -55,6 +65,18 @@ let maxNodes = intFlag("--max-nodes", 1_000_000)
 let maxDepth = intFlag("--depth", Int.max)
 let alsoPrint = args.contains("--print")
 
+// --skip-webarea: at every AXWebArea node, RECORD the node (role/title/frame/attrs)
+// but emit children:[] and don't descend — keeps a WINDOW-rooted dump to the native
+// browser chrome (hundreds of nodes: tab strip, toolbar) instead of the ~100k
+// web-content nodes under the page. Used with the chrome-window target for the
+// tab-away keep-alive measurement. Default OFF (existing dumps unchanged).
+let skipWebArea = args.contains("--skip-webarea")
+// --no-wake: skip the AXManualAccessibility / AXEnhancedUserInterface force so we can
+// capture one PASSIVE-READER cell (the degraded tree Chromium serves when nobody has
+// forced full a11y) — the control condition for the keep-alive measurement. Default
+// OFF (the wake force stays on for every existing invocation).
+let noWake = args.contains("--no-wake")
+
 // --watch [seconds]: instead of one dump, poll the target every 0.5s and print
 // descriptions / class tokens that APPEAR (+) or DISAPPEAR (−) between ticks — so
 // a transient speaking marker surfaces the instant someone talks (the dynamic
@@ -66,11 +88,15 @@ let watchSecs: Double = {
     return 30
 }()
 
-let knownTargets: Set<String> = ["all", "chrome", "meet", "browser", "web", "zoom", "teams"]
+let knownTargets: Set<String> = ["all", "chrome", "chrome-window", "meet", "browser", "web", "zoom", "teams"]
 let rawTarget = args.first(where: { knownTargets.contains($0.lowercased()) })?.lowercased() ?? "all"
 let target = (rawTarget == "meet" || rawTarget == "browser" || rawTarget == "web") ? "chrome" : rawTarget
 
-let wantsChrome = (target == "all" || target == "chrome")
+// chrome-window: WINDOW-rooted chrome dump (browser chrome incl. the tab strip) —
+// same per-window Root shape the native zoom/teams branches use — instead of the
+// web-area-rooted "chrome" dump. Still a chrome-kind target for app selection.
+let wantsChromeWindow = (target == "chrome-window")
+let wantsChrome = (target == "all" || target == "chrome" || wantsChromeWindow)
 let wantsZoom   = (target == "all" || target == "zoom")
 let wantsTeams  = (target == "all" || target == "teams")
 
@@ -107,8 +133,12 @@ for app in NSWorkspace.shared.runningApplications {
 
     let ax = AXUIElementCreateApplication(app.processIdentifier)
     // Force the full tree (Chromium/Electron serve a degraded tree otherwise).
-    AX.setBool(ax, "AXManualAccessibility", true)
-    AX.setBool(ax, "AXEnhancedUserInterface", true)
+    // --no-wake skips this so we can capture the degraded passive-reader tree as
+    // the control condition (default OFF — the force stays on otherwise).
+    if !noWake {
+        AX.setBool(ax, "AXManualAccessibility", true)
+        AX.setBool(ax, "AXEnhancedUserInterface", true)
+    }
     targetApps.append(TargetApp(kind: kind, name: app.localizedName ?? id, ax: ax))
 }
 
@@ -118,7 +148,7 @@ if targetApps.isEmpty {
     exit(1)
 }
 
-print("Forcing full a11y tree on: \(targetApps.map { "\($0.name) [\($0.kind)]" }.joined(separator: ", "))")
+print("\(noWake ? "Reading (NO wake — passive-reader tree) " : "Forcing full a11y tree on: ")\(targetApps.map { "\($0.name) [\($0.kind)]" }.joined(separator: ", "))")
 // Multiple Chrome PROCESSES share the com.google.Chrome bundle id (a personal
 // Chrome + a separate --user-data-dir meeting Chrome). The meeting tab may live
 // in ANY of them, so note how many we saw — the web-area search below spans all.
@@ -165,7 +195,7 @@ var roots: [Root] = []
 // therefore collect across every Chrome app first, and emit the warning ONCE.
 struct WebRoot { let el: AXUIElement; let url: String; let winTitle: String; let appName: String }
 var chromeFound: [WebRoot] = []
-for t in targetApps where t.kind == "chrome" {
+for t in targetApps where t.kind == "chrome" && !wantsChromeWindow {
     // Root each dump at a web area (the "Chrome tab" tree), not the whole browser
     // window — skips the browser chrome. Capture EVERY web area in EVERY window,
     // with its owning window title, so the document-PIP window (a separate top-
@@ -181,7 +211,26 @@ for t in targetApps where t.kind == "chrome" {
     }
 }
 
-if targetApps.contains(where: { $0.kind == "chrome" }) {
+// chrome-window: root each dump at the WHOLE browser window (browser chrome incl.
+// the tab strip), not at a web area — the same per-window Root shape the native
+// zoom/teams branches use below. For EVERY chrome-kind app, one Root per window.
+// Pair with --skip-webarea so the walk keeps to the native chrome (hundreds of
+// nodes) instead of descending the ~100k web-content nodes under the page — the
+// setup for the Meet tab-away keep-alive measurement.
+if wantsChromeWindow {
+    for t in targetApps where t.kind == "chrome" {
+        let wins = AX.windows(t.ax)
+        if wins.isEmpty { print("⚠️  \(t.name): no windows exposed.") }
+        for (i, win) in wins.enumerated() {
+            let title = AX.string(win, "AXTitle") ?? "(untitled)"
+            let minimized = boolIfPresent(win, "AXMinimized") ?? false
+            roots.append(Root(label: "chrome-window-\(t.name)-\(i + 1)",
+                              note: "\(title) minimized=\(minimized)", el: win))
+        }
+    }
+}
+
+if targetApps.contains(where: { $0.kind == "chrome" }) && !wantsChromeWindow {
     // Optional --url filter: keep only web areas whose AXURL contains the substring,
     // so the caller can target the exact meeting when several Chrome instances are
     // open. When it filters everything out, fall back to the unfiltered set so the
@@ -318,9 +367,12 @@ func boolIfPresent(_ el: AXUIElement, _ attr: String) -> Bool? {
 final class Walker {
     let maxNodes: Int
     let maxDepth: Int
+    let skipWebArea: Bool
     var count = 0
     var truncated = false
-    init(maxNodes: Int, maxDepth: Int) { self.maxNodes = maxNodes; self.maxDepth = maxDepth }
+    init(maxNodes: Int, maxDepth: Int, skipWebArea: Bool = false) {
+        self.maxNodes = maxNodes; self.maxDepth = maxDepth; self.skipWebArea = skipWebArea
+    }
 
     func node(_ el: AXUIElement, _ depth: Int) -> [String: Any] {
         count += 1
@@ -356,6 +408,14 @@ final class Walker {
 
         let kids = AX.allChildren(el)   // AXChildren ∪ native alternate relationships
         d["childCount"] = kids.count
+        // --skip-webarea: at an AXWebArea, KEEP the node (role/title/frame/attrs
+        // above) but emit children:[] and do NOT descend — so a WINDOW-rooted chrome
+        // dump stays on the native browser chrome (tab strip, toolbar: hundreds of
+        // nodes) instead of the ~100k web-content nodes under the page.
+        if skipWebArea, (d["role"] as? String) == "AXWebArea" {
+            d["children"] = []
+            return d
+        }
         if depth < maxDepth {
             var arr: [Any] = []
             for c in kids {
@@ -507,7 +567,7 @@ try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories
 print("\nDumping \(roots.count) root(s) → \(outDir.path)\n")
 
 for root in roots {
-    let w = Walker(maxNodes: maxNodes, maxDepth: maxDepth)
+    let w = Walker(maxNodes: maxNodes, maxDepth: maxDepth, skipWebArea: skipWebArea)
     let tree = w.node(root.el, 0)
     let payload: [String: Any] = [
         "meta": [
