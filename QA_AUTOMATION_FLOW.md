@@ -265,9 +265,13 @@ QA_CONFIG=qa/qa.live.config.mjs    qa/run_autonomous_qa.sh --skip-review
   and `TransitionConfidence` halfLife are calibrated from data, Meet's 2500ms bar as
   precedent), `zoomweb-views-live` (speaker / gallery / screen-share filmstrip on the
   observer client; the share sub-block may degrade to REVIEW with evidence, speaker +
-  gallery must PASS), `cpu-compare-live` (interleaved legacy/event A/B, pooled
-  medians: `eventCpu ≤ 0.6× polling` AND event full walks `< 0.5×` legacy from
-  `zoomweb_walk_stats`; REVIEW band = near-miss only), `zoomweb-silence-live`
+  gallery must PASS), `cpu-compare-live` (interleaved legacy/event A/B, pooled per-mode
+  samples; the CPU ratio gates on the pooled **MEAN**: `eventCpuMean ≤ 0.6× pollingCpuMean`
+  AND event full walks `< 0.5×` legacy from `zoomweb_walk_stats` — medians floor-saturate
+  on the fast binary so they are reported but not gated; idle-floor guard: both medians at
+  the idle floor ⇒ `cpuSignal:'low'` and walkRatio alone gates. REVIEW band = near-miss
+  only. Ported from Meet `2149a92`; verdict math is offline-tested in
+  `qa/zoomweb-live/cpu-compare.test.mjs`), `zoomweb-silence-live`
   (unmuted-but-silent guest 60s → ZERO web speaker attribution — the falsification
   scenario), and `zoomweb-legacy-silent` (the **default-flip probe** — since 2026-07-05
   event-driven is the DEFAULT on every platform: an explicit `MSD_MODE=legacy` block must

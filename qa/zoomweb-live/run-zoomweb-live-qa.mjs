@@ -30,9 +30,13 @@
 //                          screen-share filmstrip, view switched on the OBSERVER.
 //                          The share sub-block may degrade to REVIEW with evidence.
 //   cpu-compare-live     — INTERLEAVED legacy/event A/B (4× ~22s, warmup dropped,
-//                          pooled medians): eventCpu <= 0.6× polling AND event full
-//                          walks < 0.5× legacy (from zoomweb_walk_stats). REVIEW
-//                          band = near-miss only. Raw samples always recorded.
+//                          pooled per-mode samples): the CPU ratio gates on the pooled
+//                          MEAN (eventCpuMean <= 0.6× pollingCpuMean) — medians floor-
+//                          saturate on the fast binary, so they are reported but not
+//                          gated (idle-floor guard: both medians at the idle floor =>
+//                          walkRatio alone gates). AND event full walks < 0.5× legacy
+//                          (from zoomweb_walk_stats). REVIEW band = near-miss only. Raw
+//                          samples always recorded. (Ported from Meet 2149a92.)
 //   zoomweb-silence-live — an unmuted-but-SILENT guest for 60s → ZERO web speaker
 //                          attribution (the falsification scenario).
 //   zoomweb-legacy-silent— the default-flip probe: explicit legacy byte-silent +
@@ -90,13 +94,43 @@ const RAPID_STEP_MS = 2700;        // ~2.7s per rapid step (Zoom active-class li
 
 // INTERLEAVED CPU A/B (methodology mirror of research/.../run-live-qa.mjs): short
 // alternating legacy/event blocks so ambient CPU drift on a busy Mac hits both
-// modes equally and cancels in the pooled medians. Warmup dropped, medians pooled.
+// modes equally and cancels in the pooled per-mode statistics. Each block spawns a
+// fresh detector; the first CPU_WARMUP_SAMPLES of every block are discarded, then
+// per-mode samples are POOLED across all blocks. full_walks are summed per mode.
+//
+// MEAN-GATED CPU RATIO + IDLE-FLOOR GUARD (ported from research/.../run-live-qa.mjs
+// @ 2149a92 — the Meet fix; the SAME defect lives here). The -O bounded-read binary
+// is fast enough that >50% of the 2s ps samples land at the ~0.4% idle floor in BOTH
+// modes, so the pooled MEDIANS saturate at the floor and the median ratio measures
+// scheduler noise, not work — a deterministic false FAIL/PASS on identical code.
+// Therefore:
+//   * the CPU ratio gates on the pooled MEAN — floor-robust: above-floor work still
+//     moves it when >50% of samples idle — while medians stay in the verdict JSON for
+//     continuity with historical lines;
+//   * when BOTH modes' medians sit within 2x the observed idle baseline (the minimum
+//     kept sample across both modes — the process's measured do-nothing floor for THIS
+//     run, derived from block data, not a hardcoded absolute; 2x = "indistinguishable
+//     from idle" given ps's ~0.4% granularity at the floor), the CPU ratio is declared
+//     LOW-SIGNAL (cpuSignal:'low') and walkRatio ALONE gates — full-walk counts are the
+//     direct event-vs-legacy work metric and stay meaningful at any speed. The guard
+//     only engages when that baseline is itself in the idle regime (IDLE_FLOOR_CAP_PCT):
+//     a run whose MINIMUM sample is real work (e.g. a uniform 6%) has genuine CPU signal
+//     even with median==min, and must still be mean-gated.
+// Thresholds are UNCHANGED (0.6 CPU bar, 0.5 walk bar, 10% REVIEW band): this repairs
+// the statistic, it does not move a bar.
+// Sanity cap for the idle-floor guard: the guard may only engage when the observed
+// baseline (min kept sample) is itself an IDLE-regime value. Do-nothing 2s ps windows
+// measured 0.0-0.5% on the Meet control runs; 1.0% gives 2x headroom for machine
+// variance while staying an order of magnitude below real work levels (6-33% observed).
+// Without this cap a mode that is UNIFORMLY busy (median == min at, say, 6%) would
+// wrongly zero out the CPU gate despite carrying real signal.
 const CPU_BLOCKS = 4;
 const CPU_BLOCK_S = 22;
 const CPU_SAMPLE_MS = 2000;
 const CPU_WARMUP_SAMPLES = 2;
-const CPU_RATIO = 0.6;             // eventCpu <= 0.6 * pollingCpu
+const CPU_RATIO = 0.6;             // eventCpuMean <= 0.6 * pollingCpuMean
 const WALK_RATIO = 0.5;            // event full_walks < 0.5 * legacy full_walks
+const IDLE_FLOOR_CAP_PCT = 1.0;    // idle-floor guard engages only when baseline <= this
 const REVIEW_BAND = 0.10;          // within 10% of a threshold => REVIEW (near-miss only)
 
 const median = (xs) => {
@@ -105,6 +139,7 @@ const median = (xs) => {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : +((s[m - 1] + s[m]) / 2).toFixed(3);
 };
+const mean = (xs) => (xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(3) : null);
 
 function record(scenario, verdict, detail) {
   appendFileSync(RESULTS_NDJSON, JSON.stringify({ scenario, verdict, ts: nowSec(), ...detail }) + '\n');
@@ -368,31 +403,93 @@ async function scenarioCpuCompare() {
   }
   if (rig.alpha) await speak([]);
 
-  const pollingCpu = median(pollingSamples), eventCpu = median(eventSamples);
+  // Adjudicate with the PURE mean-gated + idle-floor gate (ported from Meet 2149a92,
+  // offline-tested in cpu-compare.test.mjs). All the sampling/spawning above is live-
+  // only; the verdict math is factored out so it can be exercised with synthetic arrays.
+  const { verdict, detail } = adjudicateCpuCompare({
+    pollingSamples, eventSamples,
+    pollWalks, eventWalks, pollWalksSeen, eventWalksSeen,
+    lastPollWalk, lastEventWalk, blocks,
+  });
+  record('cpu-compare-live', verdict, detail);
+}
+
+// ===================================================================== pure gate
+// adjudicateCpuCompare — the PURE cpu-compare verdict math, ported from the Meet
+// fix (research/meet-dom-detector/live/run-live-qa.mjs @ 2149a92). No I/O, no spawn:
+// takes the pooled per-mode ps %cpu sample arrays + summed full_walks and returns
+// { verdict, detail }. Factored out of scenarioCpuCompare so the offline test can
+// exercise every branch with synthetic sample arrays (see cpu-compare.test.mjs).
+//
+// Gate (methodology identical to Meet 2149a92):
+//   - MEDIANS are reported (continuity with historical verdict lines);
+//   - the CPU ratio GATES on the pooled MEAN (floor-robust);
+//   - idle-floor guard: when BOTH modes' medians sit within 2x the observed idle
+//     baseline (min kept sample across both modes) AND that baseline is itself
+//     idle-regime (<= IDLE_FLOOR_CAP_PCT), the CPU ratio is LOW-SIGNAL (cpuSignal:'low')
+//     and walkRatio ALONE gates.
+function adjudicateCpuCompare({
+  pollingSamples, eventSamples,
+  pollWalks, eventWalks, pollWalksSeen, eventWalksSeen,
+  lastPollWalk = null, lastEventWalk = null, blocks = [],
+}) {
+  // Medians are REPORTED (continuity with historical verdict lines); the CPU gate
+  // itself runs on the pooled MEAN — see the calibration note at CPU_RATIO.
+  const pollingCpu = median(pollingSamples);
+  const eventCpu = median(eventSamples);
+  const pollingCpuMean = mean(pollingSamples);
+  const eventCpuMean = mean(eventSamples);
+  // Idle-floor guard input: the smallest kept sample across BOTH modes is this run's
+  // observed do-nothing floor (derived from the block data, not a magic constant).
+  const allKept = pollingSamples.concat(eventSamples);
+  const idleBaseline = allKept.length ? Math.min(...allKept) : null;
+  const idleFloorThresh = idleBaseline == null ? null : +(2 * idleBaseline).toFixed(3);
+
   const raw = {
-    pollingCpu, eventCpu, pollingCpuSamples: pollingSamples, eventCpuSamples: eventSamples,
+    pollingCpu, eventCpu, pollingCpuMean, eventCpuMean,
+    idleBaseline, idleFloorThresh, idleFloorCapPct: IDLE_FLOOR_CAP_PCT,
+    pollingCpuSamples: pollingSamples, eventCpuSamples: eventSamples,
     pollingFullWalks: pollWalksSeen ? pollWalks : null, eventFullWalks: eventWalksSeen ? eventWalks : null,
     pollingWalkStats: lastPollWalk, eventWalkStats: lastEventWalk,
     blocks, cpuBlocks: CPU_BLOCKS, cpuBlockSeconds: CPU_BLOCK_S, cpuWarmupSamplesDropped: CPU_WARMUP_SAMPLES,
-    method: 'interleaved-ab',
+    method: 'interleaved-ab-mean-gated',
   };
-  if (pollingCpu == null || eventCpu == null) { record('cpu-compare-live', 'FAIL', { reason: 'no CPU samples for one/both modes', ...raw }); return; }
-  if (!pollWalksSeen || !eventWalksSeen) { record('cpu-compare-live', 'FAIL', { reason: 'zoomweb_walk_stats missing for one/both modes (instrumentation not emitted?)', ...raw }); return; }
 
-  const cpuThresh = CPU_RATIO * pollingCpu;
+  if (pollingCpu == null || eventCpu == null) {
+    return { verdict: 'FAIL', detail: { reason: 'no CPU samples for one/both modes', ...raw } };
+  }
+  if (!pollWalksSeen || !eventWalksSeen) {
+    return { verdict: 'FAIL', detail: { reason: 'zoomweb_walk_stats missing for one/both modes (instrumentation not emitted?)', ...raw } };
+  }
+
+  // LOW-SIGNAL detection: both modes' medians at/near the idle floor => the CPU ratio
+  // (median OR mean) is dominated by the floor; walkRatio alone gates the scenario.
+  // The baseline must itself be idle-regime (IDLE_FLOOR_CAP_PCT) for the guard to engage.
+  const cpuSignal = (idleFloorThresh != null && idleBaseline <= IDLE_FLOOR_CAP_PCT
+    && pollingCpu <= idleFloorThresh && eventCpu <= idleFloorThresh) ? 'low' : 'ok';
+  const cpuThresh = CPU_RATIO * pollingCpuMean;
   const walkThresh = WALK_RATIO * pollWalks;
-  const cpuPass = eventCpu <= cpuThresh;
+  // cpuPass is null (not adjudicated) when the CPU signal is low.
+  const cpuPass = cpuSignal === 'ok' ? eventCpuMean <= cpuThresh : null;
   const walkPass = eventWalks < walkThresh;
-  const cpuNearMiss = !cpuPass && eventCpu <= (1 + REVIEW_BAND) * cpuThresh;
+  const cpuNearMiss = cpuPass === false && eventCpuMean <= (1 + REVIEW_BAND) * cpuThresh;
   const walkNearMiss = !walkPass && walkThresh > 0 && eventWalks <= (1 + REVIEW_BAND) * walkThresh;
+
   let verdict;
-  if (cpuPass && walkPass) verdict = 'PASS';
+  if (cpuSignal === 'low') verdict = walkPass ? 'PASS' : walkNearMiss ? 'REVIEW' : 'FAIL';
+  else if (cpuPass && walkPass) verdict = 'PASS';
   else verdict = (cpuNearMiss || walkNearMiss) && (cpuPass || cpuNearMiss) && (walkPass || walkNearMiss) ? 'REVIEW' : 'FAIL';
-  record('cpu-compare-live', verdict, {
-    cpuRatio: +(eventCpu / pollingCpu).toFixed(3), cpuThreshold: +cpuThresh.toFixed(3),
-    walkRatio: pollWalks ? +(eventWalks / pollWalks).toFixed(3) : null, walkThreshold: walkThresh,
-    cpuPass, walkPass, ...raw,
-  });
+
+  return {
+    verdict,
+    detail: {
+      cpuRatio: pollingCpu ? +(eventCpu / pollingCpu).toFixed(3) : null,              // median ratio (reported for continuity)
+      meanRatio: pollingCpuMean ? +(eventCpuMean / pollingCpuMean).toFixed(3) : null, // the gated statistic
+      cpuSignal, cpuThreshold: +cpuThresh.toFixed(3),
+      walkRatio: pollWalks ? +(eventWalks / pollWalks).toFixed(3) : null, walkThreshold: walkThresh,
+      cpuPass, walkPass, ...raw,
+    },
+  };
 }
 
 // ===================================================================== scenario 4
@@ -586,4 +683,11 @@ async function main() {
   process.exit(0);
 }
 
-main();
+// Pure adjudicator exported for the offline unit test (cpu-compare.test.mjs).
+export { adjudicateCpuCompare };
+
+// Only drive a live session when RUN directly (so the test can import the pure gate
+// above without spawning Chrome / the detector / a native Zoom host).
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
