@@ -361,6 +361,18 @@ function guestUrl(inviteUrl, name) {
 async function bootstrapAndHarvest(label) {
   driverLog('host:bootstrap', { label });
   if (!zoomHost.preflightSignedIn()) { log(`${label}: Zoom app not signed in`); return null; }
+  // STALE-MEETING GUARD (2026-07-07 gate lesson): a pre-existing native meeting makes
+  // bootstrapMeeting() "already in a meeting"-join it instead of starting FRESH, and the
+  // stale meeting contaminates the wire (run 2 saw ZERO web events). End it first; if it
+  // cannot be ended, abort loudly rather than run a contaminated gate.
+  if (typeof zoomHost.reallyInMeeting === 'function' && zoomHost.reallyInMeeting()) {
+    log(`${label}: stale native meeting detected — ending it before a fresh bootstrap`);
+    const ended = await zoomHost.endMeeting(hostLog).catch(() => false);
+    if (typeof zoomHost.reallyInMeeting === 'function' && zoomHost.reallyInMeeting()) {
+      log(`${label}: could not end the stale native meeting (ended=${ended}) — ABORTING (contaminated environment)`);
+      return null;
+    }
+  }
   const started = await zoomHost.bootstrapMeeting(hostLog);
   if (!started) { log(`${label}: bootstrapMeeting failed`); return null; }
   const invite = process.env.ZOOM_MEETING_URL || await zoomHost.harvestInvite(hostLog);
@@ -696,9 +708,15 @@ async function clickLeave(pg) {
 // prefix for the memory key, keyPrefix re-adds it for the log). So wireKey === stderrKey.
 // ===========================================================================
 const isZoom = (e) => e && e.platform === 'Zoom';
-// The first Zoom meet-active's key IS the wire key the monitor diffs on.
+// ONLY the WEB meeting's events gate this rig. The co-resident NATIVE Zoom host
+// app ALSO surfaces Zoom meet-actives on the unified wire (key `Zoom|us.zoom.xos`,
+// no /wc/ digits, never throttles with the Chrome tab) — the 2026-07-07 gate run
+// FAILed by last-wins-latching that native key. The web meeting's key is always
+// `zoom:<digits>` (stableMeetingKey over the /wc/ URL), so filter on the prefix.
 const zoomActive = (det, sinceTs) =>
-  det.events.filter((e) => e.event === 'meet-active' && isZoom(e) && (sinceTs == null || e.ts >= sinceTs));
+  det.events.filter((e) => e.event === 'meet-active' && isZoom(e)
+    && typeof e.key === 'string' && e.key.startsWith('zoom:')
+    && (sinceTs == null || e.ts >= sinceTs));
 const eventsForKey = (det, wireKey, sinceTs) =>
   det.events.filter((e) => e.key === wireKey && (sinceTs == null || e.ts >= sinceTs));
 const stderrSince = (det, sinceTs) => det.stderrLines.filter((l) => sinceTs == null || l.ts >= sinceTs);
