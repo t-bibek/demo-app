@@ -127,7 +127,15 @@ function prebuild() {
 // stdout lines as they arrive. `extraEnv` lets the probe turn on the raw ring trace
 // (MSD_RING_TRACE) and a finer poll (MSD_POLL_INTERVAL_MS) for linger-L resolution. --
 function startDetector(seconds, extraEnv = {}) {
-  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds), ...extraEnv };
+  // MSD_EDGE_LOG=1 — REQUIRED for the PRODUCT binary: its typed `[event]` mirror
+  // (meeting_initialized / participant_* / speech_on / teams_edge) is gated on
+  // edgeDiagnostics (MonitorDiagnostics.emitEventLine guard; main.swift:149).
+  // Without it the product emits ONLY the stdout wire + meet_walk_stats, and every
+  // waitEvent() in this rig goes dark (root cause of the 2026-07-06 suite-1
+  // false-blindness). The sandbox binary emits [event] unconditionally, so this is
+  // a no-op for it. Callers can still override with a file path via extraEnv/env.
+  const env = { ...process.env, MSD_AUTOSTART: '1', MSD_RUN_SECONDS: String(seconds),
+                MSD_EDGE_LOG: process.env.MSD_EDGE_LOG || '1', ...extraEnv };
   const proc = spawn(DETECTOR_BIN, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   const events = [];
   const ringTrace = [];    // raw per-tick Teams ring dumps (probe only; empty otherwise)
@@ -188,7 +196,7 @@ async function waitEvent(det, pred, timeoutMs, label) {
 function teamsRoster(det) {
   const roster = new Map();
   for (const e of det.events) {
-    if (!isTeams(e)) continue;
+    if (!isTeamsProd(e)) continue;   // product pipe-key OR sandbox teams:: (superset)
     if (e.type === 'participant_joined') roster.set(e.name, { is_local: !!e.is_local, is_muted: e.is_muted });
     else if (e.type === 'participant_updated' && roster.has(e.name)) roster.set(e.name, { is_local: !!e.is_local, is_muted: e.is_muted });
     else if (e.type === 'participant_left') roster.delete(e.name);
@@ -1587,8 +1595,8 @@ async function main() {
       console.log('TEAMS LIVE SESSION COMPLETE');
       process.exit(1);
     }
-    const init = await waitEvent(det, (e) => e.type === 'meeting_initialized' && isTeams(e), 60_000, 'teams meeting_initialized');
-    const selfJoin = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeams(e) && e.is_local === true, 60_000, 'local participant');
+    const init = await waitEvent(det, (e) => e.type === 'meeting_initialized' && isTeamsProd(e), 60_000, 'teams meeting_initialized');
+    const selfJoin = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeamsProd(e) && e.is_local === true, 60_000, 'local participant');
     const selfNameOk = !!selfJoin && selfJoin.name === EXPECT_SELF;
     record('teams-detect-live', init && selfJoin && selfNameOk ? 'PASS' : 'FAIL', {
       meetingInitialized: !!init, localParticipant: selfJoin ? selfJoin.name : null,
@@ -1599,9 +1607,9 @@ async function main() {
     // Toggle twice so BOTH transitions are asserted (unmuted→muted→unmuted).
     const before = det.events.length;
     const pressedMute = await pressFirst(['Mute mic', 'Mute microphone', 'Mute'], 4_000);
-    const mutedEv = await waitEvent(det, (e) => e.type === 'participant_updated' && isTeams(e) && e.name === (selfJoin ? selfJoin.name : EXPECT_SELF) && e.is_muted === true, 25_000, 'self muted');
+    const mutedEv = await waitEvent(det, (e) => e.type === 'participant_updated' && isTeamsProd(e) && e.name === (selfJoin ? selfJoin.name : EXPECT_SELF) && e.is_muted === true, 25_000, 'self muted');
     const pressedUnmute = await pressFirst(['Unmute mic', 'Unmute microphone', 'Unmute'], 4_000);
-    const unmutedEv = await waitEvent(det, (e) => e.type === 'participant_updated' && isTeams(e) && e.name === (selfJoin ? selfJoin.name : EXPECT_SELF) && e.is_muted === false, 25_000, 'self unmuted');
+    const unmutedEv = await waitEvent(det, (e) => e.type === 'participant_updated' && isTeamsProd(e) && e.name === (selfJoin ? selfJoin.name : EXPECT_SELF) && e.is_muted === false, 25_000, 'self unmuted');
     record('teams-selfmute-live', pressedMute && mutedEv && pressedUnmute && unmutedEv ? 'PASS' : 'FAIL', {
       pressedMute, mutedSeen: !!mutedEv, pressedUnmute, unmutedSeen: !!unmutedEv,
       eventsInWindow: det.events.length - before,
@@ -1655,7 +1663,7 @@ async function main() {
       // Admit from the native side if a lobby prompt shows.
       await sleep(8_000);
       await pressFirst(['Admit'], 3_000);
-      const guestJoin = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeams(e) && e.name === GUEST_NAME, 120_000, 'guest joined');
+      const guestJoin = await waitEvent(det, (e) => e.type === 'participant_joined' && isTeamsProd(e) && e.name === GUEST_NAME, 120_000, 'guest joined');
       const rosterAfter = rosterNames(det);
       const expectAfter = [...rosterBefore, GUEST_NAME].sort();
       const rosterExact = JSON.stringify(rosterAfter) === JSON.stringify(expectAfter);
@@ -1664,8 +1672,10 @@ async function main() {
       // "<name> is speaking" note) — never Someone, never the local user.
       let speech = null;
       if (guestJoin) {
+        // Product sources are teams.ring / teams.ring.transition (TeamsSpeakerPipeline
+        // .swift:202-205); sandbox tokens kept for back-compat with the debug binary.
         speech = await waitEvent(det, (e) => e.type === 'speech_on' && e.name === GUEST_NAME
-          && /teams\.(mute_gate|pip|structural)/.test(e.source || ''), 90_000, 'guest speech_on');
+          && /teams\.(mute_gate|pip|structural|ring)/.test(e.source || ''), 90_000, 'guest speech_on');
       }
       const badSpeech = det.events.filter((e) => e.type === 'speech_on' && e.ts >= (guestJoin ? guestJoin.ts : 0)
         && (e.name === 'Someone' || e.name === EXPECT_SELF)).length;
