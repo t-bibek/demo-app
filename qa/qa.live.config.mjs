@@ -104,6 +104,35 @@ export default {
       cmd: 'node qa/live-scenario-verdict.mjs teams-tabaway-live research/teams-web/teams-tabaway-results.ndjson',
       match: '"verdict":"PASS"',
     },
+    {
+      // Zoom-WEB TAB-AWAY KEEP-ALIVE (G3b) — the live gate for un-gating MSD_ZOOM_TABSTRIP
+      // (the Zoom-web tab-away bridge adapter macos/zoom/ZoomTabAway.swift, which SHIPS DARK
+      // until it has its own live rig scenario). FULLY AUTONOMOUS: the signed-in NATIVE Zoom
+      // app hosts a fresh instant meeting (qa/zoom-live/zoom-host-lib.mjs bootstrapMeeting/
+      // harvestInvite/admitLoop — the same machinery the G3a sweep drove), the rig Chrome
+      // joins as a web guest via /wc/, and the native waiting-room admit is scripted (no
+      // operator prompts, unlike the Teams gate). Five phases (detect, bg-throttle-cycle,
+      // longer-hold, leave-ends, cap-only) assert the REAL keep-alive vocabulary
+      // (zoom-keepalive: engaged … reason=tab_present mic=<…>; released … reason=readable;
+      // leave-ends accepts released reason=left|gone — Zoom's post-leave navigation-off-/wc/
+      // terminator). Standalone driver; APPENDS per-phase + a roll-up line to
+      // research/zoom-web/zoom-tabaway-results.ndjson. Requires MSD_DETECTOR_BIN/MSD_MIC_BIN
+      // pointed at the product binaries.
+      id: 'zoom-tabaway-session',
+      cwd: '.',
+      cmd: 'node research/zoom-web/zoom-tabaway-live.mjs --tabaway',
+      match: 'ZOOM TABAWAY LIVE SESSION COMPLETE',
+      timeoutMs: 20 * 60_000,
+    },
+    {
+      // Reads the aggregate roll-up (PASS only if all five phases passed). The second arg
+      // points the reader at the Zoom results file (the reader defaults to the Meet results
+      // NDJSON).
+      id: 'zoom-tabaway-live',
+      cwd: '.',
+      cmd: 'node qa/live-scenario-verdict.mjs zoom-tabaway-live research/zoom-web/zoom-tabaway-results.ndjson',
+      match: '"verdict":"PASS"',
+    },
   ],
 
   // Same blocker-tool object shape as qa.config.mjs: heal audio injection before the
