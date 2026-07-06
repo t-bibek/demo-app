@@ -15,6 +15,19 @@ function httpJson(port, p) {
   }).on('error', rej));
 }
 
+// Chrome 110+ REQUIRES an HTTP PUT (not GET) for the /json/new endpoint — a GET now
+// returns 405 Method Not Allowed. The old httpJson (GET) silently failed to open the
+// helper tab, which surfaced downstream as "page target not found" when attachToPage
+// polled for a tab that was never created. Use this for /json/new (new-tab) calls.
+function httpJsonPut(port, p) {
+  return new Promise((res, rej) => {
+    const req = http.request({ host: '127.0.0.1', port, path: p, method: 'PUT' }, (r) => {
+      let d = ''; r.on('data', (c) => (d += c)); r.on('end', () => { try { res(JSON.parse(d)); } catch (e) { res(d); } });
+    });
+    req.on('error', rej); req.end();
+  });
+}
+
 class WS {
   constructor(u) { this.url = new URL(u); this.buf = Buffer.alloc(0); this.pending = Buffer.alloc(0); this.onmessage = null; }
   connect() {
@@ -112,4 +125,4 @@ async function attachToPage(port, urlMatch) {
   return { ws, cmd, evalJs };
 }
 
-module.exports = { CHROME, sleep, httpJson, WS, launchChrome, attachToPage };
+module.exports = { CHROME, sleep, httpJson, httpJsonPut, WS, launchChrome, attachToPage };

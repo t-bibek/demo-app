@@ -1,52 +1,64 @@
 #!/usr/bin/env node
 // ---------------------------------------------------------------------------
-// meet-tabaway-live (v2) — LIVE-QA rig for the Meet TAB-AWAY KEEP-ALIVE bridge.
+// meet-tabaway-live (v3) — LIVE-QA rig for the Meet TAB-AWAY KEEP-ALIVE bridge.
 //
 // This is the LIVE counterpart of the pure MeetKeepAliveRules unit matrix: it
 // drives a REAL hosted Google Meet in a real-mic rig Chrome and asserts the
 // product detector's tab-away bridge (MeetTabStripKeepAlive) holds the meeting
 // key open across a blindness window instead of tripping idle hysteresis — then
-// that a CLEAN end signal (rejoin-landing clear, tab close, or mic-idle) is what
-// actually releases it.
+// that a CLEAN end signal (readable recovery, rejoin-landing clear, tab close, or
+// mic-idle) is what actually releases it.
 //
-// WHY DISCARD IS THE CANONICAL BLINDNESS (finding of 2026-07-06, self-contained)
-// -----------------------------------------------------------------------------
-// The v1 rig backgrounded the Meet tab with a quick tab-switch and expected the
-// deep AXWebArea to go trivial (no tiles/roster/Leave). The B4 live pass proved
-// that assumption FALSE: a Chrome whose accessibility was WOKEN while the meeting
-// was readable keeps BACKGROUNDED tabs' AX trees MATERIALIZED. A plain tab-switch
-// never blinds the probe, so the keep-alive bridge NEVER ENGAGED under the old
-// rig — the observational hold correctly saw "bridge dormant" and there was no
-// engage→hold→release cycle to gate.
+// WHY BACKGROUND-THROTTLE IS THE CANONICAL BLINDNESS (self-contained premise)
+// --------------------------------------------------------------------------
+// When a Meet tab is GENUINELY backgrounded — a second tab opened AND activated so
+// the Meet tab is no longer the foreground tab — Chrome THROTTLES the background
+// renderer. Its deep AXWebArea goes blind: the detector's URL loop can no longer
+// read a live in-call meet.google.com/ web area, so the miss-path fires and the
+// keep-alive bridge ENGAGES to hold the meeting key open across the throttle
+// window. This is measured, deterministic, and is the exact scenario the product
+// ships the bridge for: engage on background, hold with zero meet-idle, then a
+// clean release when the tab is activated again (the live tree returns → reason
+// `readable`) or the call actually ends (Leave / tab close / mic-idle).
 //
-// The REAL production blindness is Chrome DISCARDING / FREEZING background tabs
-// (memory saver). A discarded tab's renderer is torn down: its Meet WebArea dies
-// entirely and the detector's URL loop can no longer find a meet.google.com/ web
-// area at all — the true `tabPresent` (label survives in the strip, WebArea gone)
-// miss-path that the bridge exists to cover. Discard is DETERMINISTICALLY
-// inducible via chrome://discards, so THIS is the canonical blindness this rig
-// drives (phase 3), with the old tab-switch kept as an observational "woken Chrome
-// stays readable; bridge correctly dormant" control (phase 2).
+// A key mechanical prerequisite made this observable: opening the second (blanking)
+// tab requires an HTTP PUT to the DevTools `/json/new` endpoint. Chrome 110+ REJECTS
+// a GET on `/json/new` with 405 Method Not Allowed, so the older GET silently failed
+// to create the tab — the Meet tab was never actually backgrounded, the renderer
+// never throttled, the bridge never engaged, and the rig mis-concluded "a woken
+// Chrome keeps backgrounded tabs readable; bridge dormant." With the PUT fix in
+// place the tab genuinely backgrounds, the renderer genuinely throttles, and the
+// engage→hold→recover cycle is real and gateable. Background-throttle — NOT tab
+// discard — is therefore the canonical blindness this rig gates (phase 2).
 //
-// THE REAL KEEP-ALIVE VOCABULARY (verbatim from GoogleMeetProbe.swift, 2026-07-06)
-// -------------------------------------------------------------------------------
+// DISCARD IS OPTIONAL / NON-GATING. Chrome tab DISCARD (memory saver: the renderer
+// is torn down entirely and the tab RELOADS on activation, landing not-in-call) is
+// a STRONGER blindness but is not deterministically inducible from a driver: the
+// chrome://discards UI has proven brittle (a zero-row table on a woken headful
+// Chrome) and its Mojo bridge symbol names are version-dependent. The discard phase
+// (phase 3) attempts a Mojo-first, DOM-fallback discard; if BOTH mechanisms fail to
+// fire a discard it records SKIP (mechanism-unavailable) and does NOT fail the
+// roll-up. Only a discard that actually FIRES is asserted.
+//
+// THE REAL KEEP-ALIVE VOCABULARY (verbatim from GoogleMeetProbe.swift)
+// -------------------------------------------------------------------
 // Every assertion below is grounded in what the SHIPPING binary actually composes
-// at runtime — NOT the v1 rig's assumed vocabulary (which mis-asserted reasons the
-// binary never emits). The two format sites (GoogleMeetProbe.swift:215-216 engage,
-// :219-221 release) and the four release reasons are:
+// at runtime. The two format sites (engage, release) and the five release reasons:
 //   engaged:  `meet-keepalive: engaged key=meet:<code> reason=tab_present mic=<m>`
-//             where <m> ∈ { browser_active | global_idle | unknown }   (:208-217)
-//   released: `meet-keepalive: released key=meet:<code> reason=<r>`      (:219-221)
+//             where <m> ∈ { browser_active | global_idle | unknown }
+//   released: `meet-keepalive: released key=meet:<code> reason=<r>`
 //             reason literals, one per emit site:
-//               readable  — readable path recovered the live tree  (:104)
+//               readable  — the readable path recovered the live tree (tab activated
+//                           again while STILL in-call): the bridge's normal recovery
 //               left      — a Meet WebArea is readable but NOT in-call: the call
-//                           ended / the tab landed on a rejoin page (:123)
-//               gone      — miss-path .end, state==.tabGone: tab closed (:178,:181)
-//               mic_idle  — miss-path .end, mic==.globalIdle && sawBrowserMic (:179)
-//               expired   — miss-path .end, cap expired, no positive liveness (:179)
-// The engage reason is ALWAYS `tab_present` (there is no `reason=readable` engage —
-// v1's phase comments implied otherwise). A foreground Leave releases with
-// `reason=left` (readable-not-in-call clear), NOT `reason=mic_idle`.
+//                           ended / the tab landed on a rejoin page (Leave, or a
+//                           discarded tab reloaded not-in-call)
+//               gone      — miss-path end, state==.tabGone: the tab was closed
+//               mic_idle  — miss-path end, mic==.globalIdle && sawBrowserMic
+//               expired   — miss-path end, cap expired, no positive liveness
+// The engage reason is ALWAYS `tab_present`. A background→activate-still-in-call
+// recovery releases with `reason=readable`; a foreground Leave (or a discard+reload
+// landing not-in-call) releases with `reason=left`.
 //
 // It exercises the REAL signal chain minus the desktop TS layer: the product
 // bubbles-mic-detector is spawned as the actual OS-mic source, and its
@@ -55,7 +67,8 @@
 //
 //   node research/meet-dom-detector/live/meet-tabaway-live.mjs --tabaway
 //   node research/meet-dom-detector/live/meet-tabaway-live.mjs --tabaway --no-reactivate
-//     (discard phase closes the Meet tab instead of reactivating it — tabGone path)
+//     (discard phase, IF it fires, closes the Meet tab instead of reactivating it —
+//      tabGone → reason=gone; otherwise the discard phase is SKIP)
 //
 // Env contract with the PRODUCT detector (owned by the Swift side):
 //   MSD_DETECTOR_BIN   path to the product bubbles-meet-detector (REQUIRED here —
@@ -82,9 +95,15 @@
 // A persistent profile is CLEAN-QUIT on teardown (CDP Browser.close, then SIGTERM
 // after a grace window; NEVER SIGKILL, NEVER rmSync — that would corrupt the
 // session). It is also guarded against concurrent use: if a Chrome already runs
-// with that exact user-data-dir (ps match), we FAIL FAST. Phases that need a
-// SECOND simultaneous Chrome (none in v2 — the discard cycle is single-Chrome)
-// keep temp profiles.
+// with that exact user-data-dir (ps match), we FAIL FAST.
+//
+// SERIALIZED — NEVER TWO CHROMES ON ONE PROFILE. Every phase (including cap-only,
+// phase 6) reuses the SAME persistent profile, but STRICTLY one at a time: the
+// primary host Chrome is fully clean-quit before cap-only relaunches the same
+// profile. Serializing removes the need for a concurrent copy-auth temp Chrome —
+// which is what previously hit the Google login wall (a copied profile carries a
+// stale cookie snapshot and re-triggers the sign-in / passkey prompt). The
+// in-place persistent profile joins cleanly with zero prompts.
 //
 // Results: one NDJSON verdict line PER PHASE, APPENDED to live-qa-results.ndjson
 // (the zoom-wake driver lesson — never clobber a prior --all run's verdicts in the
@@ -100,14 +119,15 @@ import { createRequire } from 'node:module';
 
 // cdp-lib.js is CommonJS; bridge it into this ESM driver.
 const require = createRequire(import.meta.url);
-const { attachToPage, httpJson, sleep } = require('./cdp-lib.js');
+const { attachToPage, httpJson, httpJsonPut, sleep } = require('./cdp-lib.js');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RESULTS_NDJSON = join(HERE, 'live-qa-results.ndjson');
 const SCENARIO = 'meet-tabaway-live';
 
-// --no-reactivate: the discard phase CLOSES the Meet tab (tabGone → reason=gone)
-// instead of reactivating it. Default reactivates (readable-not-in-call → reason=left).
+// --no-reactivate: IF the discard phase fires a real discard, it CLOSES the Meet tab
+// (tabGone → reason=gone) instead of reactivating it. Default reactivates a discarded
+// tab (it reloads not-in-call → reason=left). No effect if the discard phase SKIPs.
 const NO_REACTIVATE = process.argv.includes('--no-reactivate');
 
 // The PRODUCT binaries this rig gates. Both must already exist — fail fast BEFORE
@@ -127,12 +147,16 @@ const PROFILE_HOST = join(PROFILE_DIR, 'host');
 
 // --- Timings (seconds unless _MS). Tunable; kept modest so the whole pass fits
 // inside the live-session budget. Phase-4's 2-minute hold is the long one. --------
-const SHORT_HOLD_MS = 30_000;    // phases 2 & 6 observational / cap-only hold
-const DISCARD_HOLD_MS = 45_000;  // phase 3 blindness hold (no meet-idle for 45s)
-const LONG_HOLD_MS = 120_000;    // phase 4 sustained observational hold
+const SHORT_HOLD_MS = 30_000;    // phases 2 & 6 background-throttle hold (no meet-idle)
+const DISCARD_HOLD_MS = 45_000;  // phase 3 discard-blindness hold (no meet-idle for 45s)
+const LONG_HOLD_MS = 120_000;    // phase 4 sustained background-throttle hold
 const STDERR_POLL_MS = 3_000;    // cadence for polling stderr during a hold
 const IDLE_HYSTERESIS_MS = 10_000; // meet-idle must arrive within normal hysteresis
-const ENGAGE_TIMEOUT_MS = 12_000;  // discard → detector misses meeting + engages (~10s)
+// Background-throttle → the URL loop misses the meeting + engages. The renderer
+// throttle can take a few frame-budget cycles to bite, so allow ~15s for phase 2.
+const BG_ENGAGE_TIMEOUT_MS = 15_000;
+// Discard tears the renderer down immediately, so the engage fires faster (~10s).
+const ENGAGE_TIMEOUT_MS = 10_000;
 const JOIN_TIMEOUT_MS = 90_000;  // green-room → in-call
 const MIC_ACTIVE_TIMEOUT_MS = 20_000; // Meet grabbing the real mic after join
 const QUIT_GRACE_MS = 6_000;     // persistent-profile clean-quit grace before SIGTERM
@@ -161,18 +185,32 @@ function record(phase, verdict, detail) {
   log(`RESULT ${phase}: ${verdict}` + (detail && detail.reason ? ` — ${detail.reason}` : ''));
 }
 
-// Aggregate roll-up: PASS only when EVERY recorded phase passed. Written LAST under
-// the bare `meet-tabaway-live` scenario id so live-scenario-verdict.mjs gates on it.
+// Aggregate roll-up: PASS iff the GATING phases (1,2,4,5,6) all passed. The optional
+// discard-blindness phase (3) is allowed to be PASS *or* SKIP — a SKIP means the
+// discard mechanism was unavailable (chrome://discards / Mojo could not fire a real
+// discard) and MUST NOT fail the roll-up; a FAIL there (a discard that fired but the
+// bridge mishandled) still fails. Written LAST under the bare `meet-tabaway-live`
+// scenario id so live-scenario-verdict.mjs gates on it.
+const OPTIONAL_PHASES = new Set(['discard-blindness']);
 function recordSummary() {
-  const failed = phaseVerdicts.filter((p) => p.verdict !== 'PASS').map((p) => p.phase);
+  // A phase fails the roll-up when it is not PASS — EXCEPT an optional phase that
+  // SKIPped (mechanism-unavailable) is tolerated. An optional phase that FAILed is not.
+  const failed = phaseVerdicts.filter((p) => {
+    if (p.verdict === 'PASS') return false;
+    if (p.verdict === 'SKIP' && OPTIONAL_PHASES.has(p.phase)) return false;
+    return true;
+  }).map((p) => p.phase);
+  const skipped = phaseVerdicts.filter((p) => p.verdict === 'SKIP').map((p) => p.phase);
   const verdict = phaseVerdicts.length > 0 && failed.length === 0 ? 'PASS' : 'FAIL';
   const line = JSON.stringify({
     scenario: SCENARIO, verdict, ts: nowSec(),
-    phases: phaseVerdicts, failedPhases: failed,
+    phases: phaseVerdicts, failedPhases: failed, skippedPhases: skipped,
     reason: verdict === 'PASS' ? undefined : `failed phases: ${failed.join(', ') || '(no phases ran)'}`,
   });
   appendFileSync(RESULTS_NDJSON, line + '\n');
-  log(`RESULT ${SCENARIO} (roll-up): ${verdict}` + (failed.length ? ` — failed: ${failed.join(', ')}` : ''));
+  log(`RESULT ${SCENARIO} (roll-up): ${verdict}`
+    + (failed.length ? ` — failed: ${failed.join(', ')}` : '')
+    + (skipped.length ? ` — skipped(optional): ${skipped.join(', ')}` : ''));
   return verdict;
 }
 
@@ -478,7 +516,7 @@ async function joinFreshMeet(port) {
 // the Meet tab is backgrounded. On a WOKEN Chrome its AX tree stays materialized, so
 // the probe still reads the meeting — the bridge stays correctly DORMANT.
 async function tabAway(port) {
-  await httpJson(port, '/json/new?about:blank');
+  await httpJsonPut(port, '/json/new?about:blank');
 }
 // Tab-back: bring the Meet tab to the foreground (Page.bringToFront).
 async function tabBack(port) {
@@ -490,31 +528,98 @@ async function clickLeave(pg) {
   return pg.evalJs(`(function(){var b=[...document.querySelectorAll('button,[role=button],[aria-label]')].find(function(n){return /leave call/i.test(n.getAttribute('aria-label')||'')});if(!b)return 'no-button';b.click();return 'clicked';})()`);
 }
 
-// DISCARD the Meet tab via chrome://discards (phase 3 — the CANONICAL blindness).
+// DISCARD the Meet tab via chrome://discards (phase 3 — OPTIONAL/non-gating blindness).
 //
-// APPROACH IMPLEMENTED: drive the chrome://discards page UI. Open a helper tab at
-// chrome://discards, then in its (shadow-DOM) tab-discard table find the ROW whose
-// title/URL cell contains the meeting code/URL and click that row's "Discard" action
-// link. chrome://discards renders `<discards-main-view>` → shadow `<discards-tab-discard-info>`
-// → a `<table>` whose rows expose per-tab "Discard" / "Urgent Discard" `<a is="action-link">`
-// controls; we deep-query the shadow tree, match the row, and .click() the discard link.
+// Returns { fired, via, detail }:
+//   fired:true  — a discard action was actually invoked (Mojo remote call OR a DOM
+//                 discard-link click on a matched row). Phase 3 then ASSERTS the bridge.
+//   fired:false — NEITHER mechanism could fire (no Mojo remote reachable AND no matching
+//                 discard row/link). Phase 3 records SKIP (mechanism-unavailable).
 //
-// ALTERNATIVE (noted, NOT implemented): if the clickable rows prove brittle across
-// Chrome versions, chrome://discards exposes a Mojo bridge on the page — the
-// `discardById(sessionId)` / `discardUrgentById(sessionId)` remotes on the page's
-// `uiHandler` (window-scoped in the discards page bundle). One could enumerate the
-// discards infos (each carries an `id`), match by `.title`/`.tabUrl`, and call the
-// remote directly, bypassing the DOM. We drive the DOM here because it needs no
-// knowledge of the internal Mojo symbol names; the Mojo path is the fallback if a
-// future Chrome reshapes the table markup.
+// MOJO-FIRST (the robust variant). chrome://discards is a Mojo WebUI: the page bundle
+// binds a details-provider remote that exposes `discardById(id)` (and, in some builds,
+// `discard(index)`). The remote is reachable two ways, tried in order:
+//   1. A page-global handle if the bundle exposed one (`window.uiHandler` /
+//      `window.detailsProvider` / `window.discardsDetailsProvider`) — call its
+//      discardById after matching a tab info by title/tabUrl.
+//   2. Dynamic import of the generated mojom module. Chrome serves the WebUI's own
+//      bindings under chrome://resources and the page's module graph; we import the
+//      discards mojom + mojo bindings by URL, construct the DetailsProvider remote,
+//      bind it via the page's Mojo interface broker, `getTabDiscardsInfo()` to
+//      enumerate live infos, match by title/tabUrl, and `discardById(info.id)`.
+// Symbol/URL names differ across Chrome versions, so every access is probed
+// defensively (typeof / try) and any miss falls through to the next path rather than
+// throwing. If no Mojo path is reachable, we fall back to the DOM.
+//
+// DOM FALLBACK. Deep-query the shadow tree for the tab-discards <table>, find the ROW
+// naming this meeting (code/URL substring), and click its "Discard" / "Urgent Discard"
+// `<a is="action-link">`. This is what a human clicks; it is brittle (a woken headful
+// Chrome has been observed to render a ZERO-row table), so it is the fallback only.
 async function discardMeetTab(port, code, meetUrl) {
-  // Open the discards helper tab and attach to it.
-  await httpJson(port, '/json/new?chrome://discards');
+  // Open the discards helper tab and attach to it. MUST be PUT — Chrome 110+ returns
+  // 405 for a GET on /json/new, so the tab was never created (surfaced downstream as
+  // "page target not found for /chrome://discards/").
+  await httpJsonPut(port, '/json/new?chrome://discards');
   const dpg = await attachToPage(port, /chrome:\/\/discards/);
-  // Give the tab-discard table a moment to render its rows.
+  // Give the tab-discard table / Mojo pipe a moment to initialize.
   await sleep(1500);
-  // Deep shadow-DOM walk: collect every <tr>, find the one naming this meeting, click
-  // its Discard link. Returns a small status object for the verdict detail.
+
+  // ---- Mojo-first attempt. Runs entirely in the discards page context. ----
+  // The IIFE is async so we can await the dynamic mojom import; awaitPromise:true in
+  // attachToPage's evalJs resolves it. It returns a small status object; ANY failure
+  // is caught and reported so we can decide DOM-fallback vs SKIP without throwing.
+  const mojoExpr = `(async function(){
+    var code = ${JSON.stringify(code)};
+    var url = ${JSON.stringify(meetUrl || '')};
+    function matchInfo(info){
+      try {
+        var t = (info && (info.title||'')) + ' ' + (info && (info.tabUrl && info.tabUrl.url || info.tabUrl || ''));
+        return (code && t.indexOf(code)>=0) || (url && t.indexOf(url)>=0);
+      } catch(e){ return false; }
+    }
+    // Path 1: a page-global provider handle, if the bundle exposed one.
+    var handle = window.uiHandler || window.detailsProvider || window.discardsDetailsProvider || null;
+    // Path 2: construct the provider from the generated mojom module.
+    if (!handle) {
+      var candidates = [
+        'chrome://resources/mojo/components/performance_manager/public/mojom/webui_graph_dump.mojom-webui.js',
+        'chrome://discards/discards.mojom-webui.js',
+        './discards.mojom-webui.js',
+        'chrome://discards/tab_discards/tab_discards_info.mojom-webui.js'
+      ];
+      for (var i=0;i<candidates.length && !handle;i++){
+        try {
+          var mod = await import(candidates[i]);
+          // The generated module exports a *Remote and/or a getRemote() factory. Try the
+          // common shapes: DetailsProvider.getRemote(), new DetailsProviderRemote().
+          var Provider = mod.DetailsProvider || mod.DetailsProviderRemote || null;
+          if (Provider && typeof Provider.getRemote === 'function') { handle = Provider.getRemote(); }
+          else if (mod.DetailsProviderRemote) { handle = new mod.DetailsProviderRemote(); }
+        } catch(e){ /* try next candidate */ }
+      }
+    }
+    if (!handle) return {fired:false, via:'mojo', reason:'no-provider-remote'};
+    // Enumerate infos (method name varies) and discard the matching one by id.
+    var infos = null;
+    try {
+      var getter = handle.getTabDiscardsInfo || handle.getInfo || handle.getDiscardsInfo;
+      if (typeof getter === 'function') { var r = await getter.call(handle); infos = (r && (r.infos || r.tabDiscardsInfos || r)) || null; }
+    } catch(e){ return {fired:false, via:'mojo', reason:'getInfo-threw:'+(e&&e.message)}; }
+    if (!Array.isArray(infos)) return {fired:false, via:'mojo', reason:'no-infos'};
+    var target = infos.find(matchInfo);
+    if (!target) return {fired:false, via:'mojo', reason:'no-matching-info', infoCount:infos.length};
+    try {
+      if (typeof handle.discardById === 'function') { await handle.discardById(target.id); return {fired:true, via:'mojo', method:'discardById', id:target.id}; }
+      var idx = infos.indexOf(target);
+      if (typeof handle.discard === 'function') { await handle.discard(idx); return {fired:true, via:'mojo', method:'discard', index:idx}; }
+    } catch(e){ return {fired:false, via:'mojo', reason:'discard-threw:'+(e&&e.message)}; }
+    return {fired:false, via:'mojo', reason:'no-discard-method'};
+  })()`;
+  let mojo;
+  try { mojo = await dpg.evalJs(mojoExpr); } catch (e) { mojo = { fired: false, via: 'mojo', reason: 'eval-threw:' + (e && e.message) }; }
+  if (mojo && mojo.fired) return { fired: true, via: 'mojo', detail: mojo };
+
+  // ---- DOM fallback: deep shadow-DOM walk, match the row, click its Discard link. ----
   const clickExpr = `(function(){
     function deepRows(root, acc){
       if(!root) return acc;
@@ -532,18 +637,22 @@ async function discardMeetTab(port, code, meetUrl) {
       var txt = (rows[i].textContent||'');
       if ((code && txt.indexOf(code)>=0) || (url && txt.indexOf(url)>=0)) { target = rows[i]; break; }
     }
-    if(!target) return {ok:false, reason:'no-matching-row', rowCount:rows.length};
+    if(!target) return {fired:false, reason:'no-matching-row', rowCount:rows.length};
     var links = target.querySelectorAll('a');
     var disc = null;
     for (var k=0;k<links.length;k++){ if(/^\\s*Discard\\s*$/i.test(links[k].textContent||'')){ disc = links[k]; break; } }
     // Fall back to the first "Urgent Discard" if a plain "Discard" is absent.
     if(!disc){ for (var m=0;m<links.length;m++){ if(/Discard/i.test(links[m].textContent||'')){ disc = links[m]; break; } } }
-    if(!disc) return {ok:false, reason:'no-discard-link', linkCount:links.length};
+    if(!disc) return {fired:false, reason:'no-discard-link', linkCount:links.length};
     disc.click();
-    return {ok:true, clicked:(disc.textContent||'').trim()};
+    return {fired:true, clicked:(disc.textContent||'').trim()};
   })()`;
-  const res = await dpg.evalJs(clickExpr);
-  return res;
+  let dom;
+  try { dom = await dpg.evalJs(clickExpr); } catch (e) { dom = { fired: false, reason: 'eval-threw:' + (e && e.message) }; }
+  if (dom && dom.fired) return { fired: true, via: 'dom', detail: dom };
+
+  // Neither fired — report BOTH mechanisms' diagnostics so the SKIP detail is defensible.
+  return { fired: false, via: 'none', detail: { mojo, dom } };
 }
 
 // ===========================================================================
@@ -593,23 +702,35 @@ async function waitFor(pred, timeoutMs, stepMs = 500) {
 // ===========================================================================
 // Main scenario.
 //
-// PHASES (v2, renumbered):
-//   1  detect            — meet-active for the key + self named (unchanged shape).
-//   2  bg-hold-dormant   — OBSERVATIONAL: quick tab-switch backgrounds the Meet tab;
-//                          a WOKEN Chrome keeps its AX tree materialized, so the probe
-//                          stays readable. Assert NO engage AND NO meet-idle: the
-//                          bridge is correctly DORMANT (documents the B4 finding).
-//   3  discard-blindness — CANONICAL: discard the Meet tab via chrome://discards.
-//                          Assert the full engage→hold→clean-release cycle with the
-//                          REAL vocabulary (see below). The `--no-reactivate` variant
-//                          closes the tab (tabGone → reason=gone) instead.
-//   4  longer-hold       — OBSERVATIONAL: sustained 2-min quick-tab-away; same as
-//                          phase 2, still dormant, no meet-idle (load-bearing no-idle).
-//   5  leave-ends        — LEAVE regression (unchanged assertions — it passed and is
-//                          load-bearing): foreground Leave → meet-idle < hysteresis
-//                          and NO re-engage (post-leave title keeps the code).
-//   6  cap-only          — DISCARD path WITHOUT the mic feeder (hint stays .unknown):
-//                          bridge holds on unknown, then REACTIVATION ends it.
+// PHASES (v3):
+//   1  detect              — meet-active for the key + self named (unchanged).
+//   2  bg-throttle-cycle   — CANONICAL (replaces the old bg-hold-dormant): genuinely
+//                            background the Meet tab (PUT-created + activated blank tab)
+//                            → the renderer throttles → assert the REAL engage line
+//                            `engaged reason=tab_present` within ~15s, NO meet-idle for
+//                            a 30s hold, speakers released to []; then ACTIVATE the Meet
+//                            tab → assert `released reason=readable` (still in-call) and
+//                            detection continues (no meet-idle, still in-call). The full
+//                            engage→hold→recover cycle the product ships for.
+//   3  discard-blindness   — OPTIONAL/NON-GATING: try to discard the Meet tab (Mojo
+//                            first, DOM fallback). If a discard FIRES: engage within
+//                            ~10s, 45s no-idle hold, then end per variant (reactivate →
+//                            reload-not-in-call → reason=left; --no-reactivate → tab
+//                            close → reason=gone), each followed by meet-idle. If
+//                            NEITHER mechanism fires: SKIP (mechanism-unavailable) —
+//                            does NOT fail the roll-up.
+//   4  longer-hold         — sustained 2-min background-throttle hold. EXPECT the engage
+//                            (the bridge working): engagedLineSeen required, NO meet-idle
+//                            for the whole 2 min, then tab-back → released reason=readable.
+//   5  leave-ends          — LEAVE regression (unchanged, load-bearing): foreground Leave
+//                            → meet-idle < hysteresis and NO re-engage.
+//   6  cap-only            — SERIALIZED on the SAME persistent profile (host Chrome fully
+//                            quit first): relaunch, join a FRESH meeting WITHOUT the mic
+//                            feeder (hint stays .unknown), background-throttle → engage
+//                            with mic=unknown, 30s no-idle hold, ACTIVATE → released
+//                            reason=readable (still in-call!), then Leave → meet-idle.
+//
+// Roll-up PASS iff phases 1,2,4,5,6 PASS and phase 3 is PASS-or-SKIP.
 // ===========================================================================
 async function runTabAway() {
   // APPEND semantics (zoom-wake lesson): seed an empty results file ONLY if none
@@ -620,7 +741,7 @@ async function runTabAway() {
   // locked screen → record every phase FAIL so the reader gate sees the failure,
   // then exit nonzero.
   const failAll = (reason) => {
-    for (const ph of ['detect', 'bg-hold-dormant', 'discard-blindness', 'longer-hold', 'leave-ends', 'cap-only']) {
+    for (const ph of ['detect', 'bg-throttle-cycle', 'discard-blindness', 'longer-hold', 'leave-ends', 'cap-only']) {
       record(ph, 'FAIL', { reason });
     }
   };
@@ -637,7 +758,8 @@ async function runTabAway() {
   }
 
   const PORT_A = 9333;   // primary host Chrome (phases 1-5, mic feeder wired)
-  const PORT_B = 9334;   // second fresh Chrome (phase 6, cap-only, NO feeder)
+  const PORT_B = 9334;   // cap-only host Chrome (phase 6, SAME persistent profile,
+                         // launched AFTER A is fully quit — serialized, NO feeder).
 
   let det = null, detCap = null, chromeA = null, chromeB = null, pgA = null, pgB = null;
   let anyFail = false;
@@ -681,45 +803,77 @@ async function runTabAway() {
     }
 
     // -----------------------------------------------------------------------
-    // PHASE 2 — BG-HOLD-DORMANT (observational control): quick tab-switch, hold 30s.
-    // The B4 finding: a WOKEN Chrome keeps a backgrounded tab's AX tree materialized,
-    // so the probe STAYS readable and the bridge stays correctly DORMANT. ASSERT:
-    //   • NO meet-idle for the key (call stays live — probe never blinded), AND
-    //   • NO engage line (bridge never needed to engage — nothing to bridge over).
+    // PHASE 2 — BG-THROTTLE-CYCLE (CANONICAL): genuinely background the Meet tab, hold,
+    // then activate it — the full engage→hold→recover cycle the product ships for.
+    //   (a) BACKGROUND (PUT-created + activated blank tab) → the renderer throttles →
+    //       the URL loop misses the in-call web area → assert the REAL engage line
+    //       `engaged reason=tab_present` within ~15s (stamp the latency).
+    //   (b) HOLD 30s: NO meet-idle (the bridge holds the key open across the throttle),
+    //       speakers released to [] (no stuck speaker across the blindness boundary).
+    //   (c) ACTIVATE the Meet tab (still in-call) → the live tree returns → assert
+    //       `released reason=readable` AND detection continues (no meet-idle; the call
+    //       is still live — recovery, not an end).
     // -----------------------------------------------------------------------
     const p2Start = Date.now();
     await tabAway(PORT_A);
-    log('phase2 (bg-hold-dormant): Meet tab backgrounded via quick tab-switch — holding 30s (expect DORMANT bridge)');
-    await holdAndPoll(det, code, SHORT_HOLD_MS, 'phase2');
-    const p2Idle = idleSince(det, code, p2Start);
-    const p2Engaged = engagedLine(det, code, p2Start);
+    log('phase2 (bg-throttle-cycle): Meet tab genuinely backgrounded — expecting engage reason=tab_present within ~15s');
+    // (a) Engage fires within ~15s (renderer throttle can take a few frame budgets).
+    const p2EngagedMs = await waitFor(() => !!engagedLine(det, code, p2Start), BG_ENGAGE_TIMEOUT_MS);
+    const p2EngagedL = engagedLine(det, code, p2Start);
+    // (b) Hold 30s: NO meet-idle; speakers must have been released to [].
+    log('phase2: holding backgrounded 30s (expect ZERO meet-idle, speakers released to [])');
+    await holdAndPoll(det, code, SHORT_HOLD_MS, 'phase2-hold');
+    const p2IdleDuringHold = idleSince(det, code, p2Start);
+    const p2Speaks = speakingSince(det, code, p2Start);
+    const p2EmptyRelease = p2Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length === 0);
+    const p2NonEmptyAfterRelease = p2Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length > 0);
+    // (c) Activate the Meet tab — STILL in-call, so the live tree returns → reason=readable.
+    const p2RecoverStart = Date.now();
+    await tabBack(PORT_A);
+    log('phase2: Meet tab activated (still in-call) — expecting released reason=readable + detection continues');
+    const p2ReadableMs = await waitFor(() => !!releasedLine(det, code, p2RecoverStart, 'readable'), IDLE_HYSTERESIS_MS + 8_000);
+    const p2ReadableL = releasedLine(det, code, p2RecoverStart, 'readable');
+    // Detection continues: a fresh meet-active AND no meet-idle in the recovery window.
+    const p2RecoverActive = await waitFor(() => activeSince(det, code, p2RecoverStart).length > 0, IDLE_HYSTERESIS_MS + 8_000);
+    await sleep(2_000); // brief settle so a spurious post-recovery idle would surface
+    const p2IdleAfterRecover = idleSince(det, code, p2RecoverStart);
     {
-      // Dormant bridge: no idle (probe stayed readable) AND no engage (nothing to bridge).
-      const ok = !p2Idle && !p2Engaged;
+      const aOk = p2EngagedMs != null && p2EngagedL != null;
+      const bOk = !p2IdleDuringHold && p2EmptyRelease && !p2NonEmptyAfterRelease;
+      const cOk = p2ReadableMs != null && p2RecoverActive != null && !p2IdleAfterRecover;
+      const ok = aOk && bOk && cOk;
       if (!ok) anyFail = true;
-      record('bg-hold-dormant', ok ? 'PASS' : 'FAIL', {
-        code, meetIdleDuringHold: p2Idle, engagedLineSeen: !!p2Engaged,
-        note: 'woken Chrome stays readable while backgrounded; bridge correctly dormant',
+      record('bg-throttle-cycle', ok ? 'PASS' : 'FAIL', {
+        code, engagedMs: p2EngagedMs, engagedLine: p2EngagedL ? p2EngagedL.line : null,
+        meetIdleDuringHold: p2IdleDuringHold, emptySpeakingRelease: p2EmptyRelease,
+        speakingChurnAfterRelease: p2NonEmptyAfterRelease, speakingEvents: p2Speaks.length,
+        releasedReadableMs: p2ReadableMs, releasedLine: p2ReadableL ? p2ReadableL.line : null,
+        recoveredMeetActive: p2RecoverActive != null, meetIdleAfterRecover: p2IdleAfterRecover,
+        note: 'background-throttle canonical cycle: engage on background, hold, recover on activate',
         reason: ok ? undefined
-          : (p2Idle ? 'meet-idle during a plain background hold (probe blinded unexpectedly — NOT the discard path)'
-            : 'bridge ENGAGED on a plain background hold (a woken Chrome should stay readable — bridge should be dormant)'),
+          : (!aOk ? `bridge did NOT engage on background-throttle (no engaged reason=tab_present within ${BG_ENGAGE_TIMEOUT_MS / 1000}s — the tab did not background/throttle, or the PUT tab-away failed)`
+            : !bOk ? (p2IdleDuringHold ? 'meet-idle DURING the 30s background hold (bridge did NOT hold — THE regression)'
+              : !p2EmptyRelease ? 'no empty-speakers release during the background hold'
+                : 'unexpected speaking churn after the empty release')
+            : (p2ReadableMs == null ? 'no released reason=readable after activating the still-in-call tab'
+              : p2RecoverActive == null ? 'detection did NOT continue after activation (no fresh meet-active)'
+                : 'spurious meet-idle after activation (the still-in-call call was falsely ended on recovery)')),
       });
     }
-    await tabBack(PORT_A); // restore foreground before the discard phase
 
     // -----------------------------------------------------------------------
-    // PHASE 3 — DISCARD-INDUCED BLINDNESS (the canonical engage→hold→clean-release):
-    // background the Meet tab, then DISCARD it via chrome://discards. The renderer is
-    // torn down → the Meet WebArea dies → the URL loop can no longer find a
-    // meet.google.com/ area (the true tabPresent miss-path). ASSERT, in order:
-    //   (a) within ~10s the URL loop MISSES the meeting AND the REAL engage line fires
-    //       (`meet-keepalive: engaged key=meet:<code> reason=tab_present mic=<m>`),
-    //   (b) NO meet-idle for a 45s hold; speakers released to [],
-    //   (c) then per variant:
-    //       default:        REACTIVATE the Meet tab — it reloads to a rejoin/landing
-    //                       state (NOT in-call) → readable-not-in-call clear
-    //                       (`reason=left`), then meet-idle < hysteresis.
-    //       --no-reactivate: CLOSE the Meet tab → tabGone → `reason=gone`, then idle.
+    // PHASE 3 — DISCARD-BLINDNESS (OPTIONAL/NON-GATING): try to DISCARD the Meet tab
+    // (Mojo first, DOM fallback). A discard tears the renderer down entirely and the
+    // tab RELOADS on activation, landing NOT-in-call — a stronger blindness than a
+    // throttle. But it is not deterministically inducible from a driver, so:
+    //   • If NEITHER mechanism fires → SKIP (mechanism-unavailable). NOT a roll-up FAIL.
+    //   • If a discard FIRES → assert, in order:
+    //       (a) engage `reason=tab_present` within ~10s (the WebArea died → miss-path),
+    //       (b) NO meet-idle for a 45s hold; speakers released to [],
+    //       (c) end per variant:
+    //           default:        REACTIVATE — a discarded tab reloads NOT-in-call →
+    //                           readable-not-in-call clear (`reason=left`), then meet-idle.
+    //           --no-reactivate: CLOSE the tab → tabGone → `reason=gone`, then meet-idle.
     // -----------------------------------------------------------------------
     {
       // Background the Meet tab first (discard targets a background tab).
@@ -727,90 +881,113 @@ async function runTabAway() {
       await sleep(1000);
       const p3Start = Date.now();
       const discardRes = await discardMeetTab(PORT_A, code, joined.url);
-      log(`phase3 (discard-blindness): chrome://discards discard → ${JSON.stringify(discardRes)}`);
+      log(`phase3 (discard-blindness): discard attempt → ${JSON.stringify(discardRes)}`);
 
-      // (a) Engage fires within ~10s and the URL loop misses the meeting (no fresh
-      //     meet-active for the discarded tab — its web area died). The engage line
-      //     PROVES the miss-path fired (the bridge only engages when the WebArea is
-      //     gone but the tab label survives).
-      const p3EngagedMs = await waitFor(() => !!engagedLine(det, code, p3Start), ENGAGE_TIMEOUT_MS);
-      const p3EngagedL = engagedLine(det, code, p3Start);
-
-      // (b) Hold 45s: NO meet-idle; speakers must have been released to [].
-      const t3 = await holdAndPoll(det, code, DISCARD_HOLD_MS, 'phase3-hold');
-      const p3IdleDuringHold = idleSince(det, code, p3Start);
-      const p3Speaks = speakingSince(det, code, p3Start);
-      const p3EmptyRelease = p3Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length === 0);
-      const p3NonEmptyAfterRelease = p3Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length > 0);
-
-      // (c) End the blindness per variant and assert the CLEAN release + idle.
-      const p3EndStart = Date.now();
-      let releaseReason, releaseL, endMode;
-      if (NO_REACTIVATE) {
-        endMode = 'tab-close';
-        // Close the Meet tab entirely → tabGone → reason=gone.
-        try {
-          const list = await httpJson(PORT_A, '/json');
-          const meetT = Array.isArray(list) && list.find((t) => t.type === 'page' && /meet\.google\.com/.test(t.url || ''));
-          if (meetT) await httpJson(PORT_A, `/json/close/${meetT.id}`);
-        } catch (e) { log('phase3: tab-close error ' + e.message); }
-        releaseReason = 'gone';
+      if (!discardRes || !discardRes.fired) {
+        // Neither Mojo nor DOM could fire a discard — record SKIP (does NOT gate).
+        // Bring the Meet tab back to the foreground so the next phase starts clean.
+        try { await tabBack(PORT_A); } catch (e) {}
+        record('discard-blindness', 'SKIP', {
+          code, via: discardRes ? discardRes.via : 'none', discardResult: discardRes,
+          note: 'discard mechanism unavailable (Mojo remote unreachable AND no matching discard row/link) — OPTIONAL phase, does not fail the roll-up',
+          reason: 'discard-mechanism-unavailable',
+        });
       } else {
-        endMode = 'reactivate';
-        // Reactivate the Meet tab — a discarded tab RELOADS on activation to a
-        // rejoin/landing state (NOT in-call) → readable-not-in-call clear.
-        try { await tabBack(PORT_A); } catch (e) { log('phase3: reactivate error ' + e.message); }
-        releaseReason = 'left';
-      }
-      log(`phase3: ending blindness via ${endMode} — expecting released reason=${releaseReason} + meet-idle < ${IDLE_HYSTERESIS_MS / 1000}s`);
-      const p3ReleasedMs = await waitFor(() => !!releasedLine(det, code, p3EndStart, releaseReason), IDLE_HYSTERESIS_MS + 8_000);
-      releaseL = releasedLine(det, code, p3EndStart, releaseReason);
-      const p3IdleMs = await waitFor(() => idleSince(det, code, p3EndStart), IDLE_HYSTERESIS_MS + 5_000);
+        // A discard actually fired — assert the full engage→hold→clean-release cycle.
+        // (a) Engage fires within ~10s and the URL loop misses the meeting (its web
+        //     area died). The engage line PROVES the miss-path fired.
+        const p3EngagedMs = await waitFor(() => !!engagedLine(det, code, p3Start), ENGAGE_TIMEOUT_MS);
+        const p3EngagedL = engagedLine(det, code, p3Start);
 
-      const aOk = p3EngagedMs != null && p3EngagedL != null;
-      const bOk = !p3IdleDuringHold && p3EmptyRelease && !p3NonEmptyAfterRelease;
-      const cOk = p3ReleasedMs != null && p3IdleMs != null && p3IdleMs <= IDLE_HYSTERESIS_MS;
-      const ok = aOk && bOk && cOk;
-      if (!ok) anyFail = true;
-      record('discard-blindness', ok ? 'PASS' : 'FAIL', {
-        code, endMode, discardResult: discardRes,
-        engagedMs: p3EngagedMs, engagedLine: p3EngagedL ? p3EngagedL.line : null,
-        meetIdleDuringHold: p3IdleDuringHold, emptySpeakingRelease: p3EmptyRelease,
-        speakingChurnAfterRelease: p3NonEmptyAfterRelease, speakingEvents: p3Speaks.length,
-        releasedReason: releaseReason, releasedLine: releaseL ? releaseL.line : null,
-        meetIdleAfterEndMs: p3IdleMs,
-        reason: ok ? undefined
-          : (!aOk ? 'discard did NOT engage the keep-alive bridge (no engaged reason=tab_present within ~10s — the WebArea did not die / discard failed)'
-            : !bOk ? (p3IdleDuringHold ? 'meet-idle DURING the 45s discard hold (bridge did NOT hold — THE regression)'
-              : !p3EmptyRelease ? 'no empty-speakers release during the discard hold'
-                : 'unexpected speaking churn after the empty release')
-            : (p3ReleasedMs == null ? `no released reason=${releaseReason} after ${endMode}`
-              : 'meet-idle did not follow the release within normal hysteresis')),
-      });
+        // (b) Hold 45s: NO meet-idle; speakers must have been released to [].
+        await holdAndPoll(det, code, DISCARD_HOLD_MS, 'phase3-hold');
+        const p3IdleDuringHold = idleSince(det, code, p3Start);
+        const p3Speaks = speakingSince(det, code, p3Start);
+        const p3EmptyRelease = p3Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length === 0);
+        const p3NonEmptyAfterRelease = p3Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length > 0);
+
+        // (c) End the blindness per variant and assert the CLEAN release + idle.
+        const p3EndStart = Date.now();
+        let releaseReason, releaseL, endMode;
+        if (NO_REACTIVATE) {
+          endMode = 'tab-close';
+          try {
+            const list = await httpJson(PORT_A, '/json');
+            const meetT = Array.isArray(list) && list.find((t) => t.type === 'page' && /meet\.google\.com/.test(t.url || ''));
+            if (meetT) await httpJson(PORT_A, `/json/close/${meetT.id}`);
+          } catch (e) { log('phase3: tab-close error ' + e.message); }
+          releaseReason = 'gone';
+        } else {
+          endMode = 'reactivate';
+          // A discarded tab RELOADS on activation to a rejoin/landing state (NOT
+          // in-call) → readable-not-in-call clear (reason=left).
+          try { await tabBack(PORT_A); } catch (e) { log('phase3: reactivate error ' + e.message); }
+          releaseReason = 'left';
+        }
+        log(`phase3: ending blindness via ${endMode} — expecting released reason=${releaseReason} + meet-idle < ${IDLE_HYSTERESIS_MS / 1000}s`);
+        const p3ReleasedMs = await waitFor(() => !!releasedLine(det, code, p3EndStart, releaseReason), IDLE_HYSTERESIS_MS + 8_000);
+        releaseL = releasedLine(det, code, p3EndStart, releaseReason);
+        const p3IdleMs = await waitFor(() => idleSince(det, code, p3EndStart), IDLE_HYSTERESIS_MS + 5_000);
+
+        const aOk = p3EngagedMs != null && p3EngagedL != null;
+        const bOk = !p3IdleDuringHold && p3EmptyRelease && !p3NonEmptyAfterRelease;
+        const cOk = p3ReleasedMs != null && p3IdleMs != null && p3IdleMs <= IDLE_HYSTERESIS_MS;
+        const ok = aOk && bOk && cOk;
+        if (!ok) anyFail = true;
+        record('discard-blindness', ok ? 'PASS' : 'FAIL', {
+          code, endMode, via: discardRes.via, discardResult: discardRes,
+          engagedMs: p3EngagedMs, engagedLine: p3EngagedL ? p3EngagedL.line : null,
+          meetIdleDuringHold: p3IdleDuringHold, emptySpeakingRelease: p3EmptyRelease,
+          speakingChurnAfterRelease: p3NonEmptyAfterRelease, speakingEvents: p3Speaks.length,
+          releasedReason: releaseReason, releasedLine: releaseL ? releaseL.line : null,
+          meetIdleAfterEndMs: p3IdleMs,
+          reason: ok ? undefined
+            : (!aOk ? 'discard FIRED but did NOT engage the keep-alive bridge (no engaged reason=tab_present within ~10s — the WebArea did not die)'
+              : !bOk ? (p3IdleDuringHold ? 'meet-idle DURING the 45s discard hold (bridge did NOT hold — THE regression)'
+                : !p3EmptyRelease ? 'no empty-speakers release during the discard hold'
+                  : 'unexpected speaking churn after the empty release')
+              : (p3ReleasedMs == null ? `no released reason=${releaseReason} after ${endMode}`
+                : 'meet-idle did not follow the release within normal hysteresis')),
+        });
+      }
     }
 
     // -----------------------------------------------------------------------
-    // PHASE 4 — LONGER-HOLD (observational): sustained 2-minute quick tab-away.
-    // Same as phase 2 (woken Chrome stays readable), SUSTAINED. The load-bearing
-    // assertion is NO meet-idle over the whole 2 minutes (the bridge stays dormant
-    // and the probe stays readable — the call never falsely ends).
+    // PHASE 4 — LONGER-HOLD: sustained 2-minute background-throttle hold. Now that a
+    // backgrounded tab genuinely throttles, we EXPECT the engage (it is the bridge
+    // WORKING). ASSERT: engagedLineSeen required, NO meet-idle over the whole 2 min
+    // (the load-bearing hold), then tab-back → recovery released reason=readable.
     // -----------------------------------------------------------------------
     const p4Start = Date.now();
     await tabAway(PORT_A);
-    log('phase4 (longer-hold): Meet tab backgrounded again — SUSTAINED 2-minute observational hold');
+    log('phase4 (longer-hold): Meet tab genuinely backgrounded — SUSTAINED 2-minute throttle hold (expect engage, ZERO meet-idle)');
+    // Give the throttle a moment to engage before the long hold so engagedLineSeen is
+    // meaningful across the whole window.
+    const p4EngagedMs = await waitFor(() => !!engagedLine(det, code, p4Start), BG_ENGAGE_TIMEOUT_MS);
     await holdAndPoll(det, code, LONG_HOLD_MS, 'phase4');
     const p4Idle = idleSince(det, code, p4Start);
     const p4Engaged = engagedLine(det, code, p4Start);
+    // Recovery: activate the still-in-call tab → released reason=readable.
+    const p4RecoverStart = Date.now();
+    await tabBack(PORT_A);
+    log('phase4: Meet tab activated (still in-call) — expecting released reason=readable');
+    const p4ReadableMs = await waitFor(() => !!releasedLine(det, code, p4RecoverStart, 'readable'), IDLE_HYSTERESIS_MS + 8_000);
     {
-      // No-idle is the load-bearing assertion. On a woken Chrome the bridge stays
-      // dormant (no engage) too; we tolerate an engage if this Chrome happened to
-      // throttle, but a meet-idle is always a FAIL (the call must never falsely end).
-      const ok = !p4Idle;
+      // The bridge must have ENGAGED and held with ZERO meet-idle across 2 minutes, and
+      // recovered cleanly on activation. A meet-idle during the hold is always a FAIL.
+      const engagedOk = !!p4Engaged;
+      const noIdleOk = !p4Idle;
+      const recoverOk = p4ReadableMs != null;
+      const ok = engagedOk && noIdleOk && recoverOk;
       if (!ok) anyFail = true;
       record('longer-hold', ok ? 'PASS' : 'FAIL', {
-        code, holdMs: LONG_HOLD_MS, meetIdleDuringHold: p4Idle, engagedLineSeen: !!p4Engaged,
-        note: 'sustained background hold on a woken Chrome; probe stays readable, call never falsely ends',
-        reason: ok ? undefined : 'meet-idle emitted during the sustained 2-minute background hold (call falsely ended)',
+        code, holdMs: LONG_HOLD_MS, engagedMs: p4EngagedMs, engagedLineSeen: engagedOk,
+        meetIdleDuringHold: p4Idle, releasedReadableMs: p4ReadableMs,
+        note: 'sustained background-throttle hold: bridge engages, holds 2 min with zero idle, recovers readable on activation',
+        reason: ok ? undefined
+          : (!engagedOk ? 'bridge did NOT engage during the sustained background hold (tab did not throttle)'
+            : !noIdleOk ? 'meet-idle emitted during the sustained 2-minute background hold (call falsely ended)'
+              : 'no released reason=readable after activating the still-in-call tab'),
       });
     }
 
@@ -848,28 +1025,40 @@ async function runTabAway() {
       });
     }
 
-    // Tear down host Chrome A + its detector before phase 6 (fresh, feeder-less run).
+    // Tear down host Chrome A + its detector before phase 6. Phase 6 relaunches the
+    // SAME persistent profile — the host Chrome MUST be fully clean-quit first
+    // (serialized: never two Chromes on one profile). We stop the detector, clean-quit
+    // Chrome A, then WAIT for the profile lock to clear (assertProfileNotInUse) before
+    // relaunching so the second launch can't collide with a not-yet-exited Chrome.
     try { await det.stop(); } catch (e) {}
     det = null;
     try { await chromeA.kill(); } catch (e) {}
     chromeA = null;
+    pgA = null; // its page is gone with Chrome A — don't Leave-click a dead tab in finally
 
     // -----------------------------------------------------------------------
-    // PHASE 6 — CAP-ONLY (DISCARD path, NO mic feeder): re-join a FRESH meeting in a
-    // temp-profile Chrome, this time DO NOT wire the mic feeder (no stdin hints EVER →
-    // mic hint stays .unknown). DISCARD the Meet tab: the bridge must STILL hold on an
-    // .unknown mic (advisory law: .unknown never ends a bridge), with the engage line
-    // reporting mic=unknown. Then REACTIVATE (readable-not-in-call clear, reason=left)
-    // — the cap-only bridge holds on unknown, and reactivation ends it.
+    // PHASE 6 — CAP-ONLY (background-throttle, NO mic feeder, SERIALIZED on the SAME
+    // persistent profile): relaunch the SAME persistent-profile Chrome (host A fully
+    // quit — never two Chromes on one profile), join a FRESH meeting WITHOUT the mic
+    // feeder (no stdin hints EVER → mic hint stays .unknown). Background-throttle the
+    // Meet tab: the bridge must STILL engage on an .unknown mic (advisory law: .unknown
+    // never ends a bridge), with the engage line reporting mic=unknown; hold 30s with NO
+    // meet-idle; then ACTIVATE (still in-call!) → released reason=readable — then LEAVE
+    // → meet-idle. Serializing on the persistent profile removes the copy-auth temp
+    // Chrome that used to hit the Google login wall (stale cookie snapshot).
     // -----------------------------------------------------------------------
     detCap = startDetector(false); // NO mic feeder — stdin open but never written
     log('phase6 (cap-only): detector spawned WITHOUT mic feeder (mic hint stays .unknown)');
-    // Second Chrome: temp copy-auth profile (a persistent profile can't be shared and
-    // this phase runs after A is fully quit anyway; temp keeps it simple + isolated).
-    const tmpB = mkdtempSync(join(tmpdir(), 'meet-tabaway-b-'));
-    copyAuth(tmpB);
-    chromeB = launchTempChrome(PORT_B, tmpB);
-    log(`rig Chrome B on :${PORT_B} (temp profile) — joining a FRESH hosted Meet (real mic, feeder OFF)…`);
+    // Relaunch the SAME persistent profile, serialized — wait for A's profile lock to
+    // clear so we never open two Chromes on one user-data-dir.
+    if (hostProfile.persistent) {
+      const t0 = Date.now();
+      while (Date.now() - t0 < 15_000 && !assertProfileNotInUse(hostProfile.dir)) { await sleep(1000); }
+    }
+    chromeB = hostProfile.persistent
+      ? launchPersistentChrome(PORT_B, hostProfile.dir)
+      : (() => { const t = mkdtempSync(join(tmpdir(), 'meet-tabaway-b-')); copyAuth(t); return launchTempChrome(PORT_B, t); })();
+    log(`phase6 Chrome on :${PORT_B} (${hostProfile.persistent ? 'SAME persistent in-place profile, serialized' : 'temp copyAuth fallback'}) — joining a FRESH hosted Meet (real mic, feeder OFF)…`);
     const joinedB = await joinFreshMeet(PORT_B);
     pgB = joinedB.pg;
     const codeB = joinedB.code;
@@ -877,43 +1066,55 @@ async function runTabAway() {
     // Confirm detect first (so a join failure is not misread as a bridge failure).
     const p6Active = await waitFor(() => activeSince(detCap, codeB, 0).length > 0, JOIN_TIMEOUT_MS);
 
-    // Background then DISCARD the Meet tab (canonical blindness, cap-only).
+    // Background-throttle the Meet tab (canonical blindness, cap-only — NO discard).
     await tabAway(PORT_B);
-    await sleep(1000);
     const p6Start = Date.now();
-    const discardResB = await discardMeetTab(PORT_B, codeB, joinedB.url);
-    log(`phase6: chrome://discards discard → ${JSON.stringify(discardResB)} — holding 30s (cap-only, no mic hint)`);
-    const p6EngagedMs = await waitFor(() => !!engagedLine(detCap, codeB, p6Start), ENGAGE_TIMEOUT_MS);
+    log('phase6: Meet tab genuinely backgrounded — expecting engage mic=unknown, holding 30s (cap-only, no mic hint)');
+    const p6EngagedMs = await waitFor(() => !!engagedLine(detCap, codeB, p6Start), BG_ENGAGE_TIMEOUT_MS);
     await holdAndPoll(detCap, codeB, SHORT_HOLD_MS, 'phase6-hold');
     const p6Idle = idleSince(detCap, codeB, p6Start);
     const p6Engaged = engagedLine(detCap, codeB, p6Start);
     // The engage line reports the advisory mic; with no feeder it must be mic=unknown.
     const p6EngagedUnknown = !!(p6Engaged && p6Engaged.line.includes('mic=unknown'));
 
-    // Now REACTIVATE: the discarded tab reloads to a rejoin/landing state → the
-    // readable-not-in-call clear ends it (reason=left), no mic evidence needed.
+    // ACTIVATE: the tab is STILL in-call (throttle, not discard), so the live tree
+    // returns → readable recovery (reason=readable), NO meet-idle (call still live).
+    const p6RecoverStart = Date.now();
     await tabBack(PORT_B);
-    const p6EndStart = Date.now();
-    log('phase6: reactivated the discarded Meet tab — expecting released reason=left + meet-idle');
-    const p6ReleasedLeft = await waitFor(() => !!releasedLine(detCap, codeB, p6EndStart, 'left'), IDLE_HYSTERESIS_MS + 8_000);
-    const p6IdleMs = await waitFor(() => idleSince(detCap, codeB, p6EndStart), IDLE_HYSTERESIS_MS + 8_000);
+    log('phase6: Meet tab activated (still in-call) — expecting released reason=readable, then Leave → meet-idle');
+    const p6ReadableMs = await waitFor(() => !!releasedLine(detCap, codeB, p6RecoverStart, 'readable'), IDLE_HYSTERESIS_MS + 8_000);
+    const p6RecoverActive = await waitFor(() => activeSince(detCap, codeB, p6RecoverStart).length > 0, IDLE_HYSTERESIS_MS + 8_000);
+
+    // Now LEAVE the still-live meeting → meet-idle (the definitive end for this phase).
+    await sleep(1500); // tab is foreground; let Meet settle before the Leave click
+    const p6LeaveStart = Date.now();
+    const p6LeaveRes = await clickLeave(pgB);
+    log(`phase6: Leave clicked (${p6LeaveRes}) — expecting meet-idle < ${IDLE_HYSTERESIS_MS / 1000}s`);
+    const p6IdleMs = await waitFor(() => idleSince(detCap, codeB, p6LeaveStart), IDLE_HYSTERESIS_MS + 8_000);
     {
+      // Bridge engaged on .unknown and held (no idle during the throttle hold); it
+      // recovered readable on activation while still in-call; then Leave ended it.
       const bridgeHeld = p6Active != null && p6EngagedMs != null && !p6Idle && !!p6Engaged;
-      const endedOnReactivate = p6ReleasedLeft != null || p6IdleMs != null;
-      const ok = bridgeHeld && endedOnReactivate;
+      const recoveredReadable = p6ReadableMs != null && p6RecoverActive != null;
+      const endedOnLeave = p6IdleMs != null && p6IdleMs <= IDLE_HYSTERESIS_MS;
+      const ok = bridgeHeld && p6EngagedUnknown && recoveredReadable && endedOnLeave;
       if (!ok) anyFail = true;
       record('cap-only', ok ? 'PASS' : 'FAIL', {
-        code: codeB, detectSeen: p6Active != null, discardResult: discardResB,
+        code: codeB, detectSeen: p6Active != null,
         engagedMs: p6EngagedMs, meetIdleDuringHold: p6Idle,
         engagedLineSeen: !!p6Engaged, engagedMicUnknown: p6EngagedUnknown,
-        releasedLeftMs: p6ReleasedLeft, meetIdleAfterReactivateMs: p6IdleMs,
+        engagedLine: p6Engaged ? p6Engaged.line : null,
+        releasedReadableMs: p6ReadableMs, recoveredMeetActive: p6RecoverActive != null,
+        leaveResult: p6LeaveRes, meetIdleAfterLeaveMs: p6IdleMs,
         reason: ok ? undefined
           : (!bridgeHeld
             ? (p6Active == null ? 'phase6 join/detect failed'
-              : p6EngagedMs == null ? 'discard did NOT engage the cap-only bridge (no engaged line — WebArea did not die / discard failed)'
+              : p6EngagedMs == null ? 'background-throttle did NOT engage the cap-only bridge (no engaged line — tab did not throttle)'
                 : p6Idle ? 'cap-only bridge did NOT hold (meet-idle during hold with mic=unknown — advisory law violated)'
                   : 'no engaged keep-alive line during cap-only hold')
-            : 'meeting did NOT end on reactivation via the readable-not-in-call clear (no released reason=left, no meet-idle)'),
+            : !p6EngagedUnknown ? 'engage line did NOT report mic=unknown (the feeder-less advisory mic should be unknown)'
+              : !recoveredReadable ? 'no readable recovery after activating the still-in-call tab (no released reason=readable / no fresh meet-active)'
+                : 'meeting did NOT end on Leave (no meet-idle < hysteresis after the Leave click)'),
       });
     }
   } catch (e) {
@@ -923,8 +1124,10 @@ async function runTabAway() {
     record('fatal', 'FAIL', { reason: String(e && e.message ? e.message : e) });
   } finally {
     // Teardown in a finally block: leave calls, close rig Chromes, SIGTERM helpers.
-    // The host Chrome is CLEAN-QUIT (its .kill() is Browser.close→SIGTERM for a
-    // persistent profile, SIGKILL+rmSync for a temp fallback).
+    // Both host Chromes (A phases 1-5, B phase 6) are the SAME persistent profile run
+    // SERIALLY; each is CLEAN-QUIT (its .kill() is Browser.close→SIGTERM for a
+    // persistent profile, SIGKILL+rmSync for a temp fallback). pgA is nulled after A's
+    // clean-quit so we never Leave-click a dead tab here.
     try { if (pgA) await clickLeave(pgA); } catch (e) {}
     try { if (pgB) await clickLeave(pgB); } catch (e) {}
     try { if (det) await det.stop(); } catch (e) {}
@@ -938,7 +1141,8 @@ async function runTabAway() {
 async function main() {
   if (!process.argv.includes('--tabaway')) {
     console.error('[tabaway] usage: node meet-tabaway-live.mjs --tabaway [--no-reactivate]');
-    console.error('[tabaway]   --no-reactivate: discard phase closes the Meet tab (tabGone → reason=gone)');
+    console.error('[tabaway]   --no-reactivate: IF the OPTIONAL discard phase fires, close the Meet tab');
+    console.error('[tabaway]                    (tabGone → reason=gone) instead of reactivating it');
     console.error('[tabaway]   (set MSD_DETECTOR_BIN / MSD_MIC_BIN to override the product binary paths;');
     console.error('[tabaway]    MSD_CHROME_PROFILE to point the host Chrome at a persistent profile)');
     process.exit(2);
