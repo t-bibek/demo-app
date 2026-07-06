@@ -58,21 +58,37 @@
 //       mic_idle  — miss-path end, mic==.globalIdle && sawBrowserMic (TabAwayBridge.swift:192)
 //       expired   — miss-path end, cap expired, no positive liveness (TabAwayBridge.swift:192)
 //
-// THE ZOOM-SPECIFIC LEAVE TERMINATOR (load-bearing, phase 4)
-// ---------------------------------------------------------
+// THE ZOOM-SPECIFIC LEAVE TERMINATOR (load-bearing, phase 4 + 4b)
+// ---------------------------------------------------------------
 // Unlike Teams (whose post-leave tab label is UNCHANGED, so ONLY the readable-not-in-call
 // `left` clear ends it), Zoom's post-leave tab NAVIGATES: on Leave the URL leaves
 // /wc/<id>/…/join → app.zoom.us/wc/ home and the strip label REVERTS to a bare `Zoom`
-// (sweep Z6/Z7). So the remembered TOPIC stops matching — a NATURAL terminator. The bridge
-// can therefore end via EITHER of two reasons and BOTH are correct:
-//   • released reason=left — the readable-not-in-call clear fired first (foreground, the
-//     Zoom WebArea was readable but reported not-in-call), OR
-//   • released reason=gone — the miss-path saw the label revert to bare `Zoom` (which the
-//     remembered-topic matcher rejects), so state==.tabGone → .end.
-// The driver ACCEPTS EITHER and RECORDS WHICH (informationally). It asserts the OUTCOME
-// (bridge released + meet-idle within hysteresis + no re-engage), not one hard-pinned
-// reason — a concurrent leave-path fix (G2c) may change which clear wins the race, so
-// pinning a single reason would be brittle.
+// (sweep Z6/Z7). So the remembered TOPIC stops matching — a NATURAL terminator.
+//
+// FOREGROUND LEAVE (phase 4) — WHY `released reason=left|gone` IS STRUCTURALLY IMPOSSIBLE.
+// A FOREGROUND leave (the guest tab in front, click Leave) means the bridge is NOT engaged
+// when Leave lands: foregrounding the tab is exactly the readable-pass recovery that RELEASES
+// the bridge (reason=readable) BEFORE the Leave click can register. With no live engagement
+// there is no keep-alive miss-path left to emit `left`/`gone` — the phase-3 recovery release
+// already consumed the only pending keep-alive line. The 2026-07-06 gate proved this: phase 4
+// FAILed with releasedMs=null while meet-idle DID arrive (idleInHysteresis=true). Pinning a
+// post-leave `left|gone` for a foreground leave asserts a line that CANNOT exist. So phase 4
+// asserts the CORRECT foreground-leave invariant instead:
+//   • the phase-3 recovery release PRECEDED the Leave click (proof the bridge was NOT engaged
+//     at leave time — the readable pass on tab-foregrounding released it), AND
+//   • meet-idle within hysteresis (the call really ended), AND
+//   • no re-engage in the following 30s (a clean end, no phantom re-arm), AND
+//   • ZERO keep-alive lines (engage OR release) AFTER the Leave click (nothing to bridge — the
+//     tab is foreground and readable, so the URL loop reads not-in-call directly).
+// Any `released` line observed post-leave is recorded VERBATIM informationally, not asserted.
+//
+// BACKGROUND / REMOTE-END (phase 4b) — the case that CAN fire `left|gone`. If instead the tab
+// is BACKGROUND (bridge ENGAGED) when the meeting dies — e.g. the NATIVE HOST ends it
+// server-side while the guest tab stays backgrounded — then the miss-path IS live and CAN emit
+// `gone` (label reverted) or `left` (readable-not-in-call on reactivation). This is ALSO the
+// long-missing remote-end phantom measurement (C5/G2b): how long from server-side end to the
+// bridge releasing + meet-idle while the tab was blind. Phase 4b drives it best-effort (the
+// host-side end via the fixed endMeeting()); if the host end can't be driven it SKIPs.
 //
 // THE WIRE KEY == THE STDERR KEY (a Zoom-web simplification vs Teams)
 // ------------------------------------------------------------------
@@ -139,20 +155,33 @@
 //   3  longer-hold         — 2-min background hold. engage required-if-throttled (the
 //                            no-throttle tolerance branch, like Meet v3.1), zero idle,
 //                            readable recovery.
-//   4  leave-ends          — foreground, LEAVE the call via the Zoom web UI (the sweep's
-//                            Leave→Leave-Meeting selector). THE ZOOM-SPECIFIC ASSERTION:
-//                            post-leave the tab NAVIGATES off /wc/ and the label reverts to
-//                            bare `Zoom`, so the bridge ends via released reason=left
-//                            (readable-not-in-call) OR reason=gone (label-mismatch tabGone)
-//                            — accept EITHER, record which — AND meet-idle within hysteresis
-//                            AND no re-engage in 30s.
+//   4  leave-ends          — FOREGROUND leave via the Zoom web UI (the sweep's
+//                            Leave→Leave-Meeting selector). The bridge is NOT engaged at
+//                            leave time (foregrounding the tab = the readable recovery that
+//                            already released it in phase 3), so `released reason=left|gone`
+//                            is STRUCTURALLY IMPOSSIBLE here. Assert the foreground-leave
+//                            invariant: the phase-3 recovery release PRECEDED the leave +
+//                            meet-idle within hysteresis + no re-engage in 30s + ZERO
+//                            keep-alive lines after the Leave click. Any released line is
+//                            recorded verbatim informationally.
+//   4b engaged-end         — (best-effort PASS-or-SKIP) the case that CAN fire left|gone:
+//                            BACKGROUND the tab (bridge ENGAGED), then END the meeting from
+//                            the NATIVE HOST side (via the fixed endMeeting()) while the guest
+//                            tab stays BACKGROUND. Assert the bridge releases via reason=gone
+//                            OR left OR (if it stays blind) survives until reactivation, then
+//                            activate → released (ANY reason, verbatim) + meet-idle within
+//                            hysteresis + no re-engage. MEASURE the end-to-idle latency —
+//                            the long-missing REMOTE-END PHANTOM measurement (C5/G2b). If the
+//                            host-side end can't be driven even with the fixed endMeeting, SKIP
+//                            with diagnostics.
 //   5  cap-only            — a FRESH native-hosted meeting, NO mic feeder, background →
 //                            engaged mic=unknown, 30s hold, reactivate → released
 //                            reason=readable, then leave → meet-idle.
 //
-// Roll-up PASS = all five (phase-3's no-throttle branch tolerated). Persist raw logs per
-// run like the Teams v1.0 driver. Baked-in discipline: every wait is a bounded blocking
-// poll (no monitors); boundary drains between all phases; results append-only.
+// Roll-up PASS = phases 1,2,3,4,5 PASS + 4b PASS-or-SKIP (phase-3's no-throttle branch
+// tolerated; 4b SKIP does not fail the roll-up). Persist raw logs per run like the Teams v1.0
+// driver. Baked-in discipline: every wait is a bounded blocking poll (no monitors); boundary
+// drains between all phases; results append-only.
 // ---------------------------------------------------------------------------
 'use strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -287,13 +316,21 @@ function record(phase, verdict, detail) {
   log(`RESULT ${phase}: ${verdict}` + (detail && detail.reason ? ` — ${detail.reason}` : ''));
 }
 
-// Aggregate roll-up: PASS iff ALL five phases passed. There are NO optional phases in this
-// Zoom-web gate (unlike Meet's discard/mp-remote-end SKIP-tolerant phases). A phase-3
-// no-throttle run still records PASS from its tolerance branch (below), so it never SKIPs.
-// Written LAST under the bare `zoom-tabaway-live` scenario id so live-scenario-verdict.mjs
-// gates on it.
+// Aggregate roll-up: PASS iff every REQUIRED phase passed. The one SKIP-tolerant phase is
+// `engaged-end` (4b) — the remote-end phantom measurement is best-effort (it needs the native
+// host-side end to be driveable), so a SKIP there does NOT fail the roll-up (mirrors Meet's
+// discard/mp-remote-end SKIP-tolerant phases). Every OTHER phase (1,2,3,4,5) is required. A
+// phase-3 no-throttle run still records PASS from its tolerance branch (below), so it never
+// SKIPs. Written LAST under the bare `zoom-tabaway-live` scenario id so
+// live-scenario-verdict.mjs gates on it.
+const SKIP_TOLERANT_PHASES = new Set(['engaged-end']);
 function recordSummary() {
-  const failed = phaseVerdicts.filter((p) => p.verdict !== 'PASS').map((p) => p.phase);
+  // A phase counts against the roll-up only if it neither PASSed nor (for a SKIP-tolerant
+  // phase) SKIPped — i.e. a SKIP on engaged-end is fine; a FAIL anywhere, or a SKIP on a
+  // required phase, fails the roll-up.
+  const failed = phaseVerdicts
+    .filter((p) => p.verdict !== 'PASS' && !(p.verdict === 'SKIP' && SKIP_TOLERANT_PHASES.has(p.phase)))
+    .map((p) => p.phase);
   const skipped = phaseVerdicts.filter((p) => p.verdict === 'SKIP').map((p) => p.phase);
   const verdict = phaseVerdicts.length > 0 && failed.length === 0 ? 'PASS' : 'FAIL';
   const line = JSON.stringify({
@@ -678,6 +715,21 @@ async function tabBack(port) {
   await pg.cmd('Page.bringToFront');
   return pg;
 }
+// Reactivate the meeting tab even when it has NAVIGATED off /wc/ (a remote end can push the
+// backgrounded tab to app.zoom.us/wc home / bare Zoom before we reactivate). Try the /wc/
+// match first; on miss, fall back to the Zoom-host tab, then any page. NEVER throws — a
+// navigation-away must not abort the phase-4b measurement.
+async function tabBackResilient(port) {
+  driverLog('tabBackResilient', { port });
+  for (const m of [/app\.zoom\.us\/wc/, /zoom\.us/, /https?:|about:blank/]) {
+    try {
+      const pg = await attachToPage(port, m);
+      await pg.cmd('Page.bringToFront');
+      return pg;
+    } catch (e) { /* try the next matcher */ }
+  }
+  return null;
+}
 // Click Leave in the Zoom web UI (the sweep's Leave → Leave-Meeting confirm flow). Must be
 // foreground. Post-leave the tab NAVIGATES off /wc/ and the label reverts to bare `Zoom`.
 async function clickLeave(pg) {
@@ -788,7 +840,9 @@ async function runTabAway() {
   if (!existsSync(RESULTS_NDJSON)) writeFileSync(RESULTS_NDJSON, '');
 
   const failAll = (reason) => {
-    for (const ph of ['detect', 'bg-throttle-cycle', 'longer-hold', 'leave-ends', 'cap-only']) {
+    // A hard preflight failure means NOTHING ran — every phase is FAIL, including the
+    // otherwise-SKIP-tolerant engaged-end (4b): a preflight abort is not a legitimate SKIP.
+    for (const ph of ['detect', 'bg-throttle-cycle', 'longer-hold', 'leave-ends', 'engaged-end', 'cap-only']) {
       record(ph, 'FAIL', { reason });
     }
   };
@@ -870,7 +924,7 @@ async function runTabAway() {
 
     // Guard: without a learned wire key the remaining phases cannot assert. Fail them fast.
     if (!wireKey) {
-      for (const ph of ['bg-throttle-cycle', 'longer-hold', 'leave-ends', 'cap-only']) {
+      for (const ph of ['bg-throttle-cycle', 'longer-hold', 'leave-ends', 'engaged-end', 'cap-only']) {
         record(ph, 'FAIL', { reason: 'phase 1 did not learn a Zoom wire key (no meet-active) — dependent phase cannot run' });
       }
       anyFail = true;
@@ -983,56 +1037,189 @@ async function runTabAway() {
     }
 
     // -----------------------------------------------------------------------
-    // PHASE 4 — LEAVE-ENDS (Zoom-specific terminator): tab FOREGROUND, click Leave via the
-    // Zoom web UI. THE ZOOM-SPECIFIC ASSERTION: post-leave the tab NAVIGATES off /wc/ and the
-    // strip label reverts to bare `Zoom` (sweep Z6/Z7). The bridge therefore ends via EITHER
-    //   • released reason=left  (the readable-not-in-call clear, foreground), OR
-    //   • released reason=gone  (the miss-path saw the label revert → tabGone → .end).
-    // ACCEPT EITHER and RECORD WHICH (informationally — a concurrent leave-path fix G2c may
-    // change which clear wins the race). Assert the OUTCOME: bridge released (either reason)
-    // + meet-idle within hysteresis + no re-engage in the following 30s.
+    // PHASE 4 — LEAVE-ENDS (FOREGROUND leave — structurally-correct assertion). Foreground the
+    // tab, click Leave via the Zoom web UI. `released reason=left|gone` is STRUCTURALLY
+    // IMPOSSIBLE for a foreground leave: foregrounding the tab is the readable-pass recovery
+    // that RELEASES the bridge (reason=readable) BEFORE the Leave click lands, so no keep-alive
+    // miss-path survives to emit left/gone (the 2026-07-06 gate proved this — releasedMs=null,
+    // meet-idle fine). Assert the FOREGROUND-LEAVE invariant instead:
+    //   • the phase-3 recovery release (reason=readable) PRECEDED the Leave click — proof the
+    //     bridge was NOT engaged at leave time (the foreground recovery already released it), AND
+    //   • meet-idle within hysteresis (the call really ended), AND
+    //   • no re-engage in the following 30s, AND
+    //   • ZERO keep-alive lines (engage OR release) AFTER the Leave click (nothing to bridge — the
+    //     tab is foreground+readable so the URL loop reads not-in-call directly).
+    // Any released line observed post-leave is recorded VERBATIM informationally, not asserted.
     // -----------------------------------------------------------------------
     await drainBoundary(det, wireKey, p3RecoverStart, !!p3Engaged, 'phase3→4');
+    // The phase-3 recovery release is the proof the bridge was NOT engaged at leave time. It
+    // fired on the phase-3 tabBack (reason=readable) if the bridge was engaged in phase 3; if
+    // phase 3 did NOT throttle, the bridge was never engaged, which ALSO satisfies "not engaged
+    // at leave time". Capture whichever holds — recovery-release-seen OR never-engaged-in-3.
+    const p4PriorReleaseL = releasedLine(det, wireKey, p3RecoverStart, 'readable');
+    const p4RecoveryReleasePreceded = !!p4PriorReleaseL || !p3Engaged;
     await tabBack(PORT_A);      // Zoom tab foreground so the Leave click registers
     await sleep(1500);
     const p4Start = Date.now();
     const leaveRes = await clickLeave(pgA);
-    log(`phase4 (leave-ends): Leave clicked (${leaveRes}) — expecting released reason=left|gone + meet-idle < ${IDLE_HYSTERESIS_MS / 1000}s and no re-engage`);
-    const p4ReleasedMs = await waitFor(() => !!anyReleasedLine(det, wireKey, p4Start), IDLE_HYSTERESIS_MS + 8_000);
-    const p4ReleasedL = anyReleasedLine(det, wireKey, p4Start);
-    const p4Reason = releaseReasonOf(p4ReleasedL && p4ReleasedL.line);
+    log(`phase4 (leave-ends): FOREGROUND Leave clicked (${leaveRes}) — expecting meet-idle < ${IDLE_HYSTERESIS_MS / 1000}s, no re-engage, ZERO keep-alive lines after the click (bridge was NOT engaged at leave time)`);
     const p4IdleMs = await waitFor(() => idleSince(det, wireKey, p4Start), IDLE_HYSTERESIS_MS + 5_000);
     // Watch a further 30s for an ILLEGAL re-engage (the regression: a bridge that failed to
     // clear on the navigation would re-engage on the next background).
     const reEngageWatchStart = Date.now();
     await sleep(SHORT_HOLD_MS);
     const p4ReEngaged = !!engagedLine(det, wireKey, reEngageWatchStart);
+    // Any keep-alive line (engage OR release) AFTER the leave click. For a clean foreground
+    // leave there must be NONE — the bridge was not engaged, so nothing engages or releases.
+    // A stray released line is recorded VERBATIM informationally (not asserted); a stray ENGAGE
+    // is the regression (already caught by p4ReEngaged, but counted here too).
+    const p4PostLeaveEngage = engagedLine(det, wireKey, p4Start);
+    const p4PostLeaveRelease = anyReleasedLine(det, wireKey, p4Start);
+    const p4NoKeepAliveAfterLeave = !p4PostLeaveEngage && !p4PostLeaveRelease;
     {
       const idleInHysteresis = p4IdleMs != null && p4IdleMs <= IDLE_HYSTERESIS_MS;
-      // The load-bearing assertion (OUTCOME, not a pinned reason): a release fired with reason
-      // left OR gone, meet-idle within hysteresis, no re-engage. The reason is recorded but
-      // EITHER left|gone passes — the Zoom navigation terminator can clear via either path.
-      const reasonAccepted = p4Reason === 'left' || p4Reason === 'gone';
-      const ok = p4ReleasedMs != null && reasonAccepted && idleInHysteresis && !p4ReEngaged;
+      // FOREGROUND-LEAVE invariant (structurally correct): the bridge was NOT engaged at leave
+      // time (phase-3 recovery release preceded, or never engaged in 3), meet-idle within
+      // hysteresis, no re-engage, and ZERO keep-alive lines after the click.
+      const ok = p4RecoveryReleasePreceded && idleInHysteresis && !p4ReEngaged && p4NoKeepAliveAfterLeave;
       if (!ok) anyFail = true;
       record('leave-ends', ok ? 'PASS' : 'FAIL', {
         wireKey, meetIdleMs: p4IdleMs, idleInHysteresis,
-        releasedMs: p4ReleasedMs, releasedReason: p4Reason, releasedLine: p4ReleasedL ? p4ReleasedL.line : null,
-        reasonAccepted, reEngagedAfterLeave: p4ReEngaged,
-        note: 'Zoom post-leave tab NAVIGATES off /wc/ and the label reverts to bare `Zoom`; the bridge ends via released reason=left (readable-not-in-call) OR reason=gone (label-mismatch tabGone) — EITHER accepted, reason recorded informationally (a G2c leave-path fix may change which clear wins)',
+        recoveryReleasePreceded: p4RecoveryReleasePreceded,
+        priorRecoveryReleaseLine: p4PriorReleaseL ? p4PriorReleaseL.line : null,
+        phase3Engaged: !!p3Engaged, reEngagedAfterLeave: p4ReEngaged,
+        keepAliveLinesAfterLeave: p4NoKeepAliveAfterLeave ? 0 : [p4PostLeaveEngage, p4PostLeaveRelease].filter(Boolean).length,
+        // Record any post-leave released line VERBATIM (informational only — NOT asserted; a
+        // foreground leave has no engaged bridge so a left/gone here would be surprising).
+        postLeaveReleasedLine: p4PostLeaveRelease ? p4PostLeaveRelease.line : null,
+        postLeaveReleasedReason: p4PostLeaveRelease ? releaseReasonOf(p4PostLeaveRelease.line) : null,
+        note: 'FOREGROUND leave: `released reason=left|gone` is STRUCTURALLY IMPOSSIBLE (foregrounding = the readable recovery that releases the bridge BEFORE the Leave click). Assert the foreground-leave invariant: phase-3 recovery release preceded + meet-idle within hysteresis + no re-engage + ZERO keep-alive lines after the click. Any released line recorded verbatim informationally.',
         reason: ok ? undefined
-          : (p4ReleasedMs == null ? 'no released line for the key after Leave (neither reason=left nor reason=gone fired — the Zoom navigation terminator failed to clear the bridge)'
-            : !reasonAccepted ? `release reason was '${p4Reason}' (expected left or gone — the Zoom leave/navigation terminator)`
-              : !idleInHysteresis ? `no meet-idle < ${IDLE_HYSTERESIS_MS}ms after Leave`
-                : 'detector RE-ENGAGED the bridge after Leave (the navigation-off-/wc/ terminator failed to close it) — THE regression'),
+          : (!p4RecoveryReleasePreceded ? 'the phase-3 recovery release did NOT precede the leave AND phase 3 was engaged — the bridge may still have been engaged at leave time (foreground-leave premise broken)'
+            : !idleInHysteresis ? `no meet-idle < ${IDLE_HYSTERESIS_MS}ms after the foreground Leave`
+              : p4ReEngaged ? 'detector RE-ENGAGED the bridge after Leave (the navigation-off-/wc/ terminator failed to close it) — THE regression'
+                : `keep-alive line(s) emitted AFTER the foreground Leave click (bridge was not supposed to be engaged): engage=${p4PostLeaveEngage ? p4PostLeaveEngage.line : 'none'} release=${p4PostLeaveRelease ? p4PostLeaveRelease.line : 'none'}`),
       });
+    }
+
+    // -----------------------------------------------------------------------
+    // PHASE 4b — ENGAGED-END (best-effort PASS-or-SKIP; the REMOTE-END PHANTOM measurement).
+    // The case that CAN legitimately fire released reason=left|gone: BACKGROUND the guest tab
+    // (bridge ENGAGED), then END the meeting from the NATIVE HOST side (via the FIXED
+    // endMeeting()) while the guest tab stays BACKGROUND. The bridge is engaged when the meeting
+    // dies server-side; the backgrounded tab eventually reflects it (label change / navigation)
+    // or stays blind. Assert: the bridge releases via reason=gone OR left OR (if nothing changes
+    // while blind) survives until reactivation → activate the tab → released (ANY reason,
+    // verbatim) + meet-idle within hysteresis + no re-engage. MEASURE the end-to-idle latency —
+    // this is the long-missing C5/G2b remote-end phantom measurement. If the host-side end can't
+    // be driven even with the fixed endMeeting, SKIP with diagnostics (do NOT fail the roll-up).
+    //
+    // NB: phase 4 already LEFT the phases-1..4 meeting foreground. So phase 4b bootstraps its OWN
+    // fresh native-hosted meeting, the same rig Chrome (still on PORT_A, det still live) rejoins
+    // it as a background-able guest, backgrounds, then the host ends it. This keeps phase 5's
+    // fresh-meeting bootstrap untouched.
+    // -----------------------------------------------------------------------
+    {
+      const p4bSkip = (reason, extra) => record('engaged-end', 'SKIP', { reason, ...(extra || {}) });
+      // A fresh native-hosted meeting to remote-end (the phases-1..4 one is already left).
+      const p4bInvite = await bootstrapAndHarvest('phase 4b (engaged-end) — FRESH meeting to remote-end');
+      if (!p4bInvite) {
+        p4bSkip('could not bootstrap/harvest a fresh native-hosted meeting for the remote-end measurement (host app not signed in, New-meeting/⌘I harvest failed)');
+      } else {
+        log(`phase 4b fresh native-hosted meeting invite harvested (${p4bInvite.split('?')[0]})`);
+        // Rejoin as a web guest on the SAME rig Chrome + detector (PORT_A, det still live).
+        const p4bJoined = await joinZoomMeeting(PORT_A, p4bInvite, 'phase 4b — admit the guest');
+        pgA = p4bJoined.page; // re-point pgA at the new in-call tab (teardown Leave-clicks it)
+        log(`phase 4b join result: inCall=${p4bJoined.inCall} url=${p4bJoined.url}`);
+        // Relearn the fresh meeting's wire key (new conference id).
+        const p4bActiveMs = await waitFor(() => zoomActive(det, 0).length > 0, JOIN_TIMEOUT_MS);
+        const p4bWireKey = p4bActiveMs != null ? zoomActive(det, 0).slice(-1)[0].key : null;
+        if (!p4bWireKey) {
+          p4bSkip('phase 4b guest never reached in-call / no fresh Zoom meet-active — cannot measure a remote-end without a live engaged bridge', { inCall: p4bJoined.inCall });
+        } else {
+          // BACKGROUND the tab → the bridge ENGAGES (this is the state the remote-end must catch).
+          const p4bBgStart = Date.now();
+          await tabAway(PORT_A);
+          log('phase 4b: guest tab BACKGROUNDED — expecting engaged reason=tab_present before the host-side end');
+          const p4bEngagedMs = await waitFor(() => !!engagedLine(det, p4bWireKey, p4bBgStart), BG_ENGAGE_TIMEOUT_MS);
+          if (p4bEngagedMs == null) {
+            // No engage = no throttle this run. Without a live engaged bridge there is nothing for
+            // the remote-end to catch (this measurement is specifically about an ENGAGED bridge
+            // catching a server-side end). SKIP with diagnostics rather than fail.
+            p4bSkip('the backgrounded tab did NOT throttle/engage this run — no engaged bridge for the remote-end to catch (Chrome background-throttle is non-deterministic); measurement not applicable this run', { wireKey: p4bWireKey });
+          } else {
+            log(`phase 4b: bridge engaged at +${p4bEngagedMs}ms — now ENDING the meeting from the NATIVE HOST side (tab stays background)`);
+            // END from the host side via the FIXED endMeeting() (quit-confirm fallback handles the
+            // auto-hidden toolbar). The GUEST tab stays BACKGROUND throughout.
+            const p4bEndT0 = Date.now();
+            let hostEnded = false;
+            try { hostEnded = await zoomHost.endMeeting(hostLog); } catch (e) { hostEnded = false; }
+            const p4bReallyIn = typeof zoomHost.reallyInMeeting === 'function' ? zoomHost.reallyInMeeting() : null;
+            log(`phase 4b: host-side endMeeting returned ${hostEnded} (reallyInMeeting=${p4bReallyIn})`);
+            if (!hostEnded && p4bReallyIn) {
+              // The host-side end could not be driven even with the fixed endMeeting → SKIP.
+              p4bSkip('the native host-side end could NOT be driven even with the fixed endMeeting() (reallyInMeeting still true) — cannot produce a server-side end to measure', { wireKey: p4bWireKey, hostEnded, reallyInMeeting: p4bReallyIn });
+            } else {
+              // The meeting is dead server-side. While the tab stays BACKGROUND (blind), watch for
+              // the bridge to release on its OWN (reason=gone/left via the miss-path or a label
+              // change). Give it a generous window — the backgrounded tab is throttled so its next
+              // probe may be seconds out.
+              const p4bReleasedWhileBlindMs = await waitFor(
+                () => !!anyReleasedLine(det, p4bWireKey, p4bEndT0), LONG_HOLD_MS);
+              const p4bBlindReleaseL = anyReleasedLine(det, p4bWireKey, p4bEndT0);
+              const p4bBlindReason = releaseReasonOf(p4bBlindReleaseL && p4bBlindReleaseL.line);
+              log(`phase 4b: while-blind release ${p4bReleasedWhileBlindMs != null ? `landed at +${p4bReleasedWhileBlindMs}ms reason=${p4bBlindReason}` : 'NOT seen within the blind window — tab stayed blind; will reactivate'}`);
+              // Now REACTIVATE the tab. If the bridge already released while blind this is a no-op
+              // for the release assertion; if it survived blind, activation triggers the readable
+              // pass which reads not-in-call → released (left) or the label-revert → released (gone).
+              // The post-end tab may have already NAVIGATED off /wc/ (so tabBack's /wc/ match can
+              // miss) — fall back to bringing the whole browser's first tab forward via CDP, and
+              // never let a navigation-away throw and abort the measurement.
+              await tabBackResilient(PORT_A);
+              log('phase 4b: guest tab REACTIVATED (meeting already dead) — expecting released (any reason) + meet-idle within hysteresis + no re-engage');
+              const p4bReleasedMs = await waitFor(() => !!anyReleasedLine(det, p4bWireKey, p4bEndT0), IDLE_HYSTERESIS_MS + 8_000);
+              const p4bReleasedL = anyReleasedLine(det, p4bWireKey, p4bEndT0);
+              const p4bReason = releaseReasonOf(p4bReleasedL && p4bReleasedL.line);
+              // THE PHANTOM MEASUREMENT: end-to-idle latency (server-side end → meet-idle).
+              const p4bIdleMs = await waitFor(() => idleSince(det, p4bWireKey, p4bEndT0), IDLE_HYSTERESIS_MS + 15_000);
+              const p4bEndToIdleMs = p4bIdleMs != null ? (Date.now() - p4bEndT0) : null; // wall span end→idle-observed
+              // No-re-engage watch after reactivation.
+              const p4bReWatch = Date.now();
+              await sleep(SHORT_HOLD_MS);
+              const p4bReEngaged = !!engagedLine(det, p4bWireKey, p4bReWatch);
+              const idleInHysteresis = p4bIdleMs != null && p4bIdleMs <= IDLE_HYSTERESIS_MS + 15_000;
+              const releasedOk = p4bReleasedMs != null; // ANY reason accepted (gone/left/readable/…)
+              const ok = releasedOk && idleInHysteresis && !p4bReEngaged;
+              if (!ok) anyFail = true;
+              record('engaged-end', ok ? 'PASS' : 'FAIL', {
+                wireKey: p4bWireKey, engagedMs: p4bEngagedMs, hostEnded, reallyInMeeting: p4bReallyIn,
+                releasedWhileBlindMs: p4bReleasedWhileBlindMs, blindReleaseReason: p4bBlindReason,
+                releasedMs: p4bReleasedMs, releasedReason: p4bReason,
+                releasedLine: p4bReleasedL ? p4bReleasedL.line : null,
+                meetIdleObserved: p4bIdleMs != null, idleInHysteresis,
+                // THE REMOTE-END PHANTOM MEASUREMENT (C5/G2b): server-side end → meet-idle latency.
+                remoteEndToIdleMs: p4bEndToIdleMs,
+                releasedWhileStillBlind: p4bReleasedWhileBlindMs != null,
+                reEngagedAfterEnd: p4bReEngaged,
+                note: 'REMOTE-END PHANTOM measurement (C5/G2b): the native host ended the meeting while the guest tab stayed BACKGROUND (bridge ENGAGED). remoteEndToIdleMs = server-side end → meet-idle observed. The engaged bridge is the case that CAN fire released reason=gone|left; ANY release reason is accepted (also readable if the release only landed on reactivation).',
+                reason: ok ? undefined
+                  : (!releasedOk ? 'the engaged bridge NEVER released after the host-side end (neither while blind nor on reactivation) — a genuine phantom keep-alive that outlives the meeting'
+                    : !idleInHysteresis ? 'no meet-idle observed after the host-side remote end (the backgrounded call was not reflected as ended)'
+                      : 'the bridge RE-ENGAGED after the remote end (phantom re-arm on a dead meeting) — THE regression'),
+              });
+            }
+          }
+        }
+      }
     }
 
     // Tear down rig Chrome A + its detector before phase 5. Phase 5 relaunches the SAME
     // persistent profile — Chrome A MUST be fully clean-quit first (serialized: never two
     // Chromes on one profile). Stop the detector, clean-quit A, then WAIT for the profile
-    // lock to clear before relaunching. Also END the phase-1..4 native meeting (fresh one
-    // for phase 5; free tier caps at 40 min so a fresh bootstrap is the norm anyway).
+    // lock to clear before relaunching. Also END any lingering native meeting — phase 4b, if
+    // it ran, already remote-ended the last one, but this is a belt-and-suspenders guard (and
+    // phase 5's own bootstrap has a stale-meeting guard too). Free tier caps at 40 min so a
+    // fresh bootstrap is the norm anyway.
     try { await det.stop(); } catch (e) {}
     det = null;
     try { await chromeA.kill(); } catch (e) {}

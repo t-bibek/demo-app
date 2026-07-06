@@ -243,10 +243,26 @@ export async function admitLoop({ targetCount = 2, waitMs = 90_000 } = {}, log =
 // MUST reliably end, else the meeting keeps running SERVER-side and the NEXT run's
 // "Start new meeting" is blocked by the in-progress modal (recurring live-rig wedge).
 // "End" is a TWO-step flow (End → confirm "End meeting for all"), and the meeting
-// toolbar auto-hides, so raise + retry, then VERIFY the meeting window is gone.
+// toolbar auto-hides, so raise + retry, then VERIFY the meeting is really gone.
+//
+// The named-button fast path is TRIED FIRST but is UNRELIABLE when the meeting toolbar
+// has auto-hidden (the End/Leave control isn't in the AX tree until the toolbar is
+// revealed by mouse motion, which the rig cannot reliably produce). When the fast path
+// can't find the named buttons the meeting stays live and the NEXT bootstrap wedges on
+// the "meeting in progress" modal — and end-of-run teardown leaves a stale native meeting
+// that contaminates the next gate. The QUIT-CONFIRM-MODAL fallback (proven manually in the
+// 2026-07-06 gate) sidesteps the auto-hidden toolbar entirely: QUIT the Zoom app; Zoom then
+// surfaces a "meeting in progress" confirm modal whose named `End meeting for all` button
+// IS in the AX tree (a modal, not the auto-hidden in-call toolbar) — press it via the same
+// pressFirst/ZoomDrive machinery, verify reallyInMeeting() false, then relaunch the app to
+// the signed-in home. This unwedges BOTH the phase-5 bootstrap guard and end-of-run teardown.
 export async function endMeeting(log = () => {}) {
+  // FAST PATH: the named End/Leave two-step on the in-call toolbar (works when the toolbar
+  // is visible). reallyInMeeting() (roster/audio readable, not just a window present) is the
+  // authoritative "still in a meeting" check — meetingWindowPresent() alone stays true on the
+  // post-end green-room/home shell and would falsely report success.
   for (let i = 0; i < 6; i++) {
-    if (!meetingWindowPresent()) return true;
+    if (!reallyInMeeting()) return true;
     drive('raise'); await sleep(400);
     // Open the End/Leave control ON the meeting window (bare "End" substring-matches the
     // Workplace calendar button, so scope to the meeting window and prefer the full
@@ -258,5 +274,31 @@ export async function endMeeting(log = () => {}) {
     await pressFirst(['End meeting for all', 'End Meeting for All', 'Leave meeting', 'Leave', 'Yes'], {}, 1000, log);
     await sleep(1500);
   }
-  return !meetingWindowPresent();
+  if (!reallyInMeeting()) return true;
+
+  // FALLBACK (auto-hidden-toolbar wedge): the named buttons were never findable. QUIT the
+  // Zoom app → the "meeting in progress" confirm modal surfaces a named `End meeting for all`
+  // button (verified live 2026-07-06). Press it, then verify reallyInMeeting() false. Retry a
+  // few times (the quit → modal render can race). Finally relaunch to the signed-in home.
+  log('endMeeting: named End/Leave buttons not findable (auto-hidden toolbar) — QUIT-CONFIRM-MODAL fallback');
+  for (let i = 0; i < 4 && reallyInMeeting(); i++) {
+    // Prefer the ZoomDrive helper if it grows a `quit` verb; else osascript quit zoom.us.
+    const dq = drive('quit');
+    if (!(dq.ok && /QUIT|quit/i.test(dq.out))) {
+      spawnSync('osascript', ['-e', 'tell application "zoom.us" to quit'], { timeout: 15_000 });
+    }
+    await sleep(2500); // let the "meeting in progress" confirm modal render
+    // The confirm modal's ONLY destructive affordance is "End meeting for all" (some builds
+    // label it "End"/"Yes"); press it via the same machinery. It is a modal, so it's in the
+    // AX tree even though the in-call toolbar was auto-hidden.
+    const pressed = await pressFirst(
+      ['End meeting for all', 'End Meeting for All', 'End', 'Yes'], {}, 1200, log);
+    if (pressed) log(`endMeeting: pressed quit-confirm "${pressed}"`);
+    await sleep(2500);
+  }
+  const ended = !reallyInMeeting();
+  log(`endMeeting: quit-confirm fallback ${ended ? 'ended the meeting' : 'did NOT clear the meeting'} (reallyInMeeting=${!ended})`);
+  // Relaunch to the signed-in home so the next bootstrap has a live app to drive.
+  spawnSync('open', ['-b', 'us.zoom.xos']); await sleep(6000);
+  return !reallyInMeeting();
 }
