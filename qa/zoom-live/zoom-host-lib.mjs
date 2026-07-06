@@ -127,16 +127,39 @@ export async function bootstrapMeeting(log = () => {}) {
   await sleep(4000);
   // A PRIOR meeting that never cleanly ended (host client killed without pressing "End
   // meeting for all") keeps running SERVER-side; Zoom then blocks "Start new meeting"
-  // with a "You have a meeting that is currently in-progress" modal. Live evidence
-  // 2026-07-04: this recurs across runs and wedges the whole gate. Recover by REJOINING
-  // that meeting (it is ours) so this run has a live meeting to drive; the finally-block
-  // teardown then ends it for real. Cancel the modal, rejoin via ZOOM_MEETING_URL if we
-  // have one, else press the home "Join meeting".
+  // with a "You have a meeting that is currently in-progress. Please end it to start a new
+  // meeting." modal (whose ONLY button is Cancel — verified live 2026-07-06; there is no
+  // in-modal Return/End affordance). This recurs across back-to-back runs and wedges the
+  // gate. Recovery:
+  //   • ZOOM_MEETING_URL set → REJOIN that meeting (it is ours) so this run has a live
+  //     meeting to drive; the finally-block teardown then ends it for real.
+  //   • no URL → the OLD path pressed the home "Join meeting", which opens an UNFILLABLE
+  //     dialog (no meeting ID) and left the rig stuck there until a false failAll. Instead,
+  //     CANCEL the modal and RETRY "Start new meeting" on a bounded wait loop: a free-tier
+  //     server-side meeting with no participants times out on its own within a few minutes,
+  //     so a fresh start succeeds once it expires. If still blocked after the budget, fail
+  //     cleanly with a clear diagnostic (never leave a wedged Join dialog).
   if (drive('find', 'currently in-progress').ok) {
-    log('prior meeting still in-progress server-side — rejoining it');
-    await pressFirst(['Cancel'], {}, 800, log);
-    if (process.env.ZOOM_MEETING_URL) { spawnSync('open', [process.env.ZOOM_MEETING_URL]); await sleep(6000); await pressFirst(['Join', 'Open Zoom Workplace', 'Open zoom.us'], { args: ['--window', 'Zoom Meeting'] }, 2000, log); }
-    else { await pressFirst(['Join meeting', 'Join Meeting'], {}, 1500, log); }
+    if (process.env.ZOOM_MEETING_URL) {
+      log('prior meeting still in-progress server-side — rejoining via ZOOM_MEETING_URL');
+      await pressFirst(['Cancel'], {}, 800, log);
+      spawnSync('open', [process.env.ZOOM_MEETING_URL]); await sleep(6000);
+      await pressFirst(['Join', 'Open Zoom Workplace', 'Open zoom.us'], { args: ['--window', 'Zoom Meeting'] }, 2000, log);
+    } else {
+      // No URL: cancel + retry a fresh start until the lingering server-side meeting expires.
+      log('prior meeting still in-progress server-side (no ZOOM_MEETING_URL) — waiting for it to expire, then retrying a fresh start');
+      const budgetMs = Number(process.env.ZOOM_INPROGRESS_WAIT_MS || 360_000); // ~6min default
+      const t0 = Date.now();
+      let cleared = false;
+      while (Date.now() - t0 < budgetMs) {
+        await pressFirst(['Cancel'], {}, 800, log);
+        await sleep(20_000); // let the empty server-side meeting age toward its no-host timeout
+        await pressFirst(['Start a new meeting with video on', 'Start new meeting', 'New meeting', 'New Meeting'], {}, 2000, log);
+        await sleep(4000);
+        if (!drive('find', 'currently in-progress').ok) { cleared = true; break; } // fresh start took
+      }
+      if (!cleared) { log('FATAL: prior server-side meeting never expired within the budget — set ZOOM_MEETING_URL to rejoin it, or end it manually'); return false; }
+    }
   }
   await sleep(4000);
   // "Start a new meeting" opens a PREVIEW/green-room dialog whose window title also
