@@ -1,0 +1,38 @@
+{"ok":true,"cmd":"ready","invite":"https://us04web.zoom.us/j/MEETINGID_REDACTED?pwd=PWD_REDACTED","hostProfile":"/Users/bibekthapa/projects/work/demo-app/research/meet-dom-detector/live/.rig-profiles/host","cmdFile":"/Users/bibekthapa/projects/work/demo-app/research/zoom-web/tabaway-captures-2026-07-07/zw-cmd"}
+{"seq":1,"ok":true,"cmd":"boot","result":"measured chrome up"}
+{"seq":2,"ok":true,"cmd":"secondtab","result":"second tab opened+activated: https://app.zoom.us/"}
+{"seq":3,"ok":true,"cmd":"secondtab","result":"second tab opened+activated: https://example.com/"}
+{"seq":4,"ok":true,"cmd":"secondtab","result":"second tab opened+activated: https://en.wikipedia.org/wiki/Zoom_Video_Communications"}
+{"seq":5,"ok":true,"cmd":"label","result":"{\"title\":\"\",\"url\":\"about:blank\"}"}
+{"seq":6,"ok":true,"cmd":"join","result":{"stage":"in-call","url":"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED","title":"Zoom meeting on web"}}
+{"seq":7,"ok":true,"cmd":"label","result":"{\"title\":\"David Thapa's Zoom Meeting\",\"url\":\"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED\"}"}
+{"seq":8,"ok":true,"cmd":"fg","result":"foreground"}
+{"seq":9,"ok":true,"cmd":"rename","result":"info-opened-no-topic-field"}
+{"seq":10,"ok":true,"cmd":"label","result":"{\"title\":\"David Thapa's Zoom Meeting\",\"url\":\"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED\"}"}
+{"seq":11,"ok":true,"cmd":"bg","result":"backgrounded (blank tab activated)"}
+{"seq":12,"ok":true,"cmd":"label","result":"{\"title\":\"David Thapa's Zoom Meeting\",\"url\":\"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED\"}"}
+{"seq":13,"ok":true,"cmd":"audible-guest","result":{"stage":"in-call","fakeMicReady":true}}
+{"seq":14,"ok":true,"cmd":"speak-on","result":"speaking"}
+{"seq":15,"ok":true,"cmd":"bg","result":"backgrounded (blank tab activated)"}
+{"seq":16,"ok":true,"cmd":"audible?","result":"{\"mediaEls\":4,\"anyPlaying\":true}"}
+{"seq":17,"ok":true,"cmd":"label","result":"{\"title\":\"David Thapa's Zoom Meeting\",\"url\":\"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED\"}"}
+{"seq":18,"ok":true,"cmd":"speak-off","result":"silent"}
+{"seq":19,"ok":true,"cmd":"fg","result":"foreground"}
+{"seq":20,"ok":true,"cmd":"min","result":"minimized"}
+{"seq":21,"ok":true,"cmd":"unmin","result":"normal"}
+{"seq":22,"ok":true,"cmd":"fg","result":"foreground"}
+{"seq":23,"ok":true,"cmd":"mute","result":"clicked:mute my microphone"}
+{"seq":24,"ok":true,"cmd":"label","result":"{\"title\":\"David Thapa's Zoom Meeting\",\"url\":\"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED\"}"}
+{"seq":25,"ok":true,"cmd":"mute","result":"already:unmute my microphone"}
+{"seq":26,"ok":true,"cmd":"unmute","result":"clicked:unmute my microphone"}
+{"seq":27,"ok":true,"cmd":"fg","result":"foreground"}
+{"seq":28,"ok":true,"cmd":"leave","result":"clicked-leave"}
+{"seq":29,"ok":true,"cmd":"label","result":"{\"title\":\"Zoom\",\"url\":\"https://app.zoom.us/wc/\"}"}
+{"seq":30,"ok":true,"cmd":"bg","result":"backgrounded (blank tab activated)"}
+{"seq":31,"ok":true,"cmd":"fg","result":"foreground"}
+{"seq":32,"ok":true,"cmd":"join","result":{"stage":"in-call","url":"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED","title":"Zoom meeting on web"}}
+{"seq":33,"ok":true,"cmd":"label","result":"{\"title\":\"David Thapa's Zoom Meeting\",\"url\":\"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED\"}"}
+{"seq":34,"ok":true,"cmd":"bg","result":"backgrounded (blank tab activated)"}
+{"seq":35,"ok":true,"cmd":"fg","result":"foreground"}
+{"seq":36,"ok":true,"cmd":"label","result":"{\"title\":\"David Thapa's Zoom Meeting\",\"url\":\"https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&wpk=WPK_REDACTED&_x_zm_REDACTED\"}"}
+{"seq":37,"ok":true,"cmd":"quit","result":"quit"}

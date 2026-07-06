@@ -1,0 +1,12 @@
+Forcing full a11y tree on: Google Chrome [chrome], Google Chrome [chrome]
+Saw 2 browser/Chrome process(es) — searching web areas across all of them.
+Filtering web areas by --url substring: "app.zoom.us"
+Letting the tree build…
+
+Dumping 1 root(s) → /private/tmp/REDACTED/ax-dumps/...
+
+  • chrome-zoom-web     162 nodes         https://app.zoom.us/wc/MEETINGID_REDACTED/join?un=QA%20Web%20Guest&
+
+Done. Open the .json for full per-node attributes (every AXDOMClassList,
+AXSelected, geometry, etc.); the .txt for a quick read. Diff two snapshots
+across talk/silence to find which per-tile feature moves with speech.

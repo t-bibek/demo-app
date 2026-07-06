@@ -1,0 +1,15 @@
+Forcing full a11y tree on: Google Chrome [chrome], Google Chrome [chrome], Google Chrome [chrome]
+Saw 3 browser/Chrome process(es) — searching web areas across all of them.
+Filtering web areas by --url substring: "app.zoom.us"
+Letting the tree build…
+⚠️  --url "app.zoom.us" matched no web area across 3 Chrome process(es); ignoring the filter.
+⚠️  No meeting tab found — dumping 2 other web area(s), incl. any PIP window.
+
+Dumping 2 root(s) → /private/tmp/REDACTED/ax-dumps/...
+
+  • chrome-other1    1530 nodes         https://github.com/REDACTED-personal-tab
+  • chrome-other2     389 nodes         https://chatgpt.com/REDACTED-personal-tab
+
+Done. Open the .json for full per-node attributes (every AXDOMClassList,
+AXSelected, geometry, etc.); the .txt for a quick read. Diff two snapshots
+across talk/silence to find which per-tile feature moves with speech.

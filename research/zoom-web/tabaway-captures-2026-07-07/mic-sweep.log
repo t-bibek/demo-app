@@ -1,0 +1,6 @@
+00:53:07 LOG watching audio devices: [BlackHole 2ch, MacBook Pro Microphone, Microsoft Teams Audio]
+00:53:07 LOG bubbles root pid: 86214
+00:53:07 MIC_ACTIVE app="zoom.us" bundle="us.zoom.xos" pid=32498
+00:54:46 LOG device "MacBook Pro Microphone" in-use users=[zoom.us (pid 32498), Google Chrome (pid 86499)]
+00:55:04 LOG device "MacBook Pro Microphone" in-use users=[zoom.us (pid 32498), Google Chrome (pid 86499)]
+01:00:31 LOG device "MacBook Pro Microphone" in-use users=[zoom.us (pid 32498), Google Chrome (pid 86499)]

@@ -1,0 +1,15 @@
+Forcing full a11y tree on: Google Chrome [chrome], Google Chrome [chrome], Google Chrome [chrome]
+Saw 3 browser/Chrome process(es) — searching web areas across all of them.
+Letting the tree build…
+
+Dumping 5 root(s) → /private/tmp/REDACTED/ax-dumps/...
+
+  • chrome-window-Google Chrome-pid89036-1      60 nodes         Feature/active speaker integration by t-bibek · Pull Request
+  • chrome-window-Google Chrome-pid89036-2      50 nodes         Report Design Feedback - Google Chrome - Bibek (Bibek922) mi
+  • chrome-window-Google Chrome-pid86305-1      14 nodes         Restore pages? minimized=false
+  • chrome-window-Google Chrome-pid86305-2      63 nodes         about:blank - Google Chrome - Bibek922 minimized=false
+  • chrome-window-Google Chrome-pid86824-1      49 nodes         David Thapa's Zoom Meeting - Google Chrome minimized=false
+
+Done. Open the .json for full per-node attributes (every AXDOMClassList,
+AXSelected, geometry, etc.); the .txt for a quick read. Diff two snapshots
+across talk/silence to find which per-tile feature moves with speech.
