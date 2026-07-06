@@ -1391,6 +1391,22 @@ async function runRingContinuity() {
 // Runs ONE guest session; within it, two detector legs back-to-back on the same
 // call: main (MSD_TEAMS_WAKE default on) then control (MSD_TEAMS_WAKE=0). Both use
 // the SAME 6×(5s-on/5s-off) flip script + a >=30s trailing silence window.
+//
+// WALK-STATS FLUSH (rig defect fix 2026-07-06): the product only emits
+// meet_walk_stats on the MSD_RUN_SECONDS auto-exit (or every 600 passes). Earlier
+// this leg started the detector with MSD_RUN_SECONDS=1800 and then SIGKILLed it at
+// ~93s (script end), so walk-stats NEVER flushed → analyzeWakeAccel read
+// teams_wakes=null → counterOk false → the leg could never pass. Remedy: size
+// MSD_RUN_SECONDS to the actual leg duration so the detector AUTO-EXITS and flushes
+// walk-stats right after the script; the driver then `await det.done` (auto-exit)
+// instead of killing first. Kept below-1800 so we don't wait 30m; a modest kill
+// safety margin (WAKE_LEG_KILL_MARGIN_MS) guards against a stuck exit.
+//   MAIN leg  = raise/settle(~1s) + 6×10s flips (60s) + silence(32s)          ≈ 93s
+//   CTRL leg  = same script (93s) preceded by meeting/guest re-establish waits.
+const WAKE_LEG_SCRIPT_SECS = 1 + (6 * 10) + 32;                  // ≈ 93s of driven script
+const WAKE_MAIN_RUN_SECONDS = WAKE_LEG_SCRIPT_SECS + 20;         // MAIN: script + flush margin (~113s)
+const WAKE_CTRL_RUN_SECONDS = WAKE_LEG_SCRIPT_SECS + 150;        // CTRL: + re-establish waits (~243s)
+const WAKE_LEG_KILL_MARGIN_MS = 45_000;                          // safety kill after the auto-exit window
 async function runWakeAccelLeg(det, page, { silenceSecs = 32 } = {}) {
   const flips = [];
   drive('raise'); await sleep(1000);
@@ -1410,6 +1426,19 @@ async function runWakeAccelLeg(det, page, { silenceSecs = 32 } = {}) {
   return { flips, silenceWindow: { start: silenceStart, end: silenceEnd } };
 }
 
+// Wait for the detector to AUTO-EXIT (so it flushes its final meet_walk_stats line),
+// SIGKILLing only if it overruns `marginMs` past the expected auto-exit — a stuck
+// exit must never wedge the leg. Returns true if it exited on its own (stats flushed).
+async function drainDetectorExit(det, marginMs = WAKE_LEG_KILL_MARGIN_MS) {
+  let exited = false;
+  det.done.then(() => { exited = true; });
+  const t0 = Date.now();
+  while (!exited && Date.now() - t0 < marginMs) await sleep(500);
+  if (!exited) { log('wake-accel: detector did not auto-exit within the flush margin — SIGKILL (walk-stats may be missing)'); det.kill(); }
+  await det.done;
+  return exited;
+}
+
 async function runWakeAccel() {
   const SC = 'teams-wake-accel';
   requireProductBin(SC);
@@ -1418,8 +1447,10 @@ async function runWakeAccel() {
   if (!prebuild()) { record(SC, 'FAIL', { reason: 'TeamsDrive missing' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
   if (!preflightAxTrust()) { record(SC, 'FAIL', { reason: 'Accessibility permission not granted' }); console.log('TEAMS LIVE SESSION COMPLETE'); process.exit(1); }
 
-  // MAIN leg detector (wake ON by default). Long enough for flips + silence.
-  const detMain = startDetector(1800, { MSD_RING_TRACE: '1' });
+  // MAIN leg detector (wake ON by default). MSD_RUN_SECONDS sized to the leg script
+  // so the detector AUTO-EXITS after the flips+silence and FLUSHES meet_walk_stats
+  // (teams_wakes readable). See WAKE_MAIN_RUN_SECONDS note above.
+  const detMain = startDetector(WAKE_MAIN_RUN_SECONDS, { MSD_RING_TRACE: '1' });
   let chromeGuest = null;
   let mainResult = null, ctrlResult = null;
   try {
@@ -1430,7 +1461,9 @@ async function runWakeAccel() {
     // --- MAIN leg ---
     log(`${SC}: MAIN leg (MSD_TEAMS_WAKE default on)`);
     const mainLeg = await runWakeAccelLeg(detMain, page);
-    detMain.kill(); await detMain.done;
+    // AUTO-EXIT drain (not kill-first): lets the detector flush its final walk-stats.
+    const mainFlushed = await drainDetectorExit(detMain);
+    log(`${SC}: MAIN leg detector ${mainFlushed ? 'auto-exited (walk-stats flushed)' : 'was force-killed (walk-stats may be missing)'}`);
     const mainWake = parseWakeLines(detMain.stderrLines);
     mainResult = analyzeWakeAccel({
       wake: mainWake, events: detMain.events, walkStats: lastWalkStats(detMain),
@@ -1439,13 +1472,18 @@ async function runWakeAccel() {
 
     // --- CONTROL leg (same call still live; fresh detector with the kill switch) ---
     log(`${SC}: CONTROL leg (MSD_TEAMS_WAKE=0)`);
-    const detCtrl = startDetector(1800, { MSD_RING_TRACE: '1', MSD_TEAMS_WAKE: '0' });
+    // CTRL run-seconds includes headroom for the meeting/guest re-establish waits
+    // that precede the script, so it too AUTO-EXITS and flushes walk-stats.
+    const detCtrl = startDetector(WAKE_CTRL_RUN_SECONDS, { MSD_RING_TRACE: '1', MSD_TEAMS_WAKE: '0' });
+    let ctrlFlushed = false;
     try {
       // Re-establish the meeting for the fresh detector, then re-run the same script.
       await waitEvent(detCtrl, (e) => e.type === 'meeting_initialized' && isTeamsProd(e), 60_000, 'ctrl meeting_initialized');
       await waitEvent(detCtrl, (e) => e.type === 'participant_joined' && isTeamsProd(e) && e.name === GUEST_NAME, 60_000, 'ctrl guest');
       await runWakeAccelLeg(detCtrl, page);
+      ctrlFlushed = await drainDetectorExit(detCtrl);
     } finally { detCtrl.kill(); await detCtrl.done; }
+    log(`${SC}: CONTROL leg detector ${ctrlFlushed ? 'auto-exited (walk-stats flushed)' : 'force-killed'}`);
     const ctrlWake = parseWakeLines(detCtrl.stderrLines);
     ctrlResult = analyzeWakeControl({
       wake: ctrlWake, events: detCtrl.events, walkStats: lastWalkStats(detCtrl), onsetName: GUEST_NAME,
