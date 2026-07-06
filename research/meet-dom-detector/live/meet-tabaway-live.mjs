@@ -827,6 +827,15 @@ async function runTabAway() {
     const p2Speaks = speakingSince(det, code, p2Start);
     const p2EmptyRelease = p2Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length === 0);
     const p2NonEmptyAfterRelease = p2Speaks.some((s) => Array.isArray(s.speakers) && s.speakers.length > 0);
+    // SOLO-MEETING GUARD: the wire emits `speaking` only on set CHANGES. In a solo
+    // hosted Meet nobody ever speaks, so there is no non-empty set to release and no
+    // empty release will ever arrive — the release assertion only binds when someone
+    // actually spoke BEFORE the hold (the drain-to-[] behavior itself is selftest-
+    // proven via the confidence-decay release policy).
+    const p2SinceHold = new Set(p2Speaks);
+    const p2PreHoldSpoke = speakingSince(det, code, 0)
+      .some((s) => !p2SinceHold.has(s) && Array.isArray(s.speakers) && s.speakers.length > 0);
+    const p2ReleaseOk = p2PreHoldSpoke ? p2EmptyRelease : true;
     // (c) Activate the Meet tab — STILL in-call, so the live tree returns → reason=readable.
     const p2RecoverStart = Date.now();
     await tabBack(PORT_A);
@@ -839,13 +848,14 @@ async function runTabAway() {
     const p2IdleAfterRecover = idleSince(det, code, p2RecoverStart);
     {
       const aOk = p2EngagedMs != null && p2EngagedL != null;
-      const bOk = !p2IdleDuringHold && p2EmptyRelease && !p2NonEmptyAfterRelease;
+      const bOk = !p2IdleDuringHold && p2ReleaseOk && !p2NonEmptyAfterRelease;
       const cOk = p2ReadableMs != null && p2RecoverActive != null && !p2IdleAfterRecover;
       const ok = aOk && bOk && cOk;
       if (!ok) anyFail = true;
       record('bg-throttle-cycle', ok ? 'PASS' : 'FAIL', {
         code, engagedMs: p2EngagedMs, engagedLine: p2EngagedL ? p2EngagedL.line : null,
         meetIdleDuringHold: p2IdleDuringHold, emptySpeakingRelease: p2EmptyRelease,
+        preHoldSpoke: p2PreHoldSpoke,
         speakingChurnAfterRelease: p2NonEmptyAfterRelease, speakingEvents: p2Speaks.length,
         releasedReadableMs: p2ReadableMs, releasedLine: p2ReadableL ? p2ReadableL.line : null,
         recoveredMeetActive: p2RecoverActive != null, meetIdleAfterRecover: p2IdleAfterRecover,
@@ -930,7 +940,13 @@ async function runTabAway() {
         const p3IdleMs = await waitFor(() => idleSince(det, code, p3EndStart), IDLE_HYSTERESIS_MS + 5_000);
 
         const aOk = p3EngagedMs != null && p3EngagedL != null;
-        const bOk = !p3IdleDuringHold && p3EmptyRelease && !p3NonEmptyAfterRelease;
+        // Same solo-meeting guard as phase 2: the release assertion binds only when
+        // someone spoke before the blindness began.
+        const p3SinceHold = new Set(p3Speaks);
+        const p3PreHoldSpoke = speakingSince(det, code, 0)
+          .some((s) => !p3SinceHold.has(s) && Array.isArray(s.speakers) && s.speakers.length > 0);
+        const p3ReleaseOk = p3PreHoldSpoke ? p3EmptyRelease : true;
+        const bOk = !p3IdleDuringHold && p3ReleaseOk && !p3NonEmptyAfterRelease;
         const cOk = p3ReleasedMs != null && p3IdleMs != null && p3IdleMs <= IDLE_HYSTERESIS_MS;
         const ok = aOk && bOk && cOk;
         if (!ok) anyFail = true;
@@ -973,21 +989,29 @@ async function runTabAway() {
     log('phase4: Meet tab activated (still in-call) — expecting released reason=readable');
     const p4ReadableMs = await waitFor(() => !!releasedLine(det, code, p4RecoverStart, 'readable'), IDLE_HYSTERESIS_MS + 8_000);
     {
-      // The bridge must have ENGAGED and held with ZERO meet-idle across 2 minutes, and
-      // recovered cleanly on activation. A meet-idle during the hold is always a FAIL.
-      const engagedOk = !!p4Engaged;
+      // A meet-idle during the hold is ALWAYS a FAIL (the load-bearing invariant).
+      // Whether the bridge engages depends on Chrome's background-throttle heuristic
+      // actually firing — measured non-deterministic (fired run 1, not run 2 on
+      // 2026-07-06). So: throttled → require engage + readable recovery; NOT
+      // throttled → the tab stayed readable, nothing to bridge — require zero idle
+      // and zero stray keep-alive lines instead. Phase 2 carries the deterministic
+      // engage proof (a fresh background always throttles within its window there).
+      const throttled = !!p4Engaged;
       const noIdleOk = !p4Idle;
       const recoverOk = p4ReadableMs != null;
-      const ok = engagedOk && noIdleOk && recoverOk;
+      const strayRelease = stderrSince(det, p4Start).find((l) => l.line.includes('meet-keepalive: released'));
+      const ok = throttled ? (noIdleOk && recoverOk) : (noIdleOk && !strayRelease);
       if (!ok) anyFail = true;
       record('longer-hold', ok ? 'PASS' : 'FAIL', {
-        code, holdMs: LONG_HOLD_MS, engagedMs: p4EngagedMs, engagedLineSeen: engagedOk,
+        code, holdMs: LONG_HOLD_MS, engagedMs: p4EngagedMs, throttled,
         meetIdleDuringHold: p4Idle, releasedReadableMs: p4ReadableMs,
-        note: 'sustained background-throttle hold: bridge engages, holds 2 min with zero idle, recovers readable on activation',
+        note: throttled
+          ? 'sustained background-throttle hold: bridge engaged, held 2 min with zero idle, recovered readable on activation'
+          : 'no-throttle-this-run: Chrome kept the backgrounded tab readable; nothing to bridge — zero-idle invariant held (engage proof carried by phase 2)',
         reason: ok ? undefined
-          : (!engagedOk ? 'bridge did NOT engage during the sustained background hold (tab did not throttle)'
-            : !noIdleOk ? 'meet-idle emitted during the sustained 2-minute background hold (call falsely ended)'
-              : 'no released reason=readable after activating the still-in-call tab'),
+          : (!noIdleOk ? 'meet-idle emitted during the sustained 2-minute background hold (call falsely ended)'
+            : throttled ? 'no released reason=readable after activating the still-in-call tab'
+              : `stray keep-alive release without an engage during an un-throttled hold: ${strayRelease ? strayRelease.line : ''}`),
       });
     }
 
