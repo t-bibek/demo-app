@@ -724,15 +724,36 @@ async function clickLeave(pg) {
 // ===========================================================================
 // Assertion helpers over the captured detector streams.
 //
-// THE WIRE KEY is LEARNED from the first Microsoft-Teams meet-active (it is the
-// normalized URL for a consumer teams.live.com/v2 meeting, NOT an id-shaped key). The
-// STDERR keep-alive key is `teams:<wireKey>` (keyPrefix re-adds the prefix). Both are
-// carried per-phase so an assertion never assumes a key shape.
+// THE WIRE KEY is LEARNED from the first WEB-shaped Microsoft-Teams meet-active. Its
+// shape depends on the meeting URL (stableMeetingKey, shared/MeetingKey.swift):
+//   • WORK meetup-join (teams.microsoft.com .../meetup-join/... — this gate's scope):
+//     the URL carries the `19:meeting_…@thread.v2` conversation id (or a meetup-join id),
+//     so the wire key is ALREADY `teams:19:meeting_…@thread.v2` (id-bearing, `teams:`-
+//     prefixed). stderrKeyFor must NOT re-add the prefix (below).
+//   • consumer teams.live.com/v2: no extractable id → stableMeetingKey falls through to
+//     normalizedBrowserURL → the wire key is the bare normalized URL (no `teams:`).
+// Either way the STDERR keep-alive key is `teams:` + (wireKey with any `teams:` stripped)
+// — i.e. it equals the wireKey verbatim when the wireKey already carries the prefix.
+//
+// NATIVE CO-RESIDENT KEY (Zoom run-1 lesson / trap #7): the native Teams app
+// (com.microsoft.teams2) is co-resident on this box and emits on the SAME unified wire
+// as a NATIVE detection with key `Microsoft Teams|com.microsoft.teams2` (kind="native").
+// The consumer run latched THAT key. This gate is the WEB bridge — filter to WEB-shaped
+// keys ONLY: kind==="browser" (the meet-active wire event carries `kind`) AND never the
+// native `<platform>|<bundle>` key.
 // ===========================================================================
 const isTeams = (e) => e && e.platform === 'Microsoft Teams';
-// The first Teams meet-active's key IS the wire key the monitor diffs on.
+const NATIVE_TEAMS_KEY = 'Microsoft Teams|com.microsoft.teams2';
+// A WEB-shaped Teams meeting key: emitted by a browser detection (kind==="browser"),
+// never the native `<platform>|<bundle>` key. For work-Teams it is `teams:19:meeting_…`;
+// for consumer teams.live.com it is the normalized URL. The pipe-bearing native key and
+// the `teams:`-prefix / URL shape are mutually exclusive, so the kind guard is the
+// primary filter and the explicit native-key reject is belt-and-suspenders.
+const isWebTeamsKey = (e) => e.kind === 'browser' && e.key !== NATIVE_TEAMS_KEY;
+// The first WEB Teams meet-active's key IS the wire key the monitor diffs on — NEVER the
+// co-resident native key.
 const teamsActive = (det, sinceTs) =>
-  det.events.filter((e) => e.event === 'meet-active' && isTeams(e) && (sinceTs == null || e.ts >= sinceTs));
+  det.events.filter((e) => e.event === 'meet-active' && isTeams(e) && isWebTeamsKey(e) && (sinceTs == null || e.ts >= sinceTs));
 const eventsForKey = (det, wireKey, sinceTs) =>
   det.events.filter((e) => e.key === wireKey && (sinceTs == null || e.ts >= sinceTs));
 const stderrSince = (det, sinceTs) => det.stderrLines.filter((l) => sinceTs == null || l.ts >= sinceTs);
@@ -743,9 +764,14 @@ const activeSince = (det, wireKey, sinceTs) =>
 const speakingSince = (det, wireKey, sinceTs) =>
   eventsForKey(det, wireKey, sinceTs).filter((e) => e.event === 'speaking');
 
-// The REAL engage line (TabAwayBridge.swift:76-77): reason is ALWAYS tab_present, key is
-// teams:<wireKey>. The stderr key = `teams:` + the wire key (keyPrefix re-added).
-const stderrKeyFor = (wireKey) => `teams:${wireKey}`;
+// The REAL engage/release line key. The keep-alive adapter (TeamsTabAway.swift:119-130)
+// derives its memory key = stableMeetingKey with any leading `teams:` STRIPPED, and
+// keyPrefix ("teams:") re-adds it for the logged line. So the logged key ==
+// `teams:` + (wireKey minus a leading `teams:`). For a WORK meetup-join wire key
+// (`teams:19:meeting_…`) that yields the wireKey VERBATIM — re-adding blindly would
+// double-prefix (`teams:teams:…`) and NEVER match. For a consumer bare-URL wire key
+// (no prefix) it prepends `teams:` as before. This prefix-aware form is correct for BOTH.
+const stderrKeyFor = (wireKey) => (wireKey.startsWith('teams:') ? wireKey : `teams:${wireKey}`);
 const engagedLine = (det, wireKey, sinceTs) => stderrSince(det, sinceTs).find((l) =>
   l.line.includes(`teams-keepalive: engaged key=${stderrKeyFor(wireKey)}`) && l.line.includes('reason=tab_present'));
 // The REAL release line (TabAwayBridge.swift:81-82) for a specific reason literal.
@@ -863,8 +889,8 @@ async function runTabAway() {
       record('detect', verdict, {
         wireKey, stderrKey: stderrKeyFor(wireKey), platform: act.platform,
         meetActiveMs: p1ActiveMs, self: act.self, inCall: joined.inCall,
-        micActiveHintSeen: micActive != null, title: act.title,
-        note: 'teamsWebProbe surfaces on the UNIFIED wire as meet-active platform="Microsoft Teams"; wire key is the normalized teams.live.com URL (no teams: prefix), stderr keep-alive key is teams:<wireKey>',
+        micActiveHintSeen: micActive != null, title: act.title, kind: act.kind,
+        note: 'teamsWebProbe surfaces on the UNIFIED wire as a BROWSER meet-active platform="Microsoft Teams" (never the co-resident native key); for a WORK meetup-join URL the wire key is teams:<19:meeting_…@thread.v2>, and the stderr keep-alive key equals it verbatim (prefix-aware)',
       });
     }
 
