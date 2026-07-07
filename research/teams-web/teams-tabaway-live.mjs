@@ -717,16 +717,27 @@ async function tabBack(port) {
   await pg.cmd('Page.bringToFront');
   return pg;
 }
-// Click Leave in the Teams web UI (sweep's leave selector). Must be foreground.
+// Click Leave in the Teams web UI. WORK teams.microsoft.com labels the control
+// aria-label/innerText "Leave"; the CONSUMER teams.live.com/v2 hangup is the same
+// control the G2e detector gates on — AXDescription=="Leave" with NO AXTitle, OR
+// AXDOMIdentifier=="hangup-button" (24df29a11d). In DOM terms that surfaces as
+// title/aria-label "Leave" (often with empty innerText) OR id/data-tid "hangup-button"
+// / "hangup". The original selector only read aria-label+innerText and missed the
+// consumer control (returned no-leave → the call never ended → phase 4/5 false-FAIL).
+// This adds the title attr + the hangup id/data-tid fallbacks. Must be foreground.
 async function clickLeave(pg) {
   driverLog('clickLeave');
   try { await pg.cmd('Page.bringToFront'); } catch (e) {}
   return pg.evalJs(`(() => {
-    const els = [...document.querySelectorAll('button,[role="button"],[data-tid]')];
-    const el = els.find(e => /^leave$|leave meeting|hang up/i.test(((e.getAttribute('aria-label')||'') + ' ' + (e.innerText||'')).trim()));
+    const els = [...document.querySelectorAll('button,[role="button"],[data-tid],[id]')];
+    const labelOf = (e) => ((e.getAttribute('aria-label')||'') + ' ' + (e.getAttribute('title')||'') + ' ' + (e.innerText||'')).trim();
+    // 1) Text/label match (work + consumer aria-label/title "Leave").
+    let el = els.find(e => /^leave$|leave meeting|hang up/i.test(labelOf(e)));
+    // 2) Consumer id/data-tid hangup fallback (empty-text hang-up button).
+    if (!el) el = els.find(e => /hangup-button|^hangup$/i.test(((e.id||'') + ' ' + (e.getAttribute('data-tid')||'')).trim()));
     if (!el) return 'no-leave';
     el.click();
-    return (el.getAttribute('aria-label')||el.innerText||'').trim().slice(0,40);
+    return (labelOf(el) || el.id || el.getAttribute('data-tid') || '').trim().slice(0,40) || 'clicked-hangup';
   })()`, 8_000);
 }
 
@@ -1101,41 +1112,54 @@ async function runTabAway() {
 
     // -----------------------------------------------------------------------
     // PHASE 4 — LEAVE-ENDS (load-bearing regression): tab FOREGROUND, click Leave via the
-    // Teams web UI. For Teams the post-leave tab LABEL is UNCHANGED (sweep T6/T7), so the
-    // readable-not-in-call clear (reason=left) is THE load-bearing end path — the label
-    // alone can't tell left from in-call; only the readable-not-in-call web-area read
-    // clears the bridge. ASSERT meet-idle < hysteresis AND released reason=left, and NO
-    // re-engage in the following 30s.
+    // Teams web UI. For Teams the post-leave tab LABEL is UNCHANGED (sweep T6/T7), so a
+    // LABEL-ONLY keep-alive would falsely re-engage; the readable-not-in-call web-area read
+    // is what actually clears the bridge. The END SIGNAL here is meet-idle within
+    // hysteresis; the load-bearing REGRESSION guard is: NO illegal re-engage after the leave.
+    //
+    // TRAP #3 (playbook): a FOREGROUND leave can NEVER fire `released reason=left`. The
+    // keep-alive bridge only emits a `released` line for a key it previously ENGAGED, and a
+    // FOREGROUND/readable tab is never engaged (phases 2/3/5 engage on BACKGROUND). So the
+    // bridge is quiescent through phase 4 and the meeting ends via the normal readable
+    // detection path (meet-idle), NOT a keep-alive release. Requiring `released reason=left`
+    // on a foreground leave is structurally unsatisfiable — this is EXACTLY what the Meet
+    // reference driver (meet-tabaway-live.mjs) encodes: its leave phase PASSes on meet-idle
+    // OR released∈{left,mic_idle}, never AND-requiring the release. We match that shape:
+    //   endSignal = meet-idle < hysteresis  OR  released reason=left (if the bridge WAS
+    //   engaged, e.g. a race left it engaged) — either proves the end landed.
+    // The genuine regression this phase gates is the label-only re-engage, asserted below.
     // -----------------------------------------------------------------------
     await drainBoundary(det, wireKey, p3RecoverStart, !!p3Engaged, 'phase3→4');
     await tabBack(PORT_A);      // Teams tab foreground so the Leave click registers
     await sleep(1500);
     const p4Start = Date.now();
     const leaveRes = await clickLeave(pgA);
-    log(`phase4 (leave-ends): Leave clicked (${leaveRes}) — expecting released reason=left + meet-idle < ${IDLE_HYSTERESIS_MS / 1000}s and no re-engage`);
-    const p4LeftMs = await waitFor(() => !!releasedLine(det, wireKey, p4Start, 'left'), IDLE_HYSTERESIS_MS + 8_000);
+    log(`phase4 (leave-ends): Leave clicked (${leaveRes}) — expecting meet-idle < ${IDLE_HYSTERESIS_MS / 1000}s (foreground leave: no engaged bridge to release; trap #3) and NO re-engage`);
+    const p4IdleMs = await waitFor(() => idleSince(det, wireKey, p4Start), IDLE_HYSTERESIS_MS + 8_000);
+    // A released reason=left is TOLERATED-if-present (a race could leave the bridge engaged
+    // across the leave) but NOT required — the reference driver's OR shape.
+    const p4LeftMs = releasedLine(det, wireKey, p4Start, 'left') ? 1 : null;
     const p4LeftL = releasedLine(det, wireKey, p4Start, 'left');
-    const p4IdleMs = await waitFor(() => idleSince(det, wireKey, p4Start), IDLE_HYSTERESIS_MS + 5_000);
-    // Watch a further 30s for an ILLEGAL re-engage (the regression: the tab label is
-    // UNCHANGED post-leave, so a label-only keep-alive would re-engage).
+    // Watch a further 30s for an ILLEGAL re-engage (THE regression: the tab label is
+    // UNCHANGED post-leave, so a label-only keep-alive would re-engage on a dead call).
     const reEngageWatchStart = Date.now();
     await sleep(SHORT_HOLD_MS);
     const p4ReEngaged = !!engagedLine(det, wireKey, reEngageWatchStart);
     {
       const idleInHysteresis = p4IdleMs != null && p4IdleMs <= IDLE_HYSTERESIS_MS;
-      // The load-bearing assertion: released reason=left is REQUIRED (the readable-not-in-
-      // call clear is THE Teams end path). meet-idle within hysteresis is also required.
-      const ok = p4LeftMs != null && idleInHysteresis && !p4ReEngaged;
+      // End signal = meet-idle within hysteresis OR a released reason=left (reference-driver
+      // OR shape). The load-bearing regression assertion is NO re-engage after the leave.
+      const endSignal = idleInHysteresis || p4LeftMs != null;
+      const ok = endSignal && !p4ReEngaged;
       if (!ok) anyFail = true;
       record('leave-ends', ok ? 'PASS' : 'FAIL', {
         wireKey, meetIdleMs: p4IdleMs, idleInHysteresis,
         releasedLeftMs: p4LeftMs, releasedLine: p4LeftL ? p4LeftL.line : null,
         reEngagedAfterLeave: p4ReEngaged,
-        note: 'Teams post-leave tab label is UNCHANGED, so released reason=left (readable-not-in-call clear) is THE load-bearing end path',
+        note: 'foreground leave: bridge never engaged (trap #3) so meet-idle — not a keep-alive release — is the end signal; the load-bearing guard is NO label-only re-engage post-leave',
         reason: ok ? undefined
-          : (p4LeftMs == null ? 'no released reason=left after Leave (the readable-not-in-call clear did NOT fire — THE load-bearing Teams end path failed)'
-            : !idleInHysteresis ? `no meet-idle < ${IDLE_HYSTERESIS_MS}ms after Leave`
-              : 'detector RE-ENGAGED the bridge after Leave (label unchanged post-leave — the readable-not-in-call clear failed to close it) — THE regression'),
+          : (!endSignal ? `no meet-idle < ${IDLE_HYSTERESIS_MS}ms and no released reason=left after Leave (the call did not end)`
+            : 'detector RE-ENGAGED the bridge after Leave (label unchanged post-leave — the readable-not-in-call clear failed to close it) — THE regression'),
       });
     }
 
