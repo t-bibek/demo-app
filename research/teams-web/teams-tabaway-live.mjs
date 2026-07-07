@@ -113,6 +113,14 @@
 //                            anonymous guest, admitted from the native lobby. Assert the
 //                            detector emits a Microsoft-Teams meet-active (the teams wire
 //                            equivalent) for the learned teams key + LEARN the wire key.
+//   1b key-stability       — FOREGROUND: open the People panel via CDP (the roster
+//                            control), wait ~5s, assert the wire key did NOT change (no
+//                            meet-active on a DIFFERENT web-Teams key, no meet-idle for
+//                            the original); close the panel, same assertion. Gates the
+//                            G2f meeting-split fix: the consumer SPA prefixes `People | `
+//                            onto the in-call title when the panel opens, so a title-key
+//                            that kept the prefix would split the meeting mid-call. The
+//                            fix keys on the LAST title segment (panel-prefix-proof).
 //   2  bg-throttle-cycle   — CANONICAL: background the web tab (PUT tab-away → the
 //                            renderer throttles → the teams.live.com/v2 AXWebArea goes
 //                            blind) → assert `teams-keepalive: engaged … reason=tab_present`
@@ -131,9 +139,9 @@
 //                            mic=unknown, 30s hold, reactivate → released reason=readable,
 //                            then leave → meet-idle.
 //
-// Roll-up PASS = all five (phase-3's no-throttle branch tolerated). Persist raw logs per
-// run like the Meet v3.3 driver. Baked-in discipline: every wait is a bounded blocking
-// poll (no monitors); boundary drains between all phases; results append-only.
+// Roll-up PASS = all phases (1, 1b, 2-5; phase-3's no-throttle branch tolerated). Persist
+// raw logs per run like the Meet v3.3 driver. Baked-in discipline: every wait is a bounded
+// blocking poll (no monitors); boundary drains between all phases; results append-only.
 // ---------------------------------------------------------------------------
 'use strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -258,8 +266,9 @@ function record(phase, verdict, detail) {
   log(`RESULT ${phase}: ${verdict}` + (detail && detail.reason ? ` — ${detail.reason}` : ''));
 }
 
-// Aggregate roll-up: PASS iff ALL five phases passed. There are NO optional phases in
-// this Teams-web gate (unlike Meet's discard/mp-remote-end SKIP-tolerant phases). A
+// Aggregate roll-up: PASS iff ALL phases passed (1, 1b key-stability, 2-5). There are NO
+// optional phases in this Teams-web gate (unlike Meet's discard/mp-remote-end SKIP-tolerant
+// phases). A
 // phase-3 no-throttle run still records PASS from its tolerance branch (below), so it
 // never SKIPs. Written LAST under the bare `teams-tabaway-live` scenario id so
 // live-scenario-verdict.mjs gates on it.
@@ -721,6 +730,29 @@ async function clickLeave(pg) {
   })()`, 8_000);
 }
 
+// Toggle the People (roster/Attendees) panel in the Teams web UI — the exact control
+// the sweep exercises and the G2e detector's `AXOutline desc="Attendees"` outline gates
+// on. Consumer teams.live.com/v2 labels it aria-label/title/innerText "People" (matches
+// the fixture `AXButton desc="People"`), often with a data-tid/id "roster-button".
+// Clicking it OPENS the panel (which is when the SPA PREFIXES `People | ` onto the
+// AXWebArea title — the mid-call meeting-split hazard this phase-1b step guards). A
+// second click CLOSES it. Must be foreground (the click has to register).
+async function togglePeoplePanel(pg) {
+  driverLog('togglePeoplePanel');
+  try { await pg.cmd('Page.bringToFront'); } catch (e) {}
+  return pg.evalJs(`(() => {
+    const els = [...document.querySelectorAll('button,[role="button"],[data-tid],[id]')];
+    const labelOf = (e) => ((e.getAttribute('aria-label')||'') + ' ' + (e.getAttribute('title')||'') + ' ' + (e.innerText||'')).trim();
+    // 1) Text/label match ("People", "Show participants", "Participants").
+    let el = els.find(e => /^people$|show participants|^participants$|hide participants/i.test(labelOf(e)));
+    // 2) id/data-tid roster fallback (the sweep's control identifier).
+    if (!el) el = els.find(e => /roster-button|people-button|^roster$|participants/i.test(((e.id||'') + ' ' + (e.getAttribute('data-tid')||'')).trim()));
+    if (!el) return 'no-people-control';
+    el.click();
+    return (labelOf(el) || el.id || el.getAttribute('data-tid') || '').trim().slice(0,40) || 'clicked-roster';
+  })()`, 8_000);
+}
+
 // ===========================================================================
 // Assertion helpers over the captured detector streams.
 //
@@ -817,9 +849,9 @@ async function drainBoundary(det, wireKey, sinceTs, wasEngaged, label) {
 }
 
 // ===========================================================================
-// Main scenario. Five phases; every wait is a bounded blocking poll; boundary drains
-// between all phases; results append-only. Roll-up PASS = all five PASS (phase-3's
-// no-throttle branch tolerated).
+// Main scenario. Phases 1, 1b (key-stability), 2-5; every wait is a bounded blocking poll;
+// boundary drains between all phases; results append-only. Roll-up PASS = all PASS
+// (phase-3's no-throttle branch tolerated).
 // ===========================================================================
 async function runTabAway() {
   // APPEND semantics (zoom-wake lesson): seed an empty results file ONLY if none exists;
@@ -896,12 +928,70 @@ async function runTabAway() {
 
     // Guard: without a learned wire key the remaining phases cannot assert. Fail them fast.
     if (!wireKey) {
-      for (const ph of ['bg-throttle-cycle', 'longer-hold', 'leave-ends', 'cap-only']) {
+      for (const ph of ['key-stability', 'bg-throttle-cycle', 'longer-hold', 'leave-ends', 'cap-only']) {
         record(ph, 'FAIL', { reason: 'phase 1 did not learn a Teams wire key (no meet-active) — dependent phase cannot run' });
       }
       anyFail = true;
       return 1;
     }
+
+    // -----------------------------------------------------------------------
+    // PHASE 1b — KEY-STABILITY (the G2f meeting-split guard): the People panel toggle
+    // must NOT split the meeting key. On consumer teams.live.com/v2 the SPA PREFIXES
+    // `People | ` onto the AXWebArea title when the panel opens; a title-derived key that
+    // kept that prefix would flip mid-call (`teams:live:meeting with…` →
+    // `teams:live:people | meeting with…`), starting a NEW downstream session and
+    // orphaning the first. The G2f fix keys on the LAST title segment (panel-prefix-
+    // proof), so the key is INVARIANT across the toggle. This phase asserts that live:
+    // open the People panel → wait ~5s → the wire key did NOT change (no meet-active on a
+    // DIFFERENT web-Teams key, no meet-idle for the original); close → same assertion.
+    // FOREGROUND (no throttle) — this is a KEY-identity test, not a tab-away test, so any
+    // new key here is a pure identity split, not a bridge artifact.
+    // -----------------------------------------------------------------------
+    const KEY_STABILITY_SETTLE_MS = 5_000;
+    // A key-split shows as a web-Teams meet-active whose key differs from the learned one.
+    const splitActivesSince = (sinceTs) =>
+      teamsActive(det, sinceTs).filter((e) => e.key !== wireKey);
+    let ksOk = true;
+    const ksDetail = { wireKey, phases: {} };
+    try {
+      await tabBack(PORT_A); // ensure foreground so the panel click registers
+      // (i) OPEN the People panel.
+      const openStart = Date.now();
+      const openRes = await togglePeoplePanel(pgA);
+      log(`phase1b (key-stability): People panel OPENED (${openRes}) — settling ${KEY_STABILITY_SETTLE_MS / 1000}s, asserting the wire key does NOT split`);
+      await sleep(KEY_STABILITY_SETTLE_MS);
+      const openSplit = splitActivesSince(openStart).map((e) => e.key);
+      const openIdle = idleSince(det, wireKey, openStart);
+      ksDetail.phases.open = { control: openRes, splitKeys: [...new Set(openSplit)], idleForOriginal: openIdle };
+      if (openSplit.length > 0 || openIdle) ksOk = false;
+
+      // (ii) CLOSE the People panel.
+      const closeStart = Date.now();
+      const closeRes = await togglePeoplePanel(pgA);
+      log(`phase1b: People panel CLOSED (${closeRes}) — settling ${KEY_STABILITY_SETTLE_MS / 1000}s, asserting the wire key STILL does NOT split`);
+      await sleep(KEY_STABILITY_SETTLE_MS);
+      const closeSplit = splitActivesSince(closeStart).map((e) => e.key);
+      const closeIdle = idleSince(det, wireKey, closeStart);
+      ksDetail.phases.close = { control: closeRes, splitKeys: [...new Set(closeSplit)], idleForOriginal: closeIdle };
+      if (closeSplit.length > 0 || closeIdle) ksOk = false;
+
+      // If the control was never found, this phase cannot assert its property — FAIL loud
+      // (a silent skip would hide a real split behind a missing selector).
+      if (openRes === 'no-people-control' && closeRes === 'no-people-control') {
+        ksOk = false;
+        ksDetail.reason = 'People/roster control not found in the Teams-web UI — cannot exercise the panel toggle (selector drift?)';
+      } else if (!ksOk) {
+        ksDetail.reason = `People-panel toggle SPLIT the meeting key (open split=${JSON.stringify(ksDetail.phases.open.splitKeys)} idle=${ksDetail.phases.open.idleForOriginal}; close split=${JSON.stringify(ksDetail.phases.close.splitKeys)} idle=${ksDetail.phases.close.idleForOriginal}) — the title-derived key is NOT panel-prefix-proof`;
+      }
+    } catch (e) {
+      ksOk = false;
+      ksDetail.reason = `phase1b threw: ${e && e.message ? e.message : e}`;
+    }
+    record('key-stability', ksOk ? 'PASS' : 'FAIL', ksDetail);
+    if (!ksOk) anyFail = true;
+    // Settle the detector after the two toggles so phase 2's since-stamp starts quiet.
+    await sleep(2_000);
 
     // -----------------------------------------------------------------------
     // PHASE 2 — BG-THROTTLE-CYCLE (CANONICAL): genuinely background the Teams-web tab,
