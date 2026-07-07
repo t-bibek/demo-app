@@ -99,3 +99,19 @@ only — completed background agents re-invoke automatically.
 Product branch: bubbles-dev `feature/meet-tabaway-keepalive` (worktree `~/projects/work/bubbles-dev-tabaway`).
 Sandbox: demo-app (rigs, sweeps, this doc). Memory index: `MEMORY.md` in the Claude project dir.
 Challenger charter: `demo-app/.claude/agents/challenger.md`.
+
+## Addenda (2026-07-07, from the consumer-Teams close-out)
+
+11. **Builders and gate-runners must never share a worktree.** A gate run compiled a binary
+    while a builder had uncommitted edits in the same tree — the gate agent had to prove the
+    delta inert after the fact. Run-only agents verify `git status --untracked-files=no` is
+    EMPTY + tip hash before building; builders get their own detached worktree when a run
+    overlaps.
+12. **`git add <directory>` sweeps restored fixtures into commits.** Fixtures-present test
+    runs leave `Fixtures/` on disk; a later directory-level `git add` committed 178k lines of
+    them. Add by explicit file path on the feature branch, and `rm -rf` the fixtures dir right
+    after the fixtures-present leg (the tree must end clean).
+13. **Title-derived identity needs a mutation audit.** SPA page titles mutate structurally
+    (panel prefixes like `People | …`) — key on the stable segment (last-before-suffix), and
+    pin key-stability in the live gate (toggle the mutating UI mid-call, assert the wire key
+    holds).
